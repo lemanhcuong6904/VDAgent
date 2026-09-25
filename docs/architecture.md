@@ -59,7 +59,8 @@ flowchart LR
   ToolPool --> Warehouse[WarehouseRegistry]
   ToolPool --> Memory[Postgres agent memory]
   ToolPool --> Sandbox[DockerSandboxProvider]
-  Warehouse --> PG
+  Warehouse --> Artifacts[PostgresWarehouseArtifacts]
+  Artifacts --> PG
   Pi --> Sessions[Postgres Pi sessions]
   Sandbox --> Docker[Docker Engine]
   Workflow --> UIEvents[In-process SSE subscribers]
@@ -164,6 +165,13 @@ workflow hiện chạy bất đồng bộ trong cùng process thông qua Promise
 queue. `agents.delegate` hiện chạy specialist con trực tiếp trong cùng process và lưu invocation
 con vào PostgreSQL.
 
+Frontend kết hợp SSE với React Query để tránh phụ thuộc hoàn toàn vào event stream: chat, task list
+và report list refetch mỗi 5 giây; roster agent mỗi 10 giây; task detail đang chạy mỗi 3 giây.
+Query stale được refetch khi tab được focus hoặc mạng kết nối lại. Khi SSE reconnect, frontend
+invalidate cache; khi task kết thúc, report list cũng được invalidate. SSE hiện chỉ có subscriber
+in-memory, không lưu/replay event; các chu kỳ polling là fallback để nhận trạng thái bền vững từ API,
+không phải cam kết cập nhật tức thời.
+
 ### Nhánh greeting và lỗi
 
 Lời chào đơn giản được trả bằng guardrail, không gọi model. Với yêu cầu analytics, Data phải tạo
@@ -217,8 +225,8 @@ PostgreSQL connection pool riêng cho từng agent. Dù vậy cần theo dõi t�
 gian query, bytes lưu, WAL, vacuum và backup khi số memory entries tăng. Semantic/vector search
 chưa được triển khai; nếu cần, hãy thêm adapter/index phù hợp sau benchmark, không nhét embedding
 vào mỗi lần đọc mặc định. Mức 1 MB là giới hạn **mỗi** `(space, user, agent)`, không phải toàn hệ
-thống: nếu 1.000 user đều dùng 5 agent trong một space và mọi scope chạm trần, payload text tối đa
-xấp xỉ 5 GB trước overhead row/index/WAL/backup. Production cần đặt quota tổng/retention theo user
+thống: nếu 1.000 user đều dùng sáu agent trong một space và mọi scope chạm trần, payload text tối đa
+xấp xỉ 6 GB trước overhead row/index/WAL/backup. Production cần đặt quota tổng/retention theo user
 hoặc space nếu dung lượng dự kiến vượt budget; giới hạn hiện tại chưa tự xóa memory cũ.
 
 ### Pi history và artifact
@@ -330,9 +338,10 @@ ngưỡng dừng.
 
 ### Local hiện tại
 
-`docker compose up --build` chạy API + PostgreSQL; API bind localhost port 3000 và nhận Docker socket.
+`docker compose up --build -d` chạy API + PostgreSQL; API bind localhost port 3000 và nhận Docker socket.
 Dockerfile build frontend trước rồi đóng gói frontend static, backend TypeScript và migrations. Volume
 `postgres-data` giữ PostgreSQL qua restart. API chạy migrations lúc startup trước khi nhận request.
+Lệnh chạy nền, prerequisites và frontend hot reload nằm trong [README](../README.md).
 
 ### Production cần bổ sung trước khi public
 
@@ -354,7 +363,7 @@ Dockerfile build frontend trước rồi đóng gói frontend static, backend Ty
 
 ```text
 src/
-├── agents/                 # 5 agent, roster và factory
+├── agents/                 # 6 agent, roster, shared workflow và factory
 ├── tools/                  # Tool pool modules và tool factory
 ├── providers/warehouse/    # Warehouse adapters; hiện có mock provider
 ├── agent-contract.ts       # Shared AgentPlugin/AgentContext
@@ -377,8 +386,9 @@ Quy ước chia ownership chi tiết nằm ở [folder-ownership.md](folder-owne
 
 - Unit tests offline cho manifest, registry, authorization, schema, cancellation và specialist
   workflow.
-- PostgreSQL integration tests bật bằng `TEST_DATABASE_URL`, chạy migrations và kiểm tra memory
-  isolation/session lock.
+- PostgreSQL integration tests trong `test/agent-memory.test.ts` và
+  `test/analytics-e2e.test.ts` bật bằng `TEST_DATABASE_URL`; chúng chạy migrations và kiểm tra
+  memory isolation/session lock hoặc toàn bộ workflow. Nếu biến không có, hai suite này được skip.
 - Analytics end-to-end test gọi workflow API, dùng PostgreSQL thật, deterministic Pi substitute,
   synthetic warehouse và xác nhận task, cả sáu invocation, dataset/chart/report cùng kết quả cuối.
 - Frontend build xác minh client/type contract; không dùng test UI thay integration test backend.
@@ -390,5 +400,6 @@ Lệnh cơ bản:
 corepack pnpm check
 corepack pnpm test
 corepack pnpm lint
-npm --prefix frontend run build
+corepack pnpm frontend:build
+npm --prefix frontend test
 ```

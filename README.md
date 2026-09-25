@@ -41,7 +41,8 @@ cp .env.example .env
 
 Trong `.env`, thay `API_TOKEN` và `POSTGRES_PASSWORD` bằng giá trị local riêng; cập nhật cùng mật
 khẩu trong `DATABASE_URL`. Điền `MODEL_API_KEY` cho provider/model đang dùng. Không commit `.env`
-hoặc đưa secret thật vào issue, log hay tài liệu.
+hoặc đưa secret thật vào issue, log hay tài liệu. Nếu cần kết nối MCP trực tiếp, thay các
+`AGENT_TOKEN_*` placeholder bằng token riêng tương ứng; các token này không dùng trong browser.
 
 Khởi động PostgreSQL, API và frontend đã build:
 
@@ -110,9 +111,10 @@ corepack pnpm frontend:build
 npm --prefix frontend test
 ```
 
-Frontend và backend dùng cùng API contract. End-to-end workflow test nằm trong
-`test/analytics-e2e.test.ts`; test mặc định deterministic/offline. Khi đổi schema PostgreSQL, thêm
-migration mới dưới `db/migrations/`.
+Frontend và backend dùng cùng API contract. Unit tests mặc định deterministic/offline. PostgreSQL
+integration tests, gồm end-to-end workflow test trong `test/analytics-e2e.test.ts`, chỉ chạy khi đặt
+`TEST_DATABASE_URL` trỏ tới database test riêng; nếu không, các suite đó được skip. Khi đổi schema
+PostgreSQL, thêm migration mới dưới `db/migrations/`.
 
 ## Cấu trúc repository
 

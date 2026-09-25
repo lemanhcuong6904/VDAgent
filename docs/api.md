@@ -89,6 +89,11 @@ MCP Streamable HTTP dùng token riêng của agent:
 Hỗ trợ `tools/list` và `tools/call`. `tools/list` chỉ trả tool pool cấp cho agent. Với
 `tools/call`, server chạy lại allowlist, authorization và input schema. Xem [hướng dẫn MCP](tools.md).
 
+## Health check
+
+`GET /health` trả `{ "status": "ok" }` khi process API đã khởi động. Endpoint này không xác nhận
+PostgreSQL hoặc Docker sandbox đã sẵn sàng cho mọi workflow.
+
 ## UI/workflow API (`/api`)
 
 Các endpoint này dùng header `X-User-Id` với ID đã tạo/chọn. Không dùng API token operator hoặc
@@ -96,7 +101,7 @@ agent token trong frontend.
 
 | Method | Path | Request/response chính |
 | --- | --- | --- |
-| `GET` | `/api/users` | Mảng `{ id, name }`. |
+| `GET` | `/api/users` | Mảng `{ id, name }`, user tạo gần nhất đứng đầu. |
 | `POST` | `/api/users` | Body `{ "name": "Analyst" }`; trả user mới, status `201`. |
 | `GET` | `/api/agents` | Cần user header; mảng `{ name, description, healthy, busy, queue_len }` từ registry. |
 | `GET` | `/api/agents/{agent}/messages?before_seq=&limit=` | Lịch sử `{ summary, messages, pending }`; mặc định 50, tối đa 200. |
@@ -104,11 +109,27 @@ agent token trong frontend.
 | `GET` | `/api/tasks?status=running` | Tối đa 50 task gần nhất; status có thể là `running`, `completed`, `failed`, `cancelled`. |
 | `GET` | `/api/tasks/{taskId}` | `{ task, invocations }`, chỉ trong phạm vi user. |
 | `POST` | `/api/tasks/{taskId}/cancel` | Hủy task đang chạy; trả `{ task }`. Nếu đã kết thúc, `409`. |
-| `GET` | `/api/events?user_id={id}` | SSE event stream của user, gồm cập nhật message/task/invocation. |
+| `GET` | `/api/events?user_id={id}` | SSE stream theo user; query `user_id` phải tồn tại. Xem contract event bên dưới. |
 | `GET` | `/api/reports` | Danh sách 100 report gần nhất `{ id, title, created_at }`. |
 | `GET` | `/api/datasets/{id}?offset=&limit=` | Dataset và trang rows; mặc định 200, tối đa 1000. |
 | `GET` | `/api/charts/{id}` | Chart `{ id, title, dataset_id, spec }`. |
 | `GET` | `/api/reports/{id}` | Report `{ id, title, markdown, created_at }`. |
+
+### SSE event contract
+
+`GET /api/events?user_id={id}` phát ba event hiện được workflow API sử dụng. Mỗi SSE `data` là
+JSON có các trường sau:
+
+| Event | Payload |
+| --- | --- |
+| `message.appended` | `{ "agent": "data", "message": MessageDTO }` |
+| `invocation.updated` | `{ "invocation": InvocationDTO }` |
+| `task.updated` | `{ "task": TaskDTO }` |
+
+Stream không có event ID, replay hoặc lưu bền vững; event chỉ tới subscriber đang nối với API
+process phát nó. Khi reconnect, frontend tải lại query; nó cũng poll chat/task/report định kỳ để
+bù event bị lỡ. Client tích hợp khác nên refetch trạng thái từ REST sau reconnect thay vì coi SSE là
+nguồn dữ liệu duy nhất.
 
 Ví dụ tạo user và gửi yêu cầu:
 
@@ -127,6 +148,10 @@ curl -sS http://localhost:3000/api/agents/orchestrator/messages \
 authorization phù hợp trước khi mở public. Lỗi UI API thường theo dạng
 `{ "error": { "code": "...", "message": "..." } }`; các response thành công giữ snake_case theo
 contract hiện tại.
+
+Ngoại lệ hiện tại: `/api/users` không yêu cầu `X-User-Id`; `/api/events` nhận `user_id` qua query
+parameter vì `EventSource` của browser không hỗ trợ header tùy chỉnh. Các endpoint này không phải
+authentication boundary cho môi trường public.
 
 ## Phân quyền và đăng ký
 

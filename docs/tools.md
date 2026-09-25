@@ -71,7 +71,7 @@ Ví dụ tool chỉ đọc, cấp cho agent `data`:
 
 ```ts
 import { Type } from "typebox";
-import type { McpPoolTool } from "../src/tool-pool.js";
+import type { McpPoolTool } from "../tool-pool.js";
 
 export const tools: McpPoolTool[] = [
   {
@@ -144,7 +144,9 @@ curl -sS http://localhost:3000/v1/tools \
 
 `POST /mcp` dùng MCP Streamable HTTP. Caller gửi `X-Agent-Id` và token tương ứng
 `AGENT_TOKEN_<AGENT_ID>` (ID được đổi thành chữ hoa, dấu khác chữ/số thành `_`). Server từ chối
-agent chưa đăng ký hoặc token sai. Ví dụ:
+agent chưa đăng ký hoặc token sai. Ví dụ `.env.example` có token placeholder cho cả sáu agent; hãy
+thay bằng token local riêng nếu cần gọi MCP trực tiếp. UI và `/v1` không dùng các agent token này.
+Ví dụ:
 
 ```sh
 curl -sS http://localhost:3000/mcp \

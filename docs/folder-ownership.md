@@ -1,24 +1,40 @@
 # Cấu trúc thư mục và quyền sở hữu
 
 Mục tiêu của phân vùng là để team biết nơi thêm code và contract họ được sửa. Cây bên dưới phản
-ánh repository hiện tại. Không tự ý đổi đường dẫn module trong `.env`, Dockerfile hoặc Compose mà
-không cập nhật startup/test/deploy.
+ánh repository hiện tại. Bảng ownership mô tả domain kỹ thuật; tên nhánh, quyền push và luồng PR
+được quy định tại [`GIT_RULE.md`](../GIT_RULE.md). Không tự ý đổi đường dẫn module trong `.env`,
+Dockerfile hoặc Compose mà không cập nhật startup/test/deploy.
 
 ## Cây hiện tại
 
 ```text
 .
 ├── src/
-│   ├── agents/             # Sáu agent runtime và roster startup
-│   │   ├── orchestrator/   # Điều phối workflow
-│   │   ├── data/           # Truy xuất và persist dataset
-│   │   ├── compare/        # So sánh dataset
-│   │   ├── insight/        # Giải thích xu hướng
-│   │   ├── visualize/      # Chọn và tạo chart
-│   │   └── report/         # Tổng hợp findings và lưu report
-│   └── ...                 # Contracts, adapters, API và composition root
-├── src/tools/              # MCP tools và tool pool modules
-├── src/providers/          # Warehouse, memory, sandbox provider adapters
+│   ├── agents/              # Sáu agent runtime và roster startup
+│   │   ├── orchestrator/    # Điều phối workflow
+│   │   ├── data/            # Truy xuất và persist dataset
+│   │   ├── compare/         # So sánh dataset
+│   │   ├── insight/         # Giải thích xu hướng
+│   │   ├── visualize/       # Chọn và tạo chart
+│   │   ├── report/          # Tổng hợp findings và lưu report
+│   │   ├── analytics.ts     # Workflow analytics dùng chung
+│   │   └── factory.ts       # defineAgent helper
+│   ├── tools/               # MCP tools và tool pool modules
+│   ├── providers/warehouse/ # Warehouse provider; hiện có mock adapter
+│   ├── agent-contract.ts    # AgentPlugin và AgentContext
+│   ├── registry.ts          # AgentPool và startup module loader
+│   ├── tool-pool.ts         # MCP tool contract và authorization
+│   ├── pi-runtime.ts        # Pi Agent Core adapter
+│   ├── pi-session-store.ts  # Pi session persistence contract
+│   ├── memory-store.ts      # Durable agent memory tools/provider contract
+│   ├── sandbox.ts           # Sandbox contract và tool registration
+│   ├── docker-sandbox.ts    # Docker execution adapter
+│   ├── database.ts          # PostgreSQL migrations
+│   ├── postgres-store.ts    # PostgreSQL memory/session stores
+│   ├── warehouse.ts         # Warehouse contract, registry và tools
+│   ├── warehouse-artifacts.ts # PostgreSQL artifact store
+│   ├── web-api.ts           # UI/workflow API và SSE events
+│   └── server.ts            # Composition root
 ├── frontend/
 │   └── src/                # React UI: api, events, components, chat, inspector, ui
 ├── db/
@@ -35,20 +51,24 @@ không cập nhật startup/test/deploy.
 
 | Vùng | Team chịu trách nhiệm | Có thể sửa | Cần phối hợp khi |
 | --- | --- | --- | --- |
-| `src/agent-contract.ts`, `src/registry.ts` | Platform/agent runtime | Contract và loader agent | Thêm field/changing lifecycle ảnh hưởng mọi plugin hoặc API consumer. |
+| `src/agent-contract.ts`, `src/registry.ts` | Platform/agent runtime | Contract và loader agent | Thêm field/thay đổi lifecycle ảnh hưởng mọi plugin hoặc API consumer. |
 | `src/agents/<agent>/`, `src/agents/analytics.ts` | Agent workflow | Prompt, schema, manifest, logic của agent thuộc team | Đổi delegation, roster mặc định, input contract public hoặc output UI. |
 | `src/tool-pool.ts`, `src/mcp-server.ts`, `src/mcp-client-tool.ts` | Platform/tools | Pool policy, MCP boundary, adapter | Đổi schema/policy/cấp quyền hoặc tương thích MCP. |
 | `src/tools/` | Team domain/integration tương ứng | Tool schema, service adapter, test của integration | Tool dùng chung, thay permission/schema hoặc tạo migration. |
-| `src/warehouse.ts`, `src/providers/warehouse/` | Data platform | Provider contract và adapter warehouse | Đổi semantics query/artifact hoặc cấp thêm warehouse credential. |
+| `src/warehouse.ts`, `src/providers/warehouse/` | Data platform | Provider contract và warehouse adapter | Đổi semantics query/artifact hoặc cấp thêm warehouse credential. |
 | `src/web-api.ts`, `src/agent-guardrails.ts` | Backend/API | Workflow REST, task lifecycle, API validation | Thay response/API contract, database writes hoặc auth. |
 | `src/pi-runtime.ts`, `src/pi-session-store.ts` | Runtime team | Pi adapter và persistence boundary | Thay provider config, session semantics hoặc tool translation. |
 | `src/sandbox.ts`, `src/docker-sandbox.ts` | Sandbox/platform security | Sandbox contract và Docker adapter | Mọi thay đổi Docker socket, isolation, image, command policy. |
-| `src/database.ts`, `src/postgres-store.ts`, `src/warehouse-artifacts.ts`, `db/migrations/` | Data persistence | Schema và PostgreSQL adapters | Thay data ownership, migrations hoặc retention. |
+| `src/database.ts`, `src/postgres-store.ts`, `src/memory-store.ts`, `src/pi-session-store.ts`, `src/warehouse-artifacts.ts`, `db/migrations/` | Data persistence | Schema, memory/session stores và PostgreSQL adapters | Thay data ownership, migrations, isolation hoặc retention. |
 | `frontend/src/api/` | Frontend/API integration | API types, client, query hooks | Backend response/API thay đổi. |
 | `frontend/src/components/`, `chat/`, `inspector/`, `events/`, `ui/` | Frontend | UI, state rendering, SSE handling | Cần endpoint/event mới hoặc thay payload backend. |
 | `test/` và `frontend/src/**/*.test.*` | Từng team theo feature | Tests cho vùng team sở hữu | Contract chung cần test end-to-end/offline. |
 | `docs/` | Mọi team, thay đổi theo ownership | Tài liệu vùng phụ trách | Thay API/contract cần cập nhật API, architecture và guide liên quan cùng PR. |
 | `Dockerfile`, `docker-compose.yml`, `.env.example`, `package.json` | Build/release/platform | Build, local env, dependency | Đổi startup paths, migrations, secrets hoặc deployment. |
+
+Các tên team trong bảng ownership là owner theo domain, không tự cấp quyền Git. Khi một thay đổi
+chạm nhiều domain, tác giả cần phối hợp với các owner tương ứng; nhánh đích và reviewer vẫn theo
+`GIT_RULE.md`.
 
 ## Ranh giới khi nhiều team cùng làm
 
@@ -130,7 +150,8 @@ corepack pnpm format
 corepack pnpm lint
 corepack pnpm check
 corepack pnpm test
-npm --prefix frontend run build
+corepack pnpm frontend:build
+npm --prefix frontend test
 git diff --check
 ```
 

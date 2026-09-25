@@ -1,36 +1,51 @@
 # Tài liệu VDaAgent / Team 6 cAi
 
-Tài liệu này mô tả code đang có trong repository và cách mở rộng qua contract hiện hành.
+Tài liệu này mô tả code hiện có và các contract để mở rộng repository. README ở thư mục gốc là
+hướng dẫn bắt đầu nhanh; trang này giúp tìm tài liệu theo công việc.
 
-## Bắt đầu theo công việc
+## Chọn hướng dẫn
 
-- Muốn hiểu các thành phần và luồng xử lý: [Kiến trúc](architecture.md).
-- Muốn viết agent mới, khai báo prompt, schema và tools: [Agent](agents.md).
-- Muốn viết MCP tool, đăng ký vào pool và cấp tool cho agent: [MCP tool](tools.md).
-- Muốn gọi các endpoint, biết header, body và lỗi: [HTTP/MCP API](api.md).
-- Muốn biết file nào thuộc team nào và nơi đặt thay đổi mới: [Folder ownership](folder-ownership.md).
+- Khởi động nhanh, cấu hình môi trường và lệnh kiểm tra: [README](../README.md).
+- Luồng dữ liệu, memory, sandbox, scale và deploy: [Kiến trúc](architecture.md).
+- Tạo agent plugin, prompt, guardrail, input/output schema và đăng ký roster: [Agent guide](agents.md).
+- Viết MCP tool, đăng ký tool pool và cấp quyền cho từng agent: [MCP tool guide](tools.md).
+- Gọi HTTP/MCP API, headers, payload, event và lỗi: [API reference](api.md).
+- Quyền sở hữu file và phân chia vùng làm việc: [Folder ownership](folder-ownership.md).
+- Liên kết developer API cũ: [Developer API](developer-api.md).
 
-## Trạng thái đăng ký
+## Mô hình đăng ký hiện tại
 
-Agent plugin và tool pool hiện được lắp ráp lúc khởi động từ `AGENT_PLUGIN_MODULES` và
-`AGENT_TOOL_MODULES`. Đây là API nội bộ dành cho developer triển khai module trên server. Hiện
-không có endpoint CRUD để upload module, tạo agent động, tạo tool động hoặc thay quyền pool qua
-HTTP. Endpoint `GET /v1/agents` và `GET /v1/tools` là endpoint đọc; `POST /v1/agents/{id}/run`
-thực thi agent đã đăng ký. Không gửi mã module hoặc credential provider từ model/browser.
+Agent plugin và tool pool được lắp ráp lúc API khởi động từ `AGENT_PLUGIN_MODULES` và
+`AGENT_TOOL_MODULES`. Đây là code TypeScript tin cậy được triển khai cùng server. Hiện không có
+HTTP endpoint để upload module, tạo agent/tool động hoặc sửa quyền pool. `GET /v1/agents` và
+`GET /v1/tools` chỉ đọc registry; `POST /v1/agents/{id}/run` gọi một agent đã đăng ký. Không gửi
+source code hoặc credential provider từ model/browser.
 
-Kiến trúc hiện tại là modular monolith: một API process lắp ráp các agent/tool plugin; PostgreSQL
-lưu session, memory, task và artifact; Docker cung cấp sandbox. Xem [kiến trúc](architecture.md)
-để biết khi nào cần cân nhắc worker hoặc service riêng.
+Kiến trúc là modular monolith: một API process lắp ráp sáu agent mặc định và tool pool; PostgreSQL
+lưu task, invocation, chat, Pi session, memory và artifact; Docker chạy sandbox. Xem
+[architecture](architecture.md) để phân biệt khả năng hiện có với hướng nâng cấp scale.
 
-## Cài và chạy local
+## Chạy local
 
-1. Cài backend bằng `corepack pnpm install --frozen-lockfile` và frontend bằng
+1. Cài Node.js 22 trở lên, Corepack, Docker Engine/Desktop và Docker Compose.
+2. Cài dependencies bằng `corepack pnpm install --frozen-lockfile` và
    `npm --prefix frontend ci`.
-2. Sao chép `.env.example` thành `.env`, sau đó đặt `API_TOKEN`, mật khẩu PostgreSQL và
-   `MODEL_API_KEY` trong file local. Không commit `.env` hoặc đưa giá trị bí mật vào tài liệu,
-   log hay ví dụ.
-3. Chạy `docker compose up --build`. API phục vụ frontend tại `http://localhost:3000`.
-4. Xác minh `GET /health` trả `{ "status": "ok"}`. Ví dụ gọi API developer dùng `curl` trong
-   [API reference](api.md).
+3. Sao chép `.env.example` thành `.env`; đặt token local, mật khẩu PostgreSQL và `MODEL_API_KEY`.
+   `DATABASE_URL` trong Compose phải dùng cùng user/password với cấu hình PostgreSQL.
+4. Chạy `docker compose up --build -d`; API phục vụ UI tại `http://localhost:3000`.
+5. Xác minh `curl -fsS http://localhost:3000/health` trả `{"status":"ok"}`.
 
-Các lệnh kiểm tra và quy ước đặt file ở [folder ownership](folder-ownership.md).
+Không commit `.env` hoặc dùng dữ liệu thật trong test. `docker compose down` giữ named volume DB;
+chỉ dùng `docker compose down -v` nếu chủ ý xóa dữ liệu local. Chi tiết và lệnh hot reload nằm ở
+[README](../README.md).
+
+## Kiểm thử
+
+Chạy `corepack pnpm check`, `corepack pnpm lint`, `corepack pnpm test`,
+`corepack pnpm frontend:build` và `npm --prefix frontend test`. Test mặc định không gọi model/warehouse
+thật. PostgreSQL integration tests gồm memory isolation, Pi session locking và analytics E2E; chúng
+chỉ chạy khi `TEST_DATABASE_URL` trỏ tới database test dùng riêng. Nếu biến này không có, Vitest sẽ
+skip các integration test đó. Không trỏ biến test tới production hoặc database có dữ liệu cần giữ.
+
+Xem [folder ownership](folder-ownership.md) để biết team nào cập nhật contract, code và test tương
+ứng. Quyền push/PR theo nhánh được quy định riêng ở [`GIT_RULE.md`](../GIT_RULE.md).
