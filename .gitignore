@@ -2,7 +2,7 @@
 var/
 .venv/
 __pycache__/
-*.pyc
+*.py[cod]
 .pytest_cache/
 node_modules/
 frontend/dist/
