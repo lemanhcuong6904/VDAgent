@@ -56,6 +56,24 @@ function messagesCache(pages: MessageDTO[][]): MessagesCache {
   };
 }
 
+function cachedMessages(agent: string): MessagesCache {
+  const cache = qc.getQueryData<MessagesCache>(queryKeys.messages(agent));
+  if (!cache) throw new Error(`Missing messages cache for ${agent}`);
+  return cache;
+}
+
+function cachedTask(id: string): TaskDetailDTO {
+  const cache = qc.getQueryData<TaskDetailDTO>(queryKeys.task(id));
+  if (!cache) throw new Error(`Missing task cache for ${id}`);
+  return cache;
+}
+
+function cachedTasks(): TaskDTO[] {
+  const cache = qc.getQueryData<TaskDTO[]>(queryKeys.tasks);
+  if (!cache) throw new Error("Missing tasks cache");
+  return cache;
+}
+
 let qc: QueryClient;
 beforeEach(() => {
   qc = new QueryClient();
@@ -71,18 +89,16 @@ describe("message.appended", () => {
     applyEvent(qc, { event: "message.appended", data: { agent: "data", message: msg(4, 4) } });
     applyEvent(qc, { event: "message.appended", data: { agent: "data", message: msg(2, 2) } });
 
-    const cache = qc.getQueryData<MessagesCache>(queryKeys.messages("data"))!;
-    expect(cache.pages[0]!.messages.map((m) => m.id)).toEqual([3, 4]);
-    expect(cache.pages[1]!.messages.map((m) => m.id)).toEqual([1, 2]);
+    const cache = cachedMessages("data");
+    expect(cache.pages[0]?.messages.map((m) => m.id)).toEqual([3, 4]);
+    expect(cache.pages[1]?.messages.map((m) => m.id)).toEqual([1, 2]);
   });
 
   it("does not touch other agents or create caches that were never fetched", () => {
     qc.setQueryData(queryKeys.messages("data"), messagesCache([[msg(1, 1)]]));
     applyEvent(qc, { event: "message.appended", data: { agent: "compare", message: msg(9, 1) } });
     expect(qc.getQueryData(queryKeys.messages("compare"))).toBeUndefined();
-    expect(
-      qc.getQueryData<MessagesCache>(queryKeys.messages("data"))!.pages[0]!.messages,
-    ).toHaveLength(1);
+    expect(cachedMessages("data").pages[0]?.messages).toHaveLength(1);
   });
 });
 
@@ -92,7 +108,7 @@ describe("invocation.updated", () => {
     applyEvent(qc, { event: "invocation.updated", data: { invocation: inv("inv_a", "queued") } });
     applyEvent(qc, { event: "invocation.updated", data: { invocation: inv("inv_a", "queued") } });
     applyEvent(qc, { event: "invocation.updated", data: { invocation: inv("inv_b", "queued") } });
-    let pending = qc.getQueryData<MessagesCache>(queryKeys.messages("data"))!.pages[0]!.pending;
+    let pending = cachedMessages("data").pages[0]?.pending;
     expect(pending.map((p) => [p.invocation_id, p.caller, p.inbound_text])).toEqual([
       ["inv_a", "orchestrator", "inbound inv_a"],
       ["inv_b", "orchestrator", "inbound inv_b"],
@@ -103,7 +119,7 @@ describe("invocation.updated", () => {
       event: "invocation.updated",
       data: { invocation: inv("inv_b", "cancelled") },
     });
-    pending = qc.getQueryData<MessagesCache>(queryKeys.messages("data"))!.pages[0]!.pending;
+    pending = cachedMessages("data").pages[0]?.pending;
     expect(pending).toEqual([]);
   });
 
@@ -118,7 +134,7 @@ describe("invocation.updated", () => {
       event: "invocation.updated",
       data: { invocation: inv("inv_a", "completed", "orchestrator") },
     });
-    const got = qc.getQueryData<TaskDetailDTO>(queryKeys.task("t_000000000001"))!;
+    const got = cachedTask("t_000000000001");
     expect(got.invocations.map((i) => [i.id, i.status])).toEqual([
       ["inv_a", "completed"],
       ["inv_b", "queued"],
@@ -137,11 +153,11 @@ describe("task.updated", () => {
     applyEvent(qc, { event: "task.updated", data: { task: task("t_new", "failed") } });
     applyEvent(qc, { event: "task.updated", data: { task: task("t_old", "cancelled") } });
 
-    expect(qc.getQueryData<TaskDTO[]>(queryKeys.tasks)!.map((t) => [t.id, t.status])).toEqual([
+    expect(cachedTasks().map((t) => [t.id, t.status])).toEqual([
       ["t_new", "failed"],
       ["t_old", "cancelled"],
     ]);
-    expect(qc.getQueryData<TaskDetailDTO>(queryKeys.task("t_old"))!.task.status).toBe("cancelled");
+    expect(cachedTask("t_old").task.status).toBe("cancelled");
     expect(qc.getQueryData(queryKeys.task("t_new"))).toBeUndefined();
   });
 
