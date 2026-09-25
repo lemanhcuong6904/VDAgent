@@ -1,0 +1,18 @@
+{
+  "snapshot_manifest": 1,
+  "semantic_config": 12,
+  "dim_date": 181,
+  "dim_project_profile": 2,
+  "dim_zone_master": 7,
+  "dim_unit_master": 1216,
+  "dim_sales_channel": 8,
+  "dim_infrastructure_assets": 4,
+  "fact_unit_inventory_snapshot": 1216,
+  "fact_sales_funnel_daily": 4864,
+  "fact_unit_price_history": 480,
+  "dim_secondary_market_comps": 96,
+  "fact_market_macro_monthly": 24,
+  "fact_sales_channel_performance": 16,
+  "dm_unit_friction_diagnostics": 136,
+  "unit_diagnostic_causes": 193
+}
