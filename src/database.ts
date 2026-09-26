@@ -15,6 +15,7 @@ const MIGRATIONS = [
   { version: "008_agent_message_runs", url: "../db/migrations/008_agent_message_runs.sql" },
   { version: "009_web_event_cursor", url: "../db/migrations/009_web_event_cursor.sql" },
   { version: "010_usage_outbox_claims", url: "../db/migrations/010_usage_outbox_claims.sql" },
+  { version: "011_audit_events", url: "../db/migrations/011_audit_events.sql" },
 ];
 const MIGRATION_LOCK_KEY = 6_041_002;
 

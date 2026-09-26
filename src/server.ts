@@ -2,15 +2,19 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { cors } from "hono/cors";
+import { secureHeaders } from "hono/secure-headers";
 import { Pool } from "pg";
 import { Value } from "typebox/value";
 import { assertSecureSecret, isAuthorizedAgent } from "./agent-auth.js";
+import { recordAudit } from "./audit.js";
 import { migrateDatabase } from "./database.js";
 import { handleMcpRequest } from "./mcp-server.js";
 import { renderPrometheus } from "./metrics.js";
 import { newTraceContext } from "./observability.js";
 import { OutboxPublisher } from "./outbox.js";
 import { loadPlatformServices } from "./platform-services.js";
+import { RateLimiter, requestKey } from "./rate-limit.js";
 import { RunLedger } from "./run-ledger.js";
 import { DurableRunWorker } from "./run-worker.js";
 import { createWebTaskRunExecutor, reconcileInterruptedTasks, registerWebApi } from "./web-api.js";
@@ -49,6 +53,34 @@ if (runnerMode === "legacy") {
 
 const app = new Hono();
 app.use("*", bodyLimit({ maxSize: 1_000_000 }));
+app.use("*", secureHeaders());
+app.use(
+  "*",
+  cors({
+    origin: process.env.WEB_ALLOWED_ORIGIN ?? "http://localhost:3000",
+    allowHeaders: ["Content-Type", "Accept", "Authorization", "X-Agent-Id", "X-User-Id"],
+  }),
+);
+const limiter = new RateLimiter({
+  maxRequests: positiveInt(process.env.RATE_LIMIT_REQUESTS_PER_MINUTE, 120),
+  windowMs: 60_000,
+});
+app.use("*", async (context, next) => {
+  const path = context.req.path;
+  if (path === "/health" || path === "/ready" || path === "/metrics") return next();
+  const ip = context.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? "direct";
+  if (!limiter.allow(requestKey({ ip, route: path }))) {
+    await recordAudit(database, {
+      actor: ip,
+      action: "rate_limit",
+      resourceType: "http",
+      resourceId: path,
+      outcome: "denied",
+    }).catch(() => undefined);
+    return context.json({ error: { code: "rate_limited", message: "Too many requests" } }, 429);
+  }
+  await next();
+});
 app.get("/health", (context) => context.json({ status: "ok" }));
 app.get("/ready", async (context) => {
   try {
@@ -73,6 +105,13 @@ registerWebApi(app, {
 
 app.use("/v1/*", async (context, next) => {
   if (context.req.header("authorization") !== `Bearer ${token}`) {
+    await recordAudit(database, {
+      actor: "anonymous",
+      action: "operator_auth",
+      resourceType: "http",
+      resourceId: context.req.path,
+      outcome: "denied",
+    }).catch(() => undefined);
     return context.json({ error: "unauthorized" }, 401);
   }
   await next();
@@ -154,6 +193,13 @@ app.all("/mcp", async (context) => {
       (id) => !!pluginRegistry.get(id),
     )
   ) {
+    await recordAudit(database, {
+      actor: agentId || "anonymous",
+      action: "mcp_auth",
+      resourceType: "agent",
+      resourceId: agentId,
+      outcome: "denied",
+    }).catch(() => undefined);
     return context.json({ error: "unauthorized" }, 401);
   }
   return handleMcpRequest(context.req.raw, {
