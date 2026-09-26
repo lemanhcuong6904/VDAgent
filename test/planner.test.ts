@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildCapabilityPlan, MissingCapabilityError } from "../src/planner.js";
+import {
+  buildCapabilityPlan,
+  MissingCapabilityError,
+  proposeCapabilityPlan,
+  validatePlan,
+} from "../src/planner.js";
 
 const catalog = {
   findByCapability(capability: string) {
@@ -18,6 +23,28 @@ const catalog = {
 };
 
 describe("capability planner", () => {
+  const typedCatalog = {
+    findByCapability(capability: string) {
+      if (capability === "warehouse.query") {
+        return [{ id: "data", version: "1", description: "data", capabilities: [capability] }];
+      }
+      return [];
+    },
+  };
+
+  it("validates model-proposed typed plans against the catalog", async () => {
+    const plan = await proposeCapabilityPlan("list revenue", typedCatalog, async () =>
+      JSON.stringify({
+        version: "plan.v1",
+        goal: "ignored",
+        steps: [{ id: "query", capability: "warehouse.query", agentId: "data", dependsOn: [] }],
+      }),
+    );
+    if (!plan) throw new Error("Expected a typed plan");
+    expect(plan?.steps[0]?.agentId).toBe("data");
+    expect(validatePlan(plan, typedCatalog).version).toBe("plan.v1");
+  });
+
   it("creates a bounded plan from capabilities instead of concrete agent ids", () => {
     const plan = buildCapabilityPlan(
       "Compare revenue by region, explain the trend, and save a chart report",

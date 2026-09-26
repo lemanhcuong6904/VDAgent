@@ -43,10 +43,12 @@ export async function loadPlatformServices(database: Pool): Promise<PlatformServ
   const sandboxProvider = selectSandboxProvider(sandboxProviderId, new DockerSandboxProvider());
   if (sandboxProvider) pool.register(createSandboxTool(sandboxProvider));
 
+  const runLedger = new RunLedger(database);
   const runtime = new PiRuntime(
     new PostgresPiSessionStore(database),
     createDefaultModelRegistry(),
     telemetry,
+    (record) => runLedger.recordUsage({ ...record, kind: "model" }),
   );
   const pluginModules = moduleList("AGENT_PLUGIN_MODULES");
   const pluginRegistry = await loadAgentPool(
@@ -60,7 +62,6 @@ export async function loadPlatformServices(database: Pool): Promise<PlatformServ
     pool.registerAgentManifest(agent.id, agent.tools);
   }
   const catalog = pluginRegistry.plannerCatalog();
-  const runLedger = new RunLedger(database);
   pool.register(createAgentCatalogTool(pluginRegistry));
   pool.register(
     createAgentDelegationTool({

@@ -8,6 +8,7 @@ import { assertSecureSecret, isAuthorizedAgent } from "./agent-auth.js";
 import { migrateDatabase } from "./database.js";
 import { handleMcpRequest } from "./mcp-server.js";
 import { newTraceContext } from "./observability.js";
+import { OutboxPublisher } from "./outbox.js";
 import { loadPlatformServices } from "./platform-services.js";
 import { RunLedger } from "./run-ledger.js";
 import { DurableRunWorker } from "./run-worker.js";
@@ -156,6 +157,7 @@ app.get("*", serveStatic({ root: "./frontend/dist" }));
 
 const port = Number(process.env.PORT ?? 3000);
 let worker: DurableRunWorker | undefined;
+let outbox: OutboxPublisher | undefined;
 if (runnerMode === "embedded" && runLedger) {
   worker = new DurableRunWorker(
     runLedger,
@@ -167,6 +169,16 @@ if (runnerMode === "embedded" && runLedger) {
       concurrency: positiveInt(process.env.WORKER_CONCURRENCY, 4),
     },
   );
+  outbox = new OutboxPublisher(
+    database,
+    async (event) => {
+      process.stdout.write(
+        `${JSON.stringify({ message: "platform.outbox_published", outbox_id: event.id, run_id: event.run_id, event_type: event.event_type })}\n`,
+      );
+    },
+    { publisherId: `outbox-${process.pid}`, pollMs: positiveInt(process.env.OUTBOX_POLL_MS, 250) },
+  );
+  outbox.start();
   worker.start();
 }
 serve({ fetch: app.fetch, port, hostname: "0.0.0.0" }, (info) => {
@@ -175,7 +187,10 @@ serve({ fetch: app.fetch, port, hostname: "0.0.0.0" }, (info) => {
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
-    void worker?.stop().finally(() => database.end());
+    void outbox
+      ?.stop()
+      .finally(() => worker?.stop())
+      .finally(() => database.end());
   });
 }
 

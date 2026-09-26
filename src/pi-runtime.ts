@@ -14,11 +14,25 @@ const models = builtinModels();
 const MAX_CONTEXT_MESSAGES = 80;
 const MAX_TOOL_CALLS_PER_PROMPT = 8;
 
+export interface ModelUsageRecord {
+  runId?: string;
+  userId: string;
+  spaceId: string;
+  agentId: string;
+  provider: string;
+  model: string;
+  latencyMs: number;
+  metadata?: Record<string, unknown>;
+}
+
+export type UsageRecorder = (record: ModelUsageRecord) => Promise<void>;
+
 export class PiRuntime {
   constructor(
     private readonly sessionStore: PiSessionStore,
     private readonly modelRegistry: ModelRegistry = createDefaultModelRegistry(),
     private readonly telemetry?: Telemetry,
+    private readonly usageRecorder?: UsageRecorder,
   ) {}
 
   async prompt(input: {
@@ -41,6 +55,8 @@ export class PiRuntime {
       : this.modelRegistry.defaultProfile();
     const provider = profile?.provider ?? process.env.PI_DEFAULT_PROVIDER ?? "openai";
     const modelId = profile?.model ?? process.env.PI_DEFAULT_MODEL ?? "gpt-4o-mini";
+    const startedAt = performance.now();
+    let outcome: "completed" | "failed" = "failed";
     const model = models.getModel(provider, modelId);
     if (!model) {
       span?.end("error");
@@ -124,6 +140,7 @@ export class PiRuntime {
         .map((part) => part.text)
         .join("");
       span?.end("ok");
+      outcome = "completed";
       return output;
     } catch (error) {
       span?.recordException(error);
@@ -138,6 +155,16 @@ export class PiRuntime {
         }
       } finally {
         await session.release();
+        await this.usageRecorder?.({
+          runId: input.scope.runId,
+          userId: input.scope.userId,
+          spaceId: input.scope.spaceId,
+          agentId: input.agentId,
+          provider,
+          model: modelId,
+          latencyMs: Math.round(performance.now() - startedAt),
+          metadata: { outcome, model_profile: input.modelProfile ?? "default" },
+        }).catch(() => undefined);
       }
     }
   }

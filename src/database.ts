@@ -14,6 +14,7 @@ const MIGRATIONS = [
   { version: "007_durable_web_runs", url: "../db/migrations/007_durable_web_runs.sql" },
   { version: "008_agent_message_runs", url: "../db/migrations/008_agent_message_runs.sql" },
   { version: "009_web_event_cursor", url: "../db/migrations/009_web_event_cursor.sql" },
+  { version: "010_usage_outbox_claims", url: "../db/migrations/010_usage_outbox_claims.sql" },
 ];
 const MIGRATION_LOCK_KEY = 6_041_002;
 

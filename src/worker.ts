@@ -1,6 +1,7 @@
 import os from "node:os";
 import { Pool } from "pg";
 import { migrateDatabase } from "./database.js";
+import { OutboxPublisher } from "./outbox.js";
 import { loadPlatformServices } from "./platform-services.js";
 import { RunLedger } from "./run-ledger.js";
 import { DurableRunWorker } from "./run-worker.js";
@@ -34,11 +35,29 @@ const worker = new DurableRunWorker(
     concurrency: positiveInt(process.env.WORKER_CONCURRENCY, 4),
   },
 );
+const outbox = new OutboxPublisher(
+  database,
+  async (event) => {
+    process.stdout.write(
+      `${JSON.stringify({
+        message: "platform.outbox_published",
+        outbox_id: event.id,
+        run_id: event.run_id,
+        event_type: event.event_type,
+      })}\n`,
+    );
+  },
+  {
+    publisherId: `outbox-${workerName}`,
+    pollMs: positiveInt(process.env.OUTBOX_POLL_MS, 250),
+  },
+);
 
 let stopping = false;
 const shutdown = async () => {
   if (stopping) return;
   stopping = true;
+  await outbox.stop();
   await worker.stop();
   await database.end();
 };
@@ -48,6 +67,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
+outbox.start();
 worker.start();
 process.stdout.write(`Team 6 cAi worker started as ${workerName}\n`);
 await new Promise<void>(() => undefined);

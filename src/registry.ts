@@ -5,6 +5,7 @@ import type { TSchema } from "typebox";
 import type { AgentPlugin } from "./agent-contract.js";
 import { JsonLineAgentRunner } from "./agent-runner.js";
 import type { PlannerAgent, PlannerCatalog } from "./planner.js";
+import { WorkflowRegistry } from "./workflow.js";
 
 export class AgentPool {
   private readonly plugins = new Map<string, AgentPlugin>();
@@ -69,16 +70,21 @@ export class AgentPool {
 
   plannerCatalog(): PlannerCatalog {
     return {
-      findByCapability: (capability): PlannerAgent[] =>
-        this.findByCapability(capability).map(({ descriptor }) => ({
+      findByCapability: (capability): PlannerAgent[] => {
+        const agents =
+          capability === "*" ? [...this.plugins.values()] : this.findByCapability(capability);
+        return agents.map(({ descriptor }) => ({
           id: descriptor.id,
           version: descriptor.version,
           description: descriptor.description,
           capabilities: descriptor.capabilities ?? [],
-        })),
+        }));
+      },
     };
   }
 }
+
+export { WorkflowRegistry };
 
 export function validateAgentPlugin(plugin: AgentPlugin): void {
   const descriptor = plugin?.descriptor;

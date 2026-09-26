@@ -45,8 +45,48 @@ export interface RunEvent {
   created_at: Date;
 }
 
+export interface UsageRecordInput {
+  runId?: string;
+  userId: string;
+  spaceId: string;
+  kind: "model" | "tool" | "sandbox" | "worker";
+  provider?: string;
+  model?: string;
+  agentId?: string;
+  toolName?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  latencyMs?: number;
+  estimatedCost?: number;
+  metadata?: Record<string, unknown>;
+}
+
 export class RunLedger {
   constructor(private readonly pool: Pool) {}
+
+  async recordUsage(input: UsageRecordInput): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO platform_usage_records
+       (run_id, user_id, space_id, kind, provider, model, agent_id, tool_name,
+        input_tokens, output_tokens, latency_ms, estimated_cost, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)`,
+      [
+        input.runId ?? null,
+        input.userId,
+        input.spaceId,
+        input.kind,
+        input.provider ?? null,
+        input.model ?? null,
+        input.agentId ?? null,
+        input.toolName ?? null,
+        boundedInteger(input.inputTokens),
+        boundedInteger(input.outputTokens),
+        boundedInteger(input.latencyMs),
+        input.estimatedCost ?? null,
+        JSON.stringify(input.metadata ?? {}),
+      ],
+    );
+  }
 
   async create(input: CreateRunInput): Promise<CreatedRun> {
     const client = await this.pool.connect();
@@ -395,4 +435,11 @@ function eventPayload(value: unknown, seq: number): Record<string, unknown> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function boundedInteger(value: number | undefined): number | null {
+  if (value === undefined) return null;
+  if (!Number.isSafeInteger(value) || value < 0)
+    throw new Error("Usage values must be non-negative integers");
+  return value;
 }

@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import type { AgentContext, AgentPlugin } from "../agent-contract.js";
-import { buildCapabilityPlan, type PlanSpec } from "../planner.js";
+import { buildCapabilityPlan, type PlanSpec, proposeCapabilityPlan } from "../planner.js";
 
 const input = Type.Object({ prompt: Type.String({ minLength: 1, maxLength: 4000 }) });
 
@@ -37,7 +37,7 @@ export function createAnalyticsAgent(config: AnalyticsAgentConfig): AgentPlugin 
       const prompt = (value as { prompt: string }).prompt;
       if (config.id === "orchestrator" && (context.depth ?? 0) === 0) {
         if (context.catalog) {
-          const plan = buildCapabilityPlan(prompt, context.catalog);
+          const plan = await createPlan(context, prompt);
           if (plan) return runPlannedWorkflow(context, prompt, config.system, plan);
         } else if (isAnalyticsRequest(prompt)) {
           return runAnalyticsWorkflow(context, prompt, config.system);
@@ -81,6 +81,33 @@ export function createAnalyticsAgent(config: AnalyticsAgentConfig): AgentPlugin 
       return datasetId ? `${response}\n\nPersisted dataset: ${datasetId}` : response;
     },
   };
+}
+
+async function createPlan(context: AgentContext, prompt: string): Promise<PlanSpec | undefined> {
+  const heuristic = () =>
+    buildCapabilityPlan(prompt, context.catalog as NonNullable<AgentContext["catalog"]>);
+  if (process.env.PLANNER_MODE === "heuristic") return heuristic();
+  try {
+    const proposed = await proposeCapabilityPlan(
+      prompt,
+      context.catalog as NonNullable<AgentContext["catalog"]>,
+      (catalog) =>
+        context.runtime.prompt({
+          agentId: "orchestrator",
+          system:
+            "You are a typed workflow planner. Return only JSON matching plan.v1. " +
+            "Choose capabilities from the catalog, use a bounded DAG, and request clarification " +
+            "when the question cannot be grounded in available capabilities. Never invent agent IDs.",
+          prompt: `${prompt}\n\nAgent capability catalog:\n${catalog}`,
+          tools: [],
+          scope: runtimeScope(context),
+          pool: context.pool,
+        }),
+    );
+    return proposed ?? heuristic();
+  } catch {
+    return heuristic();
+  }
 }
 
 async function runPlannedWorkflow(
