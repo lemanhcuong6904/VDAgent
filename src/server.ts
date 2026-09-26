@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { Pool } from "pg";
 import { Value } from "typebox/value";
-import { isAuthorizedAgent } from "./agent-auth.js";
+import { assertSecureSecret, isAuthorizedAgent } from "./agent-auth.js";
 import { migrateDatabase } from "./database.js";
 import { handleMcpRequest } from "./mcp-server.js";
 import { newTraceContext } from "./observability.js";
@@ -12,11 +12,16 @@ import { loadPlatformServices } from "./platform-services.js";
 import { RunLedger } from "./run-ledger.js";
 import { DurableRunWorker } from "./run-worker.js";
 import { createWebTaskRunExecutor, reconcileInterruptedTasks, registerWebApi } from "./web-api.js";
+import { createWebAuth } from "./web-auth.js";
 
 const token = process.env.API_TOKEN;
 if (!token) throw new Error("API_TOKEN is required");
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
+const webAuth = createWebAuth();
+const requireSecureSecrets =
+  process.env.PLATFORM_REQUIRE_SECURE_SECRETS === "true" || process.env.NODE_ENV === "production";
+if (requireSecureSecrets) assertSecureSecret("API_TOKEN", token);
 
 const database = new Pool({ connectionString: databaseUrl, max: 20 });
 database.on("error", (error) => {
@@ -29,6 +34,12 @@ if (!["embedded", "api", "legacy"].includes(runnerMode)) {
 }
 const services = await loadPlatformServices(database);
 const { pool, runtime, pluginRegistry, catalog } = services;
+if (requireSecureSecrets) {
+  for (const agent of pluginRegistry.list()) {
+    const key = `AGENT_TOKEN_${agent.id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+    assertSecureSecret(key, process.env[key]);
+  }
+}
 const runLedger = runnerMode === "legacy" ? undefined : new RunLedger(database);
 if (runnerMode === "legacy") {
   await reconcileInterruptedTasks(database);
@@ -44,6 +55,7 @@ registerWebApi(app, {
   runtime,
   catalog,
   runLedger,
+  webAuth,
 });
 
 app.use("/v1/*", async (context, next) => {

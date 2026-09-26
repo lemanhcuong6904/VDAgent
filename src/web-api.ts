@@ -11,6 +11,7 @@ import type { PiRuntime } from "./pi-runtime.js";
 import type { AgentPool } from "./registry.js";
 import type { ClaimedRun, RunLedger } from "./run-ledger.js";
 import type { McpToolPool } from "./tool-pool.js";
+import { bearerToken, verifyWebSession, type WebAuthConfig } from "./web-auth.js";
 
 type Dependencies = {
   database: Pool;
@@ -19,6 +20,7 @@ type Dependencies = {
   runtime: PiRuntime;
   catalog?: import("./planner.js").PlannerCatalog;
   runLedger?: RunLedger;
+  webAuth?: WebAuthConfig;
 };
 
 type UiEvent = { id?: number; event: string; data: Record<string, unknown> };
@@ -45,8 +47,14 @@ function abortActiveTask(taskId: string, reason: string): void {
 }
 export function registerWebApi(app: Hono, dependencies: Dependencies): void {
   const { database, pluginRegistry, pool, runtime } = dependencies;
+  const webAuth = dependencies.webAuth;
 
   app.get("/api/users", async (context) => {
+    const authenticated = await authenticateUser(context, database, webAuth);
+    if (webAuth?.mode === "session" && !authenticated) {
+      return error(context, 401, "authentication_required", "A valid web session is required");
+    }
+    if (webAuth?.mode === "session" && authenticated) return context.json([authenticated]);
     const result = await database.query(
       "SELECT id, name FROM web_users ORDER BY created_at DESC, id DESC",
     );
@@ -54,6 +62,14 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
   });
 
   app.post("/api/users", async (context) => {
+    if (webAuth?.mode === "session") {
+      return error(
+        context,
+        403,
+        "user_provisioning_required",
+        "Provision users through the identity provider",
+      );
+    }
     const body = await context.req.json().catch(() => undefined);
     if (!isRecord(body) || typeof body.name !== "string" || !body.name.trim()) {
       return error(context, 422, "invalid_request", "name must not be empty");
@@ -67,7 +83,7 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
   });
 
   app.get("/api/agents", async (context) => {
-    const user = await requireUser(context, database);
+    const user = await requireUser(context, database, webAuth);
     if (!user) return error(context, 401, "user_required", "Select a user first");
     const busy = await database.query<{ agent: string; count: string }>(
       `SELECT agent, count(*)::text AS count FROM web_invocations
@@ -86,7 +102,7 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
   });
 
   app.get("/api/agents/:agent/messages", async (context) => {
-    const user = await requireUser(context, database);
+    const user = await requireUser(context, database, webAuth);
     if (!user) return error(context, 401, "user_required", "Select a user first");
     const agent = context.req.param("agent");
     if (!resolveAgent(pluginRegistry, agent))
@@ -107,7 +123,7 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
   });
 
   app.post("/api/agents/:agent/messages", async (context) => {
-    const user = await requireUser(context, database);
+    const user = await requireUser(context, database, webAuth);
     if (!user) return error(context, 401, "user_required", "Select a user first");
     const agent = context.req.param("agent");
     const plugin = resolveAgent(pluginRegistry, agent);
@@ -208,7 +224,7 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
   });
 
   app.get("/api/tasks", async (context) => {
-    const user = await requireUser(context, database);
+    const user = await requireUser(context, database, webAuth);
     if (!user) return error(context, 401, "user_required", "Select a user first");
     const status = context.req.query("status");
     if (status && !["running", "completed", "failed", "cancelled"].includes(status)) {
@@ -223,7 +239,7 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
   });
 
   app.get("/api/tasks/:taskId", async (context) => {
-    const user = await requireUser(context, database);
+    const user = await requireUser(context, database, webAuth);
     if (!user) return error(context, 401, "user_required", "Select a user first");
     const taskId = context.req.param("taskId");
     const [task, invocations] = await Promise.all([
@@ -243,7 +259,7 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
   });
 
   app.post("/api/tasks/:taskId/cancel", async (context) => {
-    const user = await requireUser(context, database);
+    const user = await requireUser(context, database, webAuth);
     if (!user) return error(context, 401, "user_required", "Select a user first");
     const taskId = context.req.param("taskId");
     const result = await database.query(
@@ -286,10 +302,8 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
 
   app.get("/api/events", async (context) => {
     const userId = context.req.query("user_id");
-    if (
-      !userId ||
-      !(await database.query("SELECT 1 FROM web_users WHERE id = $1", [userId])).rowCount
-    ) {
+    const authenticated = await authenticateUser(context, database, webAuth);
+    if (!userId || !authenticated || authenticated.id !== userId) {
       return error(context, 401, "user_required", "Select a valid user first");
     }
     const cursorHeader = context.req.header("last-event-id");
@@ -356,7 +370,7 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
   });
 
   app.get("/api/reports", async (context) => {
-    const user = await requireUser(context, database);
+    const user = await requireUser(context, database, webAuth);
     if (!user) return error(context, 401, "user_required", "Select a user first");
     const result = await database.query(
       `SELECT id, title, created_at FROM web_reports WHERE user_id = $1
@@ -372,7 +386,7 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
     );
   });
   app.get("/api/datasets/:id", async (context) => {
-    const user = await requireUser(context, database);
+    const user = await requireUser(context, database, webAuth);
     if (!user) return error(context, 401, "user_required", "Select a user first");
     const offset = Math.max(0, Number(context.req.query("offset") ?? 0));
     const limit = Math.min(1000, Math.max(1, Number(context.req.query("limit") ?? 200)));
@@ -396,7 +410,7 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
     });
   });
   app.get("/api/charts/:id", async (context) => {
-    const user = await requireUser(context, database);
+    const user = await requireUser(context, database, webAuth);
     if (!user) return error(context, 401, "user_required", "Select a user first");
     const result = await database.query(
       "SELECT id, title, dataset_id, spec FROM web_charts WHERE id = $1 AND user_id = $2",
@@ -709,11 +723,24 @@ async function writeMessage(
   return saved.rows[0];
 }
 
-async function requireUser(context: Context, database: Pool) {
-  const userId = context.req.header("x-user-id");
+async function authenticateUser(
+  context: Context,
+  database: Pool,
+  config?: WebAuthConfig,
+): Promise<{ id: string; name: string } | undefined> {
+  const session = verifyWebSession(
+    bearerToken(context.req.header("authorization")),
+    config ?? { mode: "demo", ttlSeconds: 0 },
+  );
+  const userId =
+    session?.userId ?? (config?.mode === "session" ? undefined : context.req.header("x-user-id"));
   if (!userId) return undefined;
   const result = await database.query("SELECT id, name FROM web_users WHERE id = $1", [userId]);
   return result.rows[0] as { id: string; name: string } | undefined;
+}
+
+async function requireUser(context: Context, database: Pool, config?: WebAuthConfig) {
+  return authenticateUser(context, database, config);
 }
 
 async function getTask(database: Pool, taskId: string) {
