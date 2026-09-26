@@ -1,3 +1,10 @@
+# Research adoption record
+
+This document captures design patterns and adoption decisions; it is not a production readiness
+certificate. Current implementation evidence and remaining gates are tracked in [PLAN.md](../PLAN.md)
+section 9.1. Historical recommendations remain useful only when they agree with the versioned
+contracts and tests in the current branch.
+
 # Kế hoạch học hỏi và nâng cấp nền tảng agent
 
 Tài liệu này chắt lọc các ý tưởng phù hợp từ `oh-my-pi`, `pi-subagents`, `rakazo-new`,
@@ -196,9 +203,3 @@ load profile và test Redis outage/reconnect trước khi thêm service.
 Các phase là thứ tự đề xuất, không phải cam kết rằng phần nào đã được triển khai. Mọi thay đổi
 runtime cần có issue/PR riêng, migration/backward-compatibility review, tests offline và cập nhật
 architecture sau khi được xác minh.
-# Research adoption record
-
-This document captures design patterns and adoption decisions; it is not a production readiness
-certificate. Current implementation evidence and remaining gates are tracked in [PLAN.md](../PLAN.md)
-section 9.1. Historical recommendations remain useful only when they agree with the versioned
-contracts and tests in the current branch.
