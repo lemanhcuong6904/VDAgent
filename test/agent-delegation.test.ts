@@ -4,7 +4,7 @@ import { McpToolPool } from "../src/tool-pool.js";
 import { createAgentDelegationTool } from "../src/tools/agent-delegation.js";
 
 describe("orchestrator delegation guardrails", () => {
-  it("restricts delegation to the orchestrator and the four registered specialists", async () => {
+  it("restricts delegation to the orchestrator and validates dynamic targets", async () => {
     const pool = new McpToolPool();
     pool.register(
       createAgentDelegationTool({
@@ -25,7 +25,7 @@ describe("orchestrator delegation guardrails", () => {
         scope,
         "orchestrator",
       ),
-    ).rejects.toThrow("Invalid input");
+    ).rejects.toThrow("only available to a running orchestrator task");
     await expect(
       pool.call("agents.delegate", { agent: "data", message: "list tables" }, scope, "data"),
     ).rejects.toThrow("not authorized");

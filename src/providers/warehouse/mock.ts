@@ -37,6 +37,7 @@ function tableOrThrow(name: string): WarehouseTable {
 export const warehouse: WarehouseProvider = {
   id: "sample-warehouse",
   name: "Synthetic sales warehouse",
+  capabilities: ["catalog", "query", "sample", "persist-dataset"],
   async listTables(signal) {
     signal.throwIfAborted();
     return tables.map(({ name, rows }) => ({ name, rowCount: rows.length }));

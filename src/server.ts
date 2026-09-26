@@ -1,61 +1,117 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
+import { cors } from "hono/cors";
+import { secureHeaders } from "hono/secure-headers";
 import { Pool } from "pg";
 import { Value } from "typebox/value";
-import { isAuthorizedAgent } from "./agent-auth.js";
+import { assertSecureSecret, isAuthorizedAgent } from "./agent-auth.js";
+import { recordAudit } from "./audit.js";
 import { migrateDatabase } from "./database.js";
-import { DockerSandboxProvider } from "./docker-sandbox.js";
 import { handleMcpRequest } from "./mcp-server.js";
-import { createAgentMemoryTools } from "./memory-store.js";
-import { PiRuntime } from "./pi-runtime.js";
-import { PostgresAgentMemoryProvider, PostgresPiSessionStore } from "./postgres-store.js";
-import { loadAgentPool } from "./registry.js";
-import { createSandboxTool, selectSandboxProvider } from "./sandbox.js";
-import { loadToolPool } from "./tool-pool.js";
-import { createAgentDelegationTool } from "./tools/agent-delegation.js";
-import { registerWebApi } from "./web-api.js";
+import { renderPrometheus } from "./metrics.js";
+import { newTraceContext } from "./observability.js";
+import { OutboxPublisher } from "./outbox.js";
+import { loadPlatformServices } from "./platform-services.js";
+import { RateLimiter, requestKey } from "./rate-limit.js";
+import { RunLedger } from "./run-ledger.js";
+import { DurableRunWorker } from "./run-worker.js";
+import { createWebTaskRunExecutor, reconcileInterruptedTasks, registerWebApi } from "./web-api.js";
+import { createWebAuth } from "./web-auth.js";
 
 const token = process.env.API_TOKEN;
 if (!token) throw new Error("API_TOKEN is required");
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
+const webAuth = createWebAuth();
+const requireSecureSecrets =
+  process.env.PLATFORM_REQUIRE_SECURE_SECRETS === "true" || process.env.NODE_ENV === "production";
+if (requireSecureSecrets) assertSecureSecret("API_TOKEN", token);
 
 const database = new Pool({ connectionString: databaseUrl, max: 20 });
 database.on("error", (error) => {
   process.stderr.write(`PostgreSQL pool error: ${error.message}\n`);
 });
 await migrateDatabase(database);
-
-const moduleList = (key: string) =>
-  (process.env[key] ?? "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-const toolModules = moduleList("AGENT_TOOL_MODULES");
-const pool = await loadToolPool(toolModules.length ? toolModules : ["src/tools/warehouse.ts"], {
-  database,
-});
-for (const tool of createAgentMemoryTools(new PostgresAgentMemoryProvider(database))) {
-  pool.register(tool);
+const runnerMode = process.env.PLATFORM_RUNNER_MODE ?? "embedded";
+if (!["embedded", "api", "legacy"].includes(runnerMode)) {
+  throw new Error("PLATFORM_RUNNER_MODE must be embedded, api, or legacy");
 }
-const sandboxProviderId = process.env.SANDBOX_PROVIDER ?? "docker";
-const sandboxProvider = selectSandboxProvider(sandboxProviderId, new DockerSandboxProvider());
-if (sandboxProvider) pool.register(createSandboxTool(sandboxProvider));
-const runtime = new PiRuntime(new PostgresPiSessionStore(database));
-const pluginModules = moduleList("AGENT_PLUGIN_MODULES");
-const pluginRegistry = await loadAgentPool(
-  pluginModules.length ? pluginModules : ["src/agents/index.ts"],
-);
-pool.register(createAgentDelegationTool({ database, pluginRegistry, pool, runtime }));
+const services = await loadPlatformServices(database);
+const { pool, runtime, pluginRegistry, catalog } = services;
+if (requireSecureSecrets) {
+  for (const agent of pluginRegistry.list()) {
+    const key = `AGENT_TOKEN_${agent.id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+    assertSecureSecret(key, process.env[key]);
+  }
+}
+const runLedger = runnerMode === "legacy" ? undefined : new RunLedger(database);
+if (runnerMode === "legacy") {
+  await reconcileInterruptedTasks(database);
+}
 
 const app = new Hono();
+app.use("*", bodyLimit({ maxSize: 1_000_000 }));
+app.use("*", secureHeaders());
+app.use(
+  "*",
+  cors({
+    origin: process.env.WEB_ALLOWED_ORIGIN ?? "http://localhost:3000",
+    allowHeaders: ["Content-Type", "Accept", "Authorization", "X-Agent-Id", "X-User-Id"],
+  }),
+);
+const limiter = new RateLimiter({
+  maxRequests: positiveInt(process.env.RATE_LIMIT_REQUESTS_PER_MINUTE, 120),
+  windowMs: 60_000,
+});
+app.use("*", async (context, next) => {
+  const path = context.req.path;
+  if (path === "/health" || path === "/ready" || path === "/metrics") return next();
+  const ip = context.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? "direct";
+  if (!limiter.allow(requestKey({ ip, route: path }))) {
+    await recordAudit(database, {
+      actor: ip,
+      action: "rate_limit",
+      resourceType: "http",
+      resourceId: path,
+      outcome: "denied",
+    }).catch(() => undefined);
+    return context.json({ error: { code: "rate_limited", message: "Too many requests" } }, 429);
+  }
+  await next();
+});
 app.get("/health", (context) => context.json({ status: "ok" }));
-registerWebApi(app, { database, pluginRegistry, pool, runtime });
+app.get("/ready", async (context) => {
+  try {
+    await database.query("SELECT 1");
+    return context.json({ status: "ready" });
+  } catch {
+    return context.json({ status: "not_ready" }, 503);
+  }
+});
+app.get("/metrics", (context) =>
+  context.text(renderPrometheus(), 200, { "content-type": "text/plain; version=0.0.4" }),
+);
+registerWebApi(app, {
+  database,
+  pluginRegistry,
+  pool,
+  runtime,
+  catalog,
+  runLedger,
+  webAuth,
+});
 
 app.use("/v1/*", async (context, next) => {
   if (context.req.header("authorization") !== `Bearer ${token}`) {
+    await recordAudit(database, {
+      actor: "anonymous",
+      action: "operator_auth",
+      resourceType: "http",
+      resourceId: context.req.path,
+      outcome: "denied",
+    }).catch(() => undefined);
     return context.json({ error: "unauthorized" }, 401);
   }
   await next();
@@ -64,12 +120,17 @@ app.use("/v1/*", async (context, next) => {
 app.get("/v1/agents", (context) => context.json(pluginRegistry.list()));
 app.get("/v1/tools", (context) => {
   const agentId = context.req.header("x-agent-id") ?? "";
+  const agent = pluginRegistry.get(agentId);
+  if (!agent) return context.json({ error: "unknown agent" }, 404);
   return context.json(
-    pool.forAgent(agentId).map(({ name, description, schema }) => ({
-      name,
-      description,
-      inputSchema: schema,
-    })),
+    pool
+      .forAgent(agentId)
+      .filter(({ name }) => agent.descriptor.tools.includes(name))
+      .map(({ name, description, schema }) => ({
+        name,
+        description,
+        inputSchema: schema,
+      })),
   );
 });
 app.post("/v1/agents/:agentId/run", async (context) => {
@@ -103,6 +164,8 @@ app.post("/v1/agents/:agentId/run", async (context) => {
       signal: controller.signal,
       tools: pool.forNames(plugin.descriptor.tools),
       runtime,
+      catalog: pluginRegistry.plannerCatalog(),
+      trace: newTraceContext(),
       pool,
     });
     if (plugin.descriptor.output && !Value.Check(plugin.descriptor.output, result)) {
@@ -130,12 +193,20 @@ app.all("/mcp", async (context) => {
       (id) => !!pluginRegistry.get(id),
     )
   ) {
+    await recordAudit(database, {
+      actor: agentId || "anonymous",
+      action: "mcp_auth",
+      resourceType: "agent",
+      resourceId: agentId,
+      outcome: "denied",
+    }).catch(() => undefined);
     return context.json({ error: "unauthorized" }, 401);
   }
   return handleMcpRequest(context.req.raw, {
     agentId,
     userId: process.env.API_USER_ID ?? "local-user",
     spaceId: process.env.API_SPACE_ID ?? "local-space",
+    allowedTools: pluginRegistry.get(agentId)?.descriptor.tools ?? [],
     pool,
   });
 });
@@ -143,8 +214,47 @@ app.all("/mcp", async (context) => {
 app.get("*", serveStatic({ root: "./frontend/dist" }));
 
 const port = Number(process.env.PORT ?? 3000);
+let worker: DurableRunWorker | undefined;
+let outbox: OutboxPublisher | undefined;
+if (runnerMode === "embedded" && runLedger) {
+  worker = new DurableRunWorker(
+    runLedger,
+    createWebTaskRunExecutor({ database, pluginRegistry, pool, runtime, catalog }),
+    {
+      workerId: process.env.WORKER_ID || `embedded-${process.pid}`,
+      leaseMs: positiveInt(process.env.WORKER_LEASE_MS, 30_000),
+      pollMs: positiveInt(process.env.WORKER_POLL_MS, 250),
+      concurrency: positiveInt(process.env.WORKER_CONCURRENCY, 4),
+    },
+  );
+  outbox = new OutboxPublisher(
+    database,
+    async (event) => {
+      process.stdout.write(
+        `${JSON.stringify({ message: "platform.outbox_published", outbox_id: event.id, run_id: event.run_id, event_type: event.event_type })}\n`,
+      );
+    },
+    { publisherId: `outbox-${process.pid}`, pollMs: positiveInt(process.env.OUTBOX_POLL_MS, 250) },
+  );
+  outbox.start();
+  worker.start();
+}
 serve({ fetch: app.fetch, port, hostname: "0.0.0.0" }, (info) => {
   process.stdout.write(`Team 6 cAi API listening on ${info.port}\n`);
 });
 
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    void outbox
+      ?.stop()
+      .finally(() => worker?.stop())
+      .finally(() => database.end());
+  });
+}
+
 export { app };
+
+function positiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}

@@ -1,9 +1,9 @@
 # Team 6 cAi
 
 VDaAgent là nền tảng agent phân tích dữ liệu theo hướng API-first. Repository này triển khai một
-modular monolith bằng TypeScript: Hono API lắp ráp agent và MCP tool, Pi Agent Core chạy vòng
-model/tool, PostgreSQL lưu trạng thái bền vững, Docker cung cấp sandbox, còn React cung cấp giao
-diện local để gửi yêu cầu và xem task, dataset, chart, report.
+modular monolith bằng TypeScript với durable worker: Hono API lắp ráp agent và MCP tool, PostgreSQL
+lưu run/task/event bền vững, worker thực thi Pi Agent Core và sandbox, còn React cung cấp giao diện
+local để gửi yêu cầu và xem task, dataset, chart, report.
 
 ## Chức năng hiện tại
 
@@ -44,6 +44,9 @@ khẩu trong `DATABASE_URL`. Điền `MODEL_API_KEY` cho provider/model đang d�
 hoặc đưa secret thật vào issue, log hay tài liệu. Nếu cần kết nối MCP trực tiếp, thay các
 `AGENT_TOKEN_*` placeholder bằng token riêng tương ứng; các token này không dùng trong browser.
 
+Có thể khai báo thêm model profile bằng `MODEL_PROFILES_JSON` (mảng JSON không chứa secret). Agent
+chọn profile qua manifest; credential vẫn chỉ nằm ở server-side environment hoặc secret manager.
+
 Khởi động PostgreSQL, API và frontend đã build:
 
 ```sh
@@ -58,8 +61,11 @@ docker compose ps
 docker compose logs -f api
 ```
 
-API container mount Docker socket của host để tạo sandbox container. Không tắt Docker khi chạy
-workflow cần sandbox. PostgreSQL dùng named volume `postgres-data`; lệnh `docker compose down`
+Bật stack quan sát tùy chọn bằng `docker compose --profile observability up -d`; xem
+[operations guide](docs/operations.md) để biết readiness, outbox, backup và session auth.
+
+Worker container mount Docker socket của host để tạo sandbox container; API không có host control
+path. Không tắt Docker khi chạy workflow cần sandbox. PostgreSQL dùng named volume `postgres-data`; lệnh `docker compose down`
 giữ dữ liệu. Chỉ dùng `docker compose down -v` khi chủ ý xóa toàn bộ database local.
 
 ### Frontend hot reload
@@ -80,10 +86,9 @@ Mở <http://localhost:5173>. Vite proxy các request `/api` và SSE tới API �
 - `/v1/*`: operator API; gửi `Authorization: Bearer <API_TOKEN>` để liệt kê agent/tool hoặc chạy agent.
 - `POST /mcp`: MCP Streamable HTTP; gửi `X-Agent-Id` và token riêng của agent.
 
-Frontend local hiện dùng `X-User-Id` làm user scope. Đây là cơ chế cho demo/local, chưa phải xác
-thực người dùng để mở internet công khai. Trước khi deploy public, cần gắn identity đã xác thực
-với user/space scope và cấu hình secret trong secret manager. Không đưa operator token, agent token
-hay provider key vào browser.
+Frontend local dùng `X-User-Id` trong demo mode. Public deployment phải bật `WEB_AUTH_MODE=session`,
+gắn identity provider/OIDC gateway với `web_users`, và cấu hình secret trong secret manager. Không
+đưa operator token, agent token hay provider key vào browser.
 
 Tham khảo contract, request/response, lỗi và ví dụ gọi tại [HTTP/MCP API](docs/api.md).
 
@@ -93,6 +98,11 @@ Agent đăng ký qua `AGENT_PLUGIN_MODULES`; MCP tool đăng ký qua `AGENT_TOOL
 khai báo input/output schema, prompt, guardrail và tool được phép. Quyền tool cần khớp manifest
 agent với allowlist/authorization của tool pool. Sau khi sửa module hoặc cấu hình, khởi động lại
 API để nạp thay đổi.
+
+Team chỉ viết Python có thể đăng ký qua `AGENT_EXTERNAL_MANIFESTS`. Host chạy agent Python bằng
+`agent-runner.v1` trong process riêng và bridge mọi tool/warehouse/agent call qua ToolPool, nên
+Python agent không cần biết TypeScript, PostgreSQL hay PiRuntime. Xem [Python Agent SDK](sdk/python/README.md)
+để bắt đầu.
 
 Memory riêng của agent và Pi session được lưu bền vững trong PostgreSQL, có scope theo space, user
 và agent; mỗi agent chỉ truy vấn được memory của chính nó trong scope đó. Dữ liệu không chỉ nằm

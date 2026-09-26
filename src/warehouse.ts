@@ -1,46 +1,36 @@
 import { Type } from "typebox";
 import type { McpPoolTool } from "./tool-pool.js";
 import type { PostgresWarehouseArtifacts } from "./warehouse-artifacts.js";
+import {
+  validateWarehouseAdapter,
+  type WarehouseAdapter,
+  type WarehouseSource,
+} from "./warehouse-contract.js";
 
-export interface WarehouseColumn {
-  name: string;
-  type: string;
-}
-
-export interface WarehouseTable {
-  name: string;
-  columns: WarehouseColumn[];
-  rows: Record<string, string | number | boolean | null>[];
-}
-
-export interface WarehouseProvider {
-  id: string;
-  name: string;
-  listTables(signal: AbortSignal): Promise<Array<{ name: string; rowCount: number }>>;
-  describeTable(name: string, signal: AbortSignal): Promise<WarehouseTable>;
-  query(
-    input: { table: string; columns?: string[]; limit: number },
-    signal: AbortSignal,
-  ): Promise<{
-    columns: WarehouseColumn[];
-    rows: Record<string, string | number | boolean | null>[];
-  }>;
-}
+export type {
+  WarehouseAdapter,
+  WarehouseColumn,
+  WarehouseSource,
+  WarehouseTable,
+} from "./warehouse-contract.js";
+export type WarehouseProvider = WarehouseAdapter;
 
 export class WarehouseRegistry {
   private readonly providers = new Map<string, WarehouseProvider>();
 
   register(provider: WarehouseProvider): void {
-    if (!/^[a-z0-9][a-z0-9._-]{0,127}$/.test(provider.id)) {
-      throw new Error(`Invalid warehouse id '${provider.id}'`);
-    }
+    validateWarehouseAdapter(provider);
     if (this.providers.has(provider.id))
       throw new Error(`Warehouse '${provider.id}' is already registered`);
     this.providers.set(provider.id, provider);
   }
 
-  list(): Array<{ id: string; name: string }> {
-    return [...this.providers.values()].map(({ id, name }) => ({ id, name }));
+  list(): WarehouseSource[] {
+    return [...this.providers.values()].map(({ id, name, capabilities }) => ({
+      id,
+      name,
+      capabilities: [...(capabilities ?? [])],
+    }));
   }
 
   get(id: string): WarehouseProvider {

@@ -5,6 +5,7 @@ export const agentPlugin = createAnalyticsAgent({
   name: "Report",
   description: "Writes and saves reports from comparison, insight, and visualization findings.",
   tools: ["warehouse.describe_dataset", "warehouse.get_dataset_rows", "warehouse.save_report"],
+  capabilities: ["dataset.report", "analytics", "pi"],
   system:
     "You are the Report specialist. Write a concise report from the supplied Compare, Insight, " +
     "and Visualize outputs. Include the exact persisted chart ID supplied by Visualize and the " +

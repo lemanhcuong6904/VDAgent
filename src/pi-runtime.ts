@@ -4,6 +4,8 @@ import { Agent } from "@earendil-works/pi-agent-core";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { type TSchema, Type } from "typebox";
 import { Value } from "typebox/value";
+import { createDefaultModelRegistry, type ModelRegistry } from "./model-registry.js";
+import type { Telemetry } from "./observability.js";
 import type { PiSessionScope, PiSessionStore } from "./pi-session-store.js";
 import type { ToolScope } from "./tool-pool.js";
 import { McpToolPool } from "./tool-pool.js";
@@ -12,8 +14,26 @@ const models = builtinModels();
 const MAX_CONTEXT_MESSAGES = 80;
 const MAX_TOOL_CALLS_PER_PROMPT = 8;
 
+export interface ModelUsageRecord {
+  runId?: string;
+  userId: string;
+  spaceId: string;
+  agentId: string;
+  provider: string;
+  model: string;
+  latencyMs: number;
+  metadata?: Record<string, unknown>;
+}
+
+export type UsageRecorder = (record: ModelUsageRecord) => Promise<void>;
+
 export class PiRuntime {
-  constructor(private readonly sessionStore: PiSessionStore) {}
+  constructor(
+    private readonly sessionStore: PiSessionStore,
+    private readonly modelRegistry: ModelRegistry = createDefaultModelRegistry(),
+    private readonly telemetry?: Telemetry,
+    private readonly usageRecorder?: UsageRecorder,
+  ) {}
 
   async prompt(input: {
     agentId: string;
@@ -22,19 +42,35 @@ export class PiRuntime {
     tools: readonly string[];
     scope: ToolScope;
     pool: McpToolPool;
+    modelProfile?: string;
   }): Promise<string> {
     input.scope.signal.throwIfAborted();
+    const span = this.telemetry?.startSpan("agent.model", input.scope.trace, {
+      agent: input.agentId,
+      model_profile: input.modelProfile ?? "default",
+    });
     const system = await withRelevantMemory(input);
-    const provider = process.env.PI_DEFAULT_PROVIDER ?? "openai";
-    const modelId = process.env.PI_DEFAULT_MODEL ?? "gpt-4o-mini";
+    const profile = input.modelProfile
+      ? this.modelRegistry.require(input.modelProfile)
+      : this.modelRegistry.defaultProfile();
+    const provider = profile?.provider ?? process.env.PI_DEFAULT_PROVIDER ?? "openai";
+    const modelId = profile?.model ?? process.env.PI_DEFAULT_MODEL ?? "gpt-4o-mini";
+    const startedAt = performance.now();
+    let outcome: "completed" | "failed" = "failed";
     const model = models.getModel(provider, modelId);
-    if (!model) throw new Error(`Unknown Pi model '${provider}/${modelId}'`);
+    if (!model) {
+      span?.end("error");
+      throw new Error(`Unknown Pi model '${provider}/${modelId}'`);
+    }
     const apiKey = process.env.MODEL_API_KEY?.trim();
-    if (!apiKey) throw new Error("Set MODEL_API_KEY to run Pi agents");
+    if (!apiKey) {
+      span?.end("error");
+      throw new Error("Set MODEL_API_KEY to run Pi agents");
+    }
     const allowed = new Set(input.tools);
     const selectedTools = input.pool
       .forAgent(input.agentId)
-      .filter((tool) => allowed.has(tool.name) || tool.alwaysAvailable);
+      .filter((tool) => allowed.has(tool.name));
     const toolNames = new Set<string>();
     const tools: AgentTool[] = selectedTools.map((tool) => {
       const name = toPiToolName(tool.name);
@@ -99,10 +135,17 @@ export class PiRuntime {
       if (activeAgent.state.errorMessage) throw new Error(activeAgent.state.errorMessage);
       const message = activeAgent.state.messages.at(-1);
       if (message?.role !== "assistant") throw new Error("Pi returned no assistant message");
-      return message.content
+      const output = message.content
         .filter((part) => part.type === "text")
         .map((part) => part.text)
         .join("");
+      span?.end("ok");
+      outcome = "completed";
+      return output;
+    } catch (error) {
+      span?.recordException(error);
+      span?.end("error");
+      throw error;
     } finally {
       try {
         if (abort) input.scope.signal.removeEventListener("abort", abort);
@@ -112,6 +155,16 @@ export class PiRuntime {
         }
       } finally {
         await session.release();
+        await this.usageRecorder?.({
+          runId: input.scope.runId,
+          userId: input.scope.userId,
+          spaceId: input.scope.spaceId,
+          agentId: input.agentId,
+          provider,
+          model: modelId,
+          latencyMs: Math.round(performance.now() - startedAt),
+          metadata: { outcome, model_profile: input.modelProfile ?? "default" },
+        }).catch(() => undefined);
       }
     }
   }

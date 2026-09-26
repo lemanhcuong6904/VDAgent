@@ -8,7 +8,7 @@ Một agent trong runtime hiện tại là một `AgentPlugin` tin cậy đượ
 | Trường | Bắt buộc | Ý nghĩa |
 | --- | --- | --- |
 | `descriptor.id` | Có | ID ổn định, dùng trong URL, session, scope tool và token agent. Chỉ dùng chữ thường, số, `.`, `_`, `-`; ký tự đầu là chữ/số; tối đa 128 ký tự. |
-| `descriptor.apiVersion` | Nên có | Hiện dùng `agent-plugin.v1`, để kiểm tra tương thích manifest. |
+| `descriptor.apiVersion` | Nên có | TypeScript mặc định dùng `agent-plugin.v1`; external manifest/Python dùng `agent-plugin.v2`. |
 | `descriptor.version` | Có | Phiên bản module, hiện chỉ kiểm tra không rỗng. Nên theo SemVer. |
 | `descriptor.name` | Có | Tên hiển thị của agent. |
 | `descriptor.description` | Có | Mô tả vai trò để developer/UI nhận biết. |
@@ -98,6 +98,45 @@ export const agentPlugin: AgentPlugin = {
 không gọi Pi. Nếu dùng Pi, runtime dùng chung provider/model cấu hình qua `PI_DEFAULT_PROVIDER`,
 `PI_DEFAULT_MODEL`, `MODEL_API_KEY`; agent không tự tạo SDK/provider riêng.
 
+## 2.1. Agent Python qua AgentRunner
+
+Team chỉ viết Python dùng `sdk/python`, không cần import TypeScript, PostgreSQL, PiRuntime hoặc
+private backend module. Host chạy một process Python riêng cho mỗi invocation và giao tiếp bằng
+protocol `agent-runner.v1` JSONL. Python agent chỉ nhận input/scope và gọi tool qua host bridge;
+ToolPool vẫn kiểm tra manifest, authorization, quota, timeout và trace ở mỗi call.
+
+```python
+from agent_platform import AgentContext, AgentManifest, serve
+
+
+class RevenueAgent:
+    manifest = AgentManifest(
+        id="team.python.revenue",
+        version="1.0.0",
+        name="Python Revenue",
+        description="Answers questions from verified warehouse data.",
+        capabilities=("warehouse.query",),
+        tools=("warehouse.list_sources", "warehouse.run_query"),
+        input_schema={
+            "type": "object",
+            "properties": {"prompt": {"type": "string", "minLength": 1}},
+            "required": ["prompt"],
+            "additionalProperties": False,
+        },
+    )
+
+    def run(self, value: dict, context: AgentContext) -> dict:
+        return {"prompt": value["prompt"], "sources": context.warehouse.list_sources()}
+
+
+if __name__ == "__main__":
+    serve(RevenueAgent())
+```
+
+Bridge messages `run`, `tool_call`, `tool_result`, `event`, `result` và `cancel` luôn có
+`protocol`, `request_id` và `call_id` khi cần. Process Python không nhận PostgreSQL/Docker
+credential; worker xử lý crash/retry/failure mà không làm API core chết.
+
 ## 3. Đưa agent vào AgentPool
 
 Thêm module vào `AGENT_PLUGIN_MODULES`, phân tách nhiều đường dẫn bằng dấu phẩy:
@@ -106,8 +145,15 @@ Thêm module vào `AGENT_PLUGIN_MODULES`, phân tách nhiều đường dẫn b�
 AGENT_PLUGIN_MODULES=src/agents/index.ts,src/agents/summary/index.ts
 ```
 
-Module phải export `agentPlugin` đơn hoặc `plugins: AgentPlugin[]`. Loader ở `src/registry.ts` import
-module và gọi `AgentPool.register`. ID trùng hoặc ID sai định dạng làm API khởi động thất bại.
+Module TypeScript phải export `agentPlugin` đơn hoặc `plugins: AgentPlugin[]`. Python dùng manifest
+JSON ngoài code và khai báo bằng `AGENT_EXTERNAL_MANIFESTS`:
+
+```dotenv
+AGENT_EXTERNAL_MANIFESTS=agents/python-revenue.json
+```
+
+Loader ở `src/registry.ts` validate cả hai loại manifest rồi gọi `AgentPool.register`. ID trùng,
+ID sai định dạng hoặc protocol command thiếu làm agent bị từ chối trước khi nhận traffic.
 Compose mặc định dùng `src/agents/index.ts`, nơi hiện đăng ký `orchestrator`, `data`, `compare`,
 `insight`, `visualize`, `report`. Mỗi agent có thư mục riêng dưới `src/agents/`; logic workflow dùng chung nằm
 ở `src/agents/analytics.ts`. Chỉ thay `AGENT_PLUGIN_MODULES` có thể vô tình bỏ roster mặc định,
@@ -150,9 +196,15 @@ nhận `422`; agent không tồn tại nhận `404`; session Pi đang bận nh�
 
 Trong workflow chat, người dùng gửi nội dung qua `POST /api/agents/{agent}/messages`; nội dung
 được đưa vào plugin dưới dạng input `{ prompt: content }`. Agent xuất hiện trong roster UI khi đã
-được đăng ký lúc startup. Nếu orchestrator cần gọi specialist, cập nhật logic workflow và cấp
-`agents.delegate` trong manifest của orchestrator. Specialist đích vẫn phải tồn tại trong
-AgentPool. Công cụ delegate gọi plugin qua backend và tạo invocation con trong task tree.
+được đăng ký lúc startup. `agents.delegate` vẫn là đường sync tương thích cho workflow hiện tại;
+`agents.send` tạo child run durable để worker khác có thể tiếp tục, còn `agents.wait/result` đọc
+trạng thái và output đã persist.
+
+Agent team viết Python dùng các tool `agents.catalog`, `agents.send`, `agents.wait` và
+`agents.result` trong manifest. `send` tạo child run durable và trả `runId`; `wait/result` chỉ đọc
+run cùng `userId`, `spaceId` và task, nên agent không thể dò hoặc gọi agent ngoài tenant. Policy host
+kiểm tra allowed edge, capability, depth, fan-out, kích thước message và quota trước khi enqueue.
+Không gọi module TypeScript hoặc database trực tiếp để trao đổi giữa agent.
 
 Agent thử nghiệm phải dùng fixture test riêng, không được đưa vào roster production; workflow tổng
 hợp thuộc logic điều phối của `orchestrator`.

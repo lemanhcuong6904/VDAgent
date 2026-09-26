@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import type { AgentContext, AgentPlugin } from "../agent-contract.js";
+import { buildCapabilityPlan, type PlanSpec, proposeCapabilityPlan } from "../planner.js";
 
 const input = Type.Object({ prompt: Type.String({ minLength: 1, maxLength: 4000 }) });
 
@@ -9,6 +10,8 @@ export type AnalyticsAgentConfig = {
   description: string;
   tools: string[];
   system: string;
+  capabilities?: string[];
+  modelProfile?: string;
 };
 
 export function createAnalyticsAgent(config: AnalyticsAgentConfig): AgentPlugin {
@@ -19,7 +22,9 @@ export function createAnalyticsAgent(config: AnalyticsAgentConfig): AgentPlugin 
       name: config.name,
       description: config.description,
       apiVersion: "agent-plugin.v1",
-      capabilities: ["pi", "durable-memory", "docker-sandbox"],
+      capabilities: config.capabilities ?? [config.id, "analytics", "pi"],
+      modelProfile: config.modelProfile,
+      acceptsDelegation: config.id !== "orchestrator",
       input,
       output: Type.String(),
       guardrails: [
@@ -30,12 +35,13 @@ export function createAnalyticsAgent(config: AnalyticsAgentConfig): AgentPlugin 
     },
     async run(value, context) {
       const prompt = (value as { prompt: string }).prompt;
-      if (
-        config.id === "orchestrator" &&
-        isAnalyticsRequest(prompt) &&
-        (context.depth ?? 0) === 0
-      ) {
-        return runAnalyticsWorkflow(context, prompt, config.system);
+      if (config.id === "orchestrator" && (context.depth ?? 0) === 0) {
+        if (context.catalog) {
+          const plan = await createPlan(context, prompt);
+          if (plan) return runPlannedWorkflow(context, prompt, config.system, plan);
+        } else if (isAnalyticsRequest(prompt)) {
+          return runAnalyticsWorkflow(context, prompt, config.system);
+        }
       }
       let verifiedEvidence: unknown;
       if (config.id === "data") {
@@ -57,6 +63,7 @@ export function createAnalyticsAgent(config: AnalyticsAgentConfig): AgentPlugin 
             ? `${prompt}\n\nVerified warehouse evidence: ${JSON.stringify(verifiedEvidence)}`
             : prompt,
           tools: context.tools.map(({ name }) => name),
+          modelProfile: context.modelProfile ?? config.modelProfile,
           scope: runtimeScope(context),
           pool: context.pool,
         });
@@ -74,6 +81,68 @@ export function createAnalyticsAgent(config: AnalyticsAgentConfig): AgentPlugin 
       return datasetId ? `${response}\n\nPersisted dataset: ${datasetId}` : response;
     },
   };
+}
+
+async function createPlan(context: AgentContext, prompt: string): Promise<PlanSpec | undefined> {
+  const heuristic = () =>
+    buildCapabilityPlan(prompt, context.catalog as NonNullable<AgentContext["catalog"]>);
+  if (process.env.PLANNER_MODE === "heuristic") return heuristic();
+  try {
+    const proposed = await proposeCapabilityPlan(
+      prompt,
+      context.catalog as NonNullable<AgentContext["catalog"]>,
+      (catalog) =>
+        context.runtime.prompt({
+          agentId: "orchestrator",
+          system:
+            "You are a typed workflow planner. Return only JSON matching plan.v1. " +
+            "Choose capabilities from the catalog, use a bounded DAG, and request clarification " +
+            "when the question cannot be grounded in available capabilities. Never invent agent IDs.",
+          prompt: `${prompt}\n\nAgent capability catalog:\n${catalog}`,
+          tools: [],
+          scope: runtimeScope(context),
+          pool: context.pool,
+        }),
+    );
+    return proposed ?? heuristic();
+  } catch {
+    return heuristic();
+  }
+}
+
+async function runPlannedWorkflow(
+  context: AgentContext,
+  prompt: string,
+  system: string,
+  plan: PlanSpec,
+): Promise<string> {
+  const results: string[] = [];
+  for (const step of plan.steps) {
+    const previous = results.length ? `\n\nPrevious step results:\n${results.join("\n\n")}` : "";
+    const result = stringifyResult(
+      await delegateToCapability(
+        context,
+        step.capability,
+        `${prompt}\n\nYou are step '${step.id}' in a typed plan. Return only evidence and a concise result.` +
+          previous,
+      ),
+    );
+    results.push(`[${step.capability}]\n${result}`);
+    if (step.capability === "warehouse.query" && !/\bds_[a-zA-Z0-9]{12}\b/.test(result)) {
+      break;
+    }
+  }
+  const answer = await context.runtime.prompt({
+    agentId: "orchestrator",
+    system:
+      `${system}\n\nUse only evidence in the persisted plan results below. Do not invent artifacts or ` +
+      "claim a step ran when it returned an error. State missing data/capability plainly.",
+    prompt: `${prompt}\n\nPlan: ${JSON.stringify(plan)}\n\nResults:\n${results.join("\n\n")}`,
+    tools: [],
+    scope: runtimeScope(context),
+    pool: context.pool,
+  });
+  return sanitizeFinalAnswer(answer, results);
 }
 
 async function runAnalyticsWorkflow(
@@ -329,6 +398,19 @@ function delegateTo(context: AgentContext, agent: string, message: string): Prom
   );
 }
 
+function delegateToCapability(
+  context: AgentContext,
+  capability: string,
+  message: string,
+): Promise<unknown> {
+  return context.pool.call(
+    "agents.delegate",
+    { capability, message },
+    runtimeScope(context),
+    "orchestrator",
+  );
+}
+
 function stringifyResult(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
@@ -375,6 +457,7 @@ async function prepareNamedTable(context: AgentContext, prompt: string): Promise
     taskId: context.taskId,
     depth: context.depth,
     publish: context.publish,
+    trace: context.trace,
     signal: context.signal,
   };
   const sources = (await context.pool.call("warehouse.list_sources", {}, scope, "data")) as {

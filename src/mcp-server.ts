@@ -5,7 +5,13 @@ import { McpToolPool } from "./tool-pool.js";
 
 export async function handleMcpRequest(
   request: Request,
-  input: { agentId: string; userId: string; spaceId: string; pool: McpToolPool },
+  input: {
+    agentId: string;
+    userId: string;
+    spaceId: string;
+    allowedTools: readonly string[];
+    pool: McpToolPool;
+  },
 ): Promise<Response> {
   const server = new Server(
     { name: "team-6-cai", version: "0.1.0" },
@@ -13,12 +19,15 @@ export async function handleMcpRequest(
   );
   const scope = { userId: input.userId, spaceId: input.spaceId, signal: request.signal };
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: input.pool.forAgent(input.agentId).map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.schema as Record<string, unknown>,
-      annotations: { readOnlyHint: !tool.mutates },
-    })),
+    tools: input.pool
+      .forAgent(input.agentId)
+      .filter(({ name }) => input.allowedTools.includes(name))
+      .map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.schema as Record<string, unknown>,
+        annotations: { readOnlyHint: !tool.mutates },
+      })),
   }));
   server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
     try {
@@ -27,6 +36,7 @@ export async function handleMcpRequest(
         params.arguments ?? {},
         scope,
         input.agentId,
+        input.allowedTools,
       );
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
     } catch (error) {
