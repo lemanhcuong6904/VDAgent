@@ -36,11 +36,11 @@ Nguyên tắc bất biến:
 | Agent nói chuyện với agent | `agents.catalog`, `delegate`, `send`, `wait`, `result` và artifact references; mọi edge đều qua policy. | Parent/child run, trace, quota, depth/fan-out, payload limit và durable delivery được kiểm chứng; không có direct unrestricted mesh. |
 | Thêm agent không ảnh hưởng core | Registry version, validation, quarantine, canary, tenant feature flag, promote/rollback/disable. | Thêm package + manifest + tests không sửa route/core schema; agent lỗi có thể rollback độc lập và run cũ giữ audit/output. |
 
-Đây là boundary bắt buộc của thiết kế. Code scaffold hiện tại đã có các contract, capability catalog,
-heuristic planner, model profile, telemetry và ledger primitives; các primitive đó chưa chứng minh
-được worker isolation, model-backed planning, durable event replay, auth thật, sandbox boundary hay
-multi-warehouse production conformance. Vì vậy không đánh dấu platform-ready trước khi các gate ở
-phần 9-12 có bằng chứng test và vận hành.
+Đây là boundary bắt buộc của thiết kế. Code hiện tại đã có contract, capability catalog, heuristic
+planner, model profile, telemetry, ledger, local session auth, event cursor replay và worker sandbox
+boundary. Những phần này chưa chứng minh được worker kill/recovery, OIDC provisioning, model-backed
+planning parity, backup/load evidence hay multi-warehouse production conformance. Vì vậy không đánh
+dấu platform-ready trước khi các gate ở phần 9-12 có bằng chứng test và vận hành.
 
 ## 1. Baseline hiện tại
 
@@ -559,7 +559,7 @@ vận hành có thể lặp lại.
 
 | Phase | Trạng thái hiện tại | Bằng chứng trong repository | Còn thiếu để hoàn tất phase |
 | --- | --- | --- | --- |
-| P0 Baseline/CI | `Done (local gates)` | `pnpm check`, `pnpm lint`, `pnpm test`, frontend build; unit tests cho runtime/security/warehouse. | Chạy integration suites với database test riêng và workload baseline có giới hạn chi phí. |
+| P0 Baseline/CI | `Done (local + integration smoke)` | `pnpm check`, `pnpm lint`, `pnpm test`, frontend build; unit tests runtime/security/warehouse; `agent-memory` và `analytics-e2e` pass trên database tạm riêng của Compose. | Workload baseline có giới hạn chi phí và SLO vẫn chưa được đo. |
 | P1 Registry/capability | `Partial` | `src/registry.ts`, `src/model-registry.ts`, `src/workflow.ts`, `src/warehouse-contract.ts`, `src/agent-sdk.ts`, `src/agent-runner.ts`; tests registry/planner/warehouse/runner. | Hai adapter production-like cùng conformance suite; quarantine/canary/rollback và CI kiểm import private API. |
 | P2 PiRuntime/Python planner | `Partial` | `src/planner.ts` validate `plan.v1`; `src/agents/analytics.ts` model proposal + fallback; `sdk/python`; A2A tools và runner tests. | Internal Pi protocol service, LangGraph/Langfuse integration, full output parity và restart/cancel contract test. |
 | P3 Ledger/worker/recovery | `Partial` | Migrations `006`-`010`; `src/run-ledger.ts`, `src/run-worker.ts`, `src/outbox.ts`, `db/migrations/009_web_event_cursor.sql`; unit tests worker/outbox/SSE cursor code. | PostgreSQL integration test kill/reclaim, stale fence, duplicate side effect, DB restart và rolling deploy. |
