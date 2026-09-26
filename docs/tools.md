@@ -113,7 +113,8 @@ AGENT_TOOL_MODULES=src/tools/warehouse.ts,src/tools/inventory.ts
 
 Nếu cấu hình biến này, liệt kê module warehouse hiện tại nếu vẫn cần chúng. Startup cũng tự gắn các
 tool nền tảng `memory.*`, `sandbox.execute` (trừ khi `SANDBOX_PROVIDER=none`) và
-`agents.delegate`; không đăng ký lại tên đó trong module riêng.
+`agents.catalog`, `agents.delegate`, `agents.send`, `agents.wait`, `agents.result`; không đăng ký
+lại tên đó trong module riêng.
 
 ## 4. Cho agent nhận tool
 

@@ -22,6 +22,7 @@ Dockerfile hoặc Compose mà không cập nhật startup/test/deploy.
 │   ├── tools/               # MCP tools và tool pool modules
 │   ├── providers/warehouse/ # Warehouse provider; hiện có mock adapter
 │   ├── agent-contract.ts    # AgentPlugin và AgentContext
+│   ├── agent-sdk.ts         # Stable TypeScript ports cho team agent
 │   ├── registry.ts          # AgentPool và startup module loader
 │   ├── tool-pool.ts         # MCP tool contract và authorization
 │   ├── pi-runtime.ts        # Pi Agent Core adapter
@@ -44,7 +45,7 @@ Dockerfile hoặc Compose mà không cập nhật startup/test/deploy.
 ├── package.json            # Backend scripts/dependencies
 ├── frontend/package.json   # Frontend dependencies/scripts
 ├── Dockerfile              # Build frontend và đóng gói API runtime
-└── docker-compose.yml      # API + PostgreSQL local và Docker socket cho sandbox
+└── docker-compose.yml      # API + worker + PostgreSQL local; worker giữ sandbox control path
 ```
 
 ## Ownership theo thư mục đang có
@@ -52,6 +53,7 @@ Dockerfile hoặc Compose mà không cập nhật startup/test/deploy.
 | Vùng | Team chịu trách nhiệm | Có thể sửa | Cần phối hợp khi |
 | --- | --- | --- | --- |
 | `src/agent-contract.ts`, `src/registry.ts` | Platform/agent runtime | Contract và loader agent | Thêm field/thay đổi lifecycle ảnh hưởng mọi plugin hoặc API consumer. |
+| `src/agent-sdk.ts`, `sdk/python/` | Platform/agent runtime | Public agent ports và Python reference SDK | Đổi protocol, scope, tool bridge hoặc compatibility của team agent. |
 | `src/agents/<agent>/`, `src/agents/analytics.ts` | Agent workflow | Prompt, schema, manifest, logic của agent thuộc team | Đổi delegation, roster mặc định, input contract public hoặc output UI. |
 | `src/tool-pool.ts`, `src/mcp-server.ts`, `src/mcp-client-tool.ts` | Platform/tools | Pool policy, MCP boundary, adapter | Đổi schema/policy/cấp quyền hoặc tương thích MCP. |
 | `src/tools/` | Team domain/integration tương ứng | Tool schema, service adapter, test của integration | Tool dùng chung, thay permission/schema hoặc tạo migration. |
@@ -111,7 +113,7 @@ Dockerfile, tests và module paths:
 ```text
 packages/
 ├── contracts/               # Agent/tool/warehouse/sandbox contracts và JSON schemas
-├── agent-sdk/                # Helpers để tạo plugin theo contract; không sở hữu orchestration
+├── agent-sdk/                # Stable ports/helpers cho team agent; không sở hữu orchestration
 ├── tool-sdk/                 # Helpers/schema cho MCP tool authoring
 └── testkit/                  # Fake Pi/database/warehouse và conformance fixtures offline
 apps/

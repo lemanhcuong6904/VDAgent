@@ -7,7 +7,12 @@ hướng dẫn bắt đầu nhanh; trang này giúp tìm tài liệu theo công 
 
 - Khởi động nhanh, cấu hình môi trường và lệnh kiểm tra: [README](../README.md).
 - Luồng dữ liệu, memory, sandbox, scale và deploy: [Kiến trúc](architecture.md).
+- Vận hành, backup, worker/outbox và recovery: [Operations](operations.md).
+- Ranh giới auth, rate limit, audit và sandbox: [Security](security.md).
+- Kế hoạch refactor lên platform mở rộng, dynamic planner và durable runtime: [PLAN](../PLAN.md).
+- Lộ trình học hỏi từ Pi, sandbox và agent runtime OSS: [Research adoption plan](research-adoption-plan.md).
 - Tạo agent plugin, prompt, guardrail, input/output schema và đăng ký roster: [Agent guide](agents.md).
+- Viết agent Python hoặc process-isolated agent qua JSONL: [AgentRunner protocol](agent-runner.md).
 - Viết MCP tool, đăng ký tool pool và cấp quyền cho từng agent: [MCP tool guide](tools.md).
 - Gọi HTTP/MCP API, headers, payload, event và lỗi: [API reference](api.md).
 - Quyền sở hữu file và phân chia vùng làm việc: [Folder ownership](folder-ownership.md).
@@ -21,9 +26,10 @@ HTTP endpoint để upload module, tạo agent/tool động hoặc sửa quyền
 `GET /v1/tools` chỉ đọc registry; `POST /v1/agents/{id}/run` gọi một agent đã đăng ký. Không gửi
 source code hoặc credential provider từ model/browser.
 
-Kiến trúc là modular monolith: một API process lắp ráp sáu agent mặc định và tool pool; PostgreSQL
-lưu task, invocation, chat, Pi session, memory và artifact; Docker chạy sandbox. Xem
-[architecture](architecture.md) để phân biệt khả năng hiện có với hướng nâng cấp scale.
+Kiến trúc là modular monolith có durable worker boundary: API lắp ráp sáu agent mặc định và tool
+pool, ghi task/run vào PostgreSQL, còn worker claim run bằng lease/fencing; Docker chạy sandbox trên
+worker. PostgreSQL lưu task, invocation, run, event, Pi session, memory, usage và artifact. Xem
+[architecture](architecture.md) để phân biệt khả năng hiện có với các gate vận hành còn cần kiểm chứng.
 
 ## Chạy local
 
