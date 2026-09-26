@@ -11,8 +11,8 @@ const RECONNECT_DELAY_MS = 3000;
 const REPORT_ID = /\brp_[0-9a-f]{12}\b/;
 
 /**
- * One EventSource per selected user. Every (re)open invalidates all queries, because events
- * are not replayed (spec §10); each event is fed to `applyEvent`.
+ * One EventSource per selected user. The server persists a per-user cursor, so reconnects
+ * request events after the last event applied by this browser.
  */
 export function useEventStream(userId: string | null): StreamState {
   const queryClient = useQueryClient();
@@ -23,9 +23,11 @@ export function useEventStream(userId: string | null): StreamState {
     let source: EventSource | null = null;
     let retryTimer: number | undefined;
     let disposed = false;
+    let cursor = 0;
 
     const connect = () => {
-      const es = new EventSource(`/api/events?user_id=${encodeURIComponent(userId)}`);
+      const url = `/api/events?user_id=${encodeURIComponent(userId)}&after=${cursor}`;
+      const es = new EventSource(url);
       source = es;
       es.onopen = () => {
         setState("open");
@@ -50,6 +52,8 @@ export function useEventStream(userId: string | null): StreamState {
             return;
           }
           const ev = { event: name, data } as ServerEvent;
+          const eventId = Number((msg as MessageEvent<string>).lastEventId);
+          if (Number.isSafeInteger(eventId) && eventId > cursor) cursor = eventId;
           applyEvent(queryClient, ev);
           // Reports are not part of the event protocol; refresh the list when one is mentioned.
           if (ev.event === "message.appended" && REPORT_ID.test(ev.data.message.content)) {
