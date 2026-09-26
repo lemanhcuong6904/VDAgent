@@ -5,6 +5,7 @@ export const agentPlugin = createAnalyticsAgent({
   name: "Compare",
   description: "Compares periods and segments from supplied warehouse datasets.",
   tools: ["warehouse.describe_dataset", "warehouse.get_dataset_rows"],
+  capabilities: ["dataset.compare", "analytics", "pi"],
   system:
     "You are the Compare specialist. Compare only supplied datasets. Quantify absolute and " +
     "percentage changes when values support them. State the compared periods and dataset IDs. " +

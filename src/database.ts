@@ -10,6 +10,10 @@ const MIGRATIONS = [
   { version: "003_invocation_tree", url: "../db/migrations/003_invocation_tree.sql" },
   { version: "004_agent_memory_search", url: "../db/migrations/004_agent_memory_search.sql" },
   { version: "005_agent_memory_lifecycle", url: "../db/migrations/005_agent_memory_lifecycle.sql" },
+  { version: "006_platform_runtime", url: "../db/migrations/006_platform_runtime.sql" },
+  { version: "007_durable_web_runs", url: "../db/migrations/007_durable_web_runs.sql" },
+  { version: "008_agent_message_runs", url: "../db/migrations/008_agent_message_runs.sql" },
+  { version: "009_web_event_cursor", url: "../db/migrations/009_web_event_cursor.sql" },
 ];
 const MIGRATION_LOCK_KEY = 6_041_002;
 

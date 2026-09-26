@@ -117,7 +117,9 @@ export class PostgresPiSessionStore implements PiSessionStore {
         [lockKey],
       );
       if (lock.rows[0]?.locked !== true) throw new PiSessionBusyError();
-      return new PostgresPiSessionLease(client, scope, lockKey);
+      const lease = new PostgresPiSessionLease(client, scope, lockKey);
+      lease.attachConnectionErrorHandler();
+      return lease;
     } catch (error) {
       client.release();
       throw error;
@@ -127,12 +129,19 @@ export class PostgresPiSessionStore implements PiSessionStore {
 
 class PostgresPiSessionLease implements PiSessionLease {
   private released = false;
+  private connectionError: Error | undefined;
 
   constructor(
     private readonly client: PoolClient,
     private readonly scope: PiSessionScope,
     private readonly lockKey: string,
   ) {}
+
+  attachConnectionErrorHandler() {
+    this.client.on("error", (error: Error) => {
+      this.connectionError = error;
+    });
+  }
 
   async load(): Promise<PiSessionSnapshot> {
     this.assertOpen();
@@ -186,9 +195,13 @@ class PostgresPiSessionLease implements PiSessionLease {
     if (this.released) return;
     this.released = true;
     try {
-      await this.client.query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [this.lockKey]);
+      if (!this.connectionError) {
+        await this.client.query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [
+          this.lockKey,
+        ]);
+      }
     } finally {
-      this.client.release();
+      this.client.release(this.connectionError);
     }
   }
 

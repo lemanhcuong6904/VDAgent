@@ -1,0 +1,23 @@
+{
+  "apiVersion": "agent-plugin.v2",
+  "id": "example.python.sender",
+  "version": "1.0.0",
+  "name": "Python A2A sender",
+  "description": "Sends a durable message to another Python agent.",
+  "capabilities": ["example.a2a.sender"],
+  "tools": ["agents.send", "agents.wait", "agents.result"],
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "prompt": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4000
+      }
+    },
+    "required": ["prompt"],
+    "additionalProperties": false
+  },
+  "command": "python3",
+  "args": ["/app/sdk/python/examples/a2a_sender.py"]
+}

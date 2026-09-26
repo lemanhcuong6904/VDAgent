@@ -12,6 +12,7 @@ export const agentPlugin = createAnalyticsAgent({
     "warehouse.describe_dataset",
     "warehouse.get_dataset_rows",
   ],
+  capabilities: ["warehouse.discovery", "warehouse.query", "dataset.create", "analytics", "pi"],
   system:
     "You are the Data specialist. Use the warehouse tools; a table name is never a dataset ID. " +
     "When verified evidence is supplied, cite its exact dataset_id and do not replace it with " +

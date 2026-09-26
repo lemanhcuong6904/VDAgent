@@ -8,11 +8,34 @@ services:
       MODEL_API_KEY: ${MODEL_API_KEY:-}
       AGENT_PLUGIN_MODULES: ${AGENT_PLUGIN_MODULES:-src/agents/index.ts}
       AGENT_TOOL_MODULES: ${AGENT_TOOL_MODULES:-src/tools/warehouse.ts}
+      AGENT_EXTERNAL_MANIFESTS: ${AGENT_EXTERNAL_MANIFESTS:-}
+      PYTHONPATH: /app/sdk/python
+      PLATFORM_RUNNER_MODE: api
+      AGENT_A2A_ALLOWED_EDGES: ${AGENT_A2A_ALLOWED_EDGES:-}
     depends_on:
       database:
         condition: service_healthy
     ports:
       - "127.0.0.1:3000:3000"
+  worker:
+    build: .
+    command: pnpm worker
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      MODEL_API_KEY: ${MODEL_API_KEY:-}
+      AGENT_PLUGIN_MODULES: ${AGENT_PLUGIN_MODULES:-src/agents/index.ts}
+      AGENT_TOOL_MODULES: ${AGENT_TOOL_MODULES:-src/tools/warehouse.ts}
+      AGENT_EXTERNAL_MANIFESTS: ${AGENT_EXTERNAL_MANIFESTS:-}
+      PYTHONPATH: /app/sdk/python
+      PLATFORM_RUNNER_MODE: worker
+      WORKER_ID: ${WORKER_ID:-}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      AGENT_A2A_ALLOWED_EDGES: ${AGENT_A2A_ALLOWED_EDGES:-}
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 

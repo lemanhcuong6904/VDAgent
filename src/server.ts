@@ -1,20 +1,17 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { Pool } from "pg";
 import { Value } from "typebox/value";
 import { isAuthorizedAgent } from "./agent-auth.js";
 import { migrateDatabase } from "./database.js";
-import { DockerSandboxProvider } from "./docker-sandbox.js";
 import { handleMcpRequest } from "./mcp-server.js";
-import { createAgentMemoryTools } from "./memory-store.js";
-import { PiRuntime } from "./pi-runtime.js";
-import { PostgresAgentMemoryProvider, PostgresPiSessionStore } from "./postgres-store.js";
-import { loadAgentPool } from "./registry.js";
-import { createSandboxTool, selectSandboxProvider } from "./sandbox.js";
-import { loadToolPool } from "./tool-pool.js";
-import { createAgentDelegationTool } from "./tools/agent-delegation.js";
-import { registerWebApi } from "./web-api.js";
+import { newTraceContext } from "./observability.js";
+import { loadPlatformServices } from "./platform-services.js";
+import { RunLedger } from "./run-ledger.js";
+import { DurableRunWorker } from "./run-worker.js";
+import { createWebTaskRunExecutor, reconcileInterruptedTasks, registerWebApi } from "./web-api.js";
 
 const token = process.env.API_TOKEN;
 if (!token) throw new Error("API_TOKEN is required");
@@ -26,33 +23,28 @@ database.on("error", (error) => {
   process.stderr.write(`PostgreSQL pool error: ${error.message}\n`);
 });
 await migrateDatabase(database);
-
-const moduleList = (key: string) =>
-  (process.env[key] ?? "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-const toolModules = moduleList("AGENT_TOOL_MODULES");
-const pool = await loadToolPool(toolModules.length ? toolModules : ["src/tools/warehouse.ts"], {
-  database,
-});
-for (const tool of createAgentMemoryTools(new PostgresAgentMemoryProvider(database))) {
-  pool.register(tool);
+const runnerMode = process.env.PLATFORM_RUNNER_MODE ?? "embedded";
+if (!["embedded", "api", "legacy"].includes(runnerMode)) {
+  throw new Error("PLATFORM_RUNNER_MODE must be embedded, api, or legacy");
 }
-const sandboxProviderId = process.env.SANDBOX_PROVIDER ?? "docker";
-const sandboxProvider = selectSandboxProvider(sandboxProviderId, new DockerSandboxProvider());
-if (sandboxProvider) pool.register(createSandboxTool(sandboxProvider));
-const runtime = new PiRuntime(new PostgresPiSessionStore(database));
-const pluginModules = moduleList("AGENT_PLUGIN_MODULES");
-const pluginRegistry = await loadAgentPool(
-  pluginModules.length ? pluginModules : ["src/agents/index.ts"],
-);
-pool.register(createAgentDelegationTool({ database, pluginRegistry, pool, runtime }));
+const services = await loadPlatformServices(database);
+const { pool, runtime, pluginRegistry, catalog } = services;
+const runLedger = runnerMode === "legacy" ? undefined : new RunLedger(database);
+if (runnerMode === "legacy") {
+  await reconcileInterruptedTasks(database);
+}
 
 const app = new Hono();
+app.use("*", bodyLimit({ maxSize: 1_000_000 }));
 app.get("/health", (context) => context.json({ status: "ok" }));
-registerWebApi(app, { database, pluginRegistry, pool, runtime });
+registerWebApi(app, {
+  database,
+  pluginRegistry,
+  pool,
+  runtime,
+  catalog,
+  runLedger,
+});
 
 app.use("/v1/*", async (context, next) => {
   if (context.req.header("authorization") !== `Bearer ${token}`) {
@@ -64,12 +56,17 @@ app.use("/v1/*", async (context, next) => {
 app.get("/v1/agents", (context) => context.json(pluginRegistry.list()));
 app.get("/v1/tools", (context) => {
   const agentId = context.req.header("x-agent-id") ?? "";
+  const agent = pluginRegistry.get(agentId);
+  if (!agent) return context.json({ error: "unknown agent" }, 404);
   return context.json(
-    pool.forAgent(agentId).map(({ name, description, schema }) => ({
-      name,
-      description,
-      inputSchema: schema,
-    })),
+    pool
+      .forAgent(agentId)
+      .filter(({ name }) => agent.descriptor.tools.includes(name))
+      .map(({ name, description, schema }) => ({
+        name,
+        description,
+        inputSchema: schema,
+      })),
   );
 });
 app.post("/v1/agents/:agentId/run", async (context) => {
@@ -103,6 +100,8 @@ app.post("/v1/agents/:agentId/run", async (context) => {
       signal: controller.signal,
       tools: pool.forNames(plugin.descriptor.tools),
       runtime,
+      catalog: pluginRegistry.plannerCatalog(),
+      trace: newTraceContext(),
       pool,
     });
     if (plugin.descriptor.output && !Value.Check(plugin.descriptor.output, result)) {
@@ -136,6 +135,7 @@ app.all("/mcp", async (context) => {
     agentId,
     userId: process.env.API_USER_ID ?? "local-user",
     spaceId: process.env.API_SPACE_ID ?? "local-space",
+    allowedTools: pluginRegistry.get(agentId)?.descriptor.tools ?? [],
     pool,
   });
 });
@@ -143,8 +143,33 @@ app.all("/mcp", async (context) => {
 app.get("*", serveStatic({ root: "./frontend/dist" }));
 
 const port = Number(process.env.PORT ?? 3000);
+let worker: DurableRunWorker | undefined;
+if (runnerMode === "embedded" && runLedger) {
+  worker = new DurableRunWorker(
+    runLedger,
+    createWebTaskRunExecutor({ database, pluginRegistry, pool, runtime, catalog }),
+    {
+      workerId: process.env.WORKER_ID || `embedded-${process.pid}`,
+      leaseMs: positiveInt(process.env.WORKER_LEASE_MS, 30_000),
+      pollMs: positiveInt(process.env.WORKER_POLL_MS, 250),
+      concurrency: positiveInt(process.env.WORKER_CONCURRENCY, 4),
+    },
+  );
+  worker.start();
+}
 serve({ fetch: app.fetch, port, hostname: "0.0.0.0" }, (info) => {
   process.stdout.write(`Team 6 cAi API listening on ${info.port}\n`);
 });
 
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    void worker?.stop().finally(() => database.end());
+  });
+}
+
 export { app };
+
+function positiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}

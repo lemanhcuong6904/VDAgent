@@ -174,6 +174,39 @@ describe("built-in analytics agents", () => {
     expect(answer).toContain("ds_123456789abc");
   });
 
+  it("plans through capabilities when a catalog is available", async () => {
+    const agents = await loadAgentPool(["src/agents/index.ts"]);
+    const agent = agents.get("orchestrator");
+    const delegated: string[] = [];
+    const context = {
+      userId: "user-1",
+      spaceId: "space-1",
+      sessionId: "session-1",
+      runId: "run-1",
+      taskId: "task-1",
+      depth: 0,
+      signal: new AbortController().signal,
+      catalog: agents.plannerCatalog(),
+      tools: agent?.descriptor.tools.map((name) => ({ name }) as McpPoolTool) ?? [],
+      pool: {
+        async call(_name: string, input: { capability: string }) {
+          delegated.push(input.capability);
+          if (input.capability === "warehouse.query") return "dataset ds_123456789abc";
+          return `result for ${input.capability}`;
+        },
+      },
+      runtime: {
+        async prompt() {
+          return "Revenue increased; ds_123456789abc";
+        },
+      },
+    } as unknown as AgentContext;
+
+    await agent?.run({ prompt: "Compare revenue and explain the trend" }, context);
+
+    expect(delegated).toEqual(["warehouse.query", "dataset.compare", "dataset.insight"]);
+  });
+
   it("persists a concise fallback report when Pi cannot finish the Report turn", async () => {
     const agents = await loadAgentPool(["src/agents/index.ts"]);
     const agent = agents.get("report");

@@ -10,6 +10,7 @@ export interface SimpleAgentDefinition {
   inputSchema: TSchema;
   outputSchema?: TSchema;
   capabilities?: readonly string[];
+  modelProfile?: string;
   guardrails?: readonly string[];
   tools?: readonly string[];
   prompt?: (input: unknown) => string;
@@ -39,6 +40,7 @@ export function defineAgent(definition: SimpleAgentDefinition): AgentPlugin {
         system: definition.systemPrompt,
         prompt: definition.prompt ? definition.prompt(input) : JSON.stringify(input),
         tools: context.tools.map(({ name }) => name),
+        modelProfile: context.modelProfile ?? definition.modelProfile,
         scope: {
           userId: context.userId,
           spaceId: context.spaceId,

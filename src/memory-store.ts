@@ -21,7 +21,6 @@ export function createAgentMemoryTools(store: AgentMemoryProvider): McpPoolTool[
         tags: Type.Optional(Type.Array(Type.String({ maxLength: 64 }), { maxItems: 12 })),
       }),
       mutates: true,
-      alwaysAvailable: true,
       agents: ["*"],
       authorize: () => true,
       async execute(input, scope) {
@@ -34,7 +33,6 @@ export function createAgentMemoryTools(store: AgentMemoryProvider): McpPoolTool[
       description: "Find the most relevant notes in this agent's private durable memory.",
       schema: Type.Object({ query: Type.String({ minLength: 1, maxLength: 500 }) }),
       mutates: false,
-      alwaysAvailable: true,
       agents: ["*"],
       authorize: () => true,
       execute(input, scope) {
@@ -46,7 +44,6 @@ export function createAgentMemoryTools(store: AgentMemoryProvider): McpPoolTool[
       description: "Permanently delete one note from this agent's private memory by ID.",
       schema: Type.Object({ id: Type.String({ minLength: 1, maxLength: 128 }) }),
       mutates: true,
-      alwaysAvailable: true,
       agents: ["*"],
       authorize: () => true,
       execute(input, scope) {

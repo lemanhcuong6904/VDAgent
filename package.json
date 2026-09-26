@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
+    "worker": "tsx src/worker.ts",
+    "build": "pnpm check && pnpm frontend:build",
     "frontend:dev": "npm --prefix frontend run dev",
     "frontend:build": "npm --prefix frontend run build",
     "check": "tsc --noEmit",
