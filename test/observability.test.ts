@@ -1,8 +1,15 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
+import { incrementMetric, renderPrometheus, resetMetrics } from "../src/metrics.js";
 import { JsonLogger, newTraceContext } from "../src/observability.js";
 
 describe("observability primitives", () => {
+  it("renders bounded Prometheus labels without sensitive dimensions", () => {
+    resetMetrics();
+    incrementMetric("queue.depth", 2, { worker: "w1", user_id: "alice" });
+    expect(renderPrometheus()).toContain('queue_depth{worker="w1"} 2');
+    expect(renderPrometheus()).not.toContain("alice");
+  });
   it("creates child trace context and redacts sensitive structured fields", () => {
     const parent = newTraceContext();
     const child = newTraceContext(parent);

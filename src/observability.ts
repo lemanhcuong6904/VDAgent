@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { incrementMetric, observeMetric } from "./metrics.js";
 
 export interface TraceContext {
   traceId: string;
@@ -52,9 +53,27 @@ export class NoopTelemetry implements Telemetry {
     };
   }
 
-  count() {}
+  count(_name: string, _value?: number, _attributes?: Record<string, string | number | boolean>) {}
 
-  observe() {}
+  observe(_name: string, _value: number, _attributes?: Record<string, string | number | boolean>) {}
+}
+
+export class MetricsTelemetry extends NoopTelemetry {
+  override count(
+    name: string,
+    value = 1,
+    attributes: Record<string, string | number | boolean> = {},
+  ) {
+    incrementMetric(name, value, attributes);
+  }
+
+  override observe(
+    name: string,
+    value: number,
+    attributes: Record<string, string | number | boolean> = {},
+  ) {
+    observeMetric(name, value, attributes);
+  }
 }
 
 export class JsonTelemetry implements Telemetry {
@@ -101,6 +120,7 @@ export class JsonTelemetry implements Telemetry {
   }
 
   count(name: string, value = 1, attributes: Record<string, string | number | boolean> = {}): void {
+    incrementMetric(name, value, attributes);
     this.logger.info("metric.count", { metric: name, value, attributes });
   }
 
@@ -109,12 +129,14 @@ export class JsonTelemetry implements Telemetry {
     value: number,
     attributes: Record<string, string | number | boolean> = {},
   ): void {
+    observeMetric(name, value, attributes);
     this.logger.info("metric.observe", { metric: name, value, attributes });
   }
 }
 
 export function createTelemetry(env: NodeJS.ProcessEnv = process.env): Telemetry | undefined {
-  return env.TELEMETRY_MODE === "json" ? new JsonTelemetry() : undefined;
+  if (env.TELEMETRY_MODE === "json") return new JsonTelemetry();
+  return env.METRICS_ENABLED === "true" ? new MetricsTelemetry() : undefined;
 }
 
 export class JsonLogger implements StructuredLogger {

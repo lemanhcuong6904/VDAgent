@@ -7,6 +7,7 @@ import { Value } from "typebox/value";
 import { assertSecureSecret, isAuthorizedAgent } from "./agent-auth.js";
 import { migrateDatabase } from "./database.js";
 import { handleMcpRequest } from "./mcp-server.js";
+import { renderPrometheus } from "./metrics.js";
 import { newTraceContext } from "./observability.js";
 import { OutboxPublisher } from "./outbox.js";
 import { loadPlatformServices } from "./platform-services.js";
@@ -49,6 +50,17 @@ if (runnerMode === "legacy") {
 const app = new Hono();
 app.use("*", bodyLimit({ maxSize: 1_000_000 }));
 app.get("/health", (context) => context.json({ status: "ok" }));
+app.get("/ready", async (context) => {
+  try {
+    await database.query("SELECT 1");
+    return context.json({ status: "ready" });
+  } catch {
+    return context.json({ status: "not_ready" }, 503);
+  }
+});
+app.get("/metrics", (context) =>
+  context.text(renderPrometheus(), 200, { "content-type": "text/plain; version=0.0.4" }),
+);
 registerWebApi(app, {
   database,
   pluginRegistry,

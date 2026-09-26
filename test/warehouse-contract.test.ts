@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PostgresWarehouseAdapter } from "../src/providers/warehouse/postgres.js";
 import { WarehouseRegistry } from "../src/warehouse.js";
 
 describe("warehouse adapter contract", () => {
@@ -45,5 +46,12 @@ describe("warehouse adapter contract", () => {
         },
       }),
     ).toThrow("Invalid capability");
+  });
+
+  it("rejects unsafe PostgreSQL relation identifiers before building SQL", async () => {
+    const adapter = new PostgresWarehouseAdapter({ query: async () => ({ rows: [] }) } as never);
+    await expect(
+      adapter.describeTable("orders;drop table users", new AbortController().signal),
+    ).rejects.toThrow("Invalid warehouse identifier");
   });
 });

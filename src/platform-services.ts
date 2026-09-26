@@ -8,6 +8,7 @@ import { PostgresAgentMemoryProvider, PostgresPiSessionStore } from "./postgres-
 import { type AgentPool, loadAgentPool, loadExternalAgentPlugins } from "./registry.js";
 import { RunLedger } from "./run-ledger.js";
 import { createSandboxTool, selectSandboxProvider } from "./sandbox.js";
+import { SandboxSupervisor } from "./sandbox-supervisor.js";
 import { loadToolPool, type McpToolPool } from "./tool-pool.js";
 import { createAgentCatalogTool } from "./tools/agent-catalog.js";
 import { createAgentCommunicationTools } from "./tools/agent-communication.js";
@@ -41,7 +42,15 @@ export async function loadPlatformServices(database: Pool): Promise<PlatformServ
 
   const sandboxProviderId = process.env.SANDBOX_PROVIDER ?? "docker";
   const sandboxProvider = selectSandboxProvider(sandboxProviderId, new DockerSandboxProvider());
-  if (sandboxProvider) pool.register(createSandboxTool(sandboxProvider));
+  if (sandboxProvider)
+    pool.register(
+      createSandboxTool(
+        new SandboxSupervisor(sandboxProvider, {
+          maxConcurrentPerAgent: positiveInt(process.env.SANDBOX_MAX_CONCURRENT, 2),
+          maxCommandTimeoutMs: positiveInt(process.env.SANDBOX_MAX_TIMEOUT_MS, 300_000),
+        }),
+      ),
+    );
 
   const runLedger = new RunLedger(database);
   const runtime = new PiRuntime(
@@ -76,4 +85,9 @@ export async function loadPlatformServices(database: Pool): Promise<PlatformServ
     pool.register(tool);
   }
   return { telemetry, pool, runtime, pluginRegistry, catalog, runLedger };
+}
+
+function positiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
