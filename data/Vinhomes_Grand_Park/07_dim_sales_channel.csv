@@ -1,0 +1,6 @@
+﻿channel_key,channel_id,channel_name,channel_tier,active_brokers_count
+1,AGENCY-KHAIHOANLAND,Khai Hoan Land (Platinum Agency),TIER_1_EXCLUSIVE,180
+2,AGENCY-DONGTAYLAND,Dong Tay Land (Platinum Plus Agency),TIER_1_EXCLUSIVE,220
+3,AGENCY-SAIGONREAL,Saigon Real (Dat Xanh South),TIER_2_GENERAL,95
+4,INHOUSE-VINHOMES,Vinhomes Sales - Doi ban hang noi bo,INHOUSE,60
+5,AGENCY-GENERIC-01,Dai ly phan phoi thu cap A (mock),TIER_2_GENERAL,40

@@ -1,0 +1,12 @@
+﻿config_key,config_value,value_type,semantic_version,approval_status,description
+overdue_threshold_days,90,INTEGER,2.0.0,APPROVED,So ngay DOM toi thieu de can duoc coi la qua han ban (kich hoat ma tran chan doan).
+peer_area_tolerance_pct,0.1,DECIMAL,2.0.0,APPROVED,Dung sai dien tich thong thuy khi xac lap nhom can tuong dong (peer group).
+peer_min_sample_size,5,INTEGER,2.0.0,APPROVED,Co mau toi thieu cua peer group; duoi nguong nay mo rong sang tang lan can.
+defect_trash_room_hard_m,3.0,DECIMAL,2.0.0,APPROVED,Khoang cach phong rac (met) duoi muc nay: cong 30 diem phat khuyet tat vat ly.
+defect_trash_room_soft_m,5.0,DECIMAL,2.0.0,APPROVED,Khoang cach phong rac (met) duoi muc nay: cong 15 diem phat khuyet tat vat ly.
+secondary_gap_trigger_pct,15.0,DECIMAL,2.0.0,APPROVED,Nguong % gia so cap cao hon thu cap de kich hoat SECONDARY_ARBITRAGE.
+pir_trigger_ratio,20.0,DECIMAL,2.0.0,APPROVED,Nguong ty so tong gia / thu nhap ho de kich hoat LUMP_SUM_TICKET_BARRIER.
+peer_overprice_trigger_pct,8.0,DECIMAL,2.0.0,APPROVED,Nguong % chenh gia so voi peer group de kich hoat OVERPRICED_VS_PEER.
+low_commission_threshold_pct,1.5,DECIMAL,2.0.0,APPROVED,Nguong hoa hong co ban toi da de kich hoat LOW_SALES_INCENTIVE.
+funnel_dropoff_trigger_pct,60.0,DECIMAL,2.0.0,APPROVED,Nguong ty le rut coc de kich hoat DEEP_FUNNEL_DROP_OFF.
+defect_unit_share_assumption,0.18,DECIMAL,2.0.0,PENDING,"Ty le can trong gio hang duoc gia lap chiu loi cau truc. Tu hieu chinh (khong co so lieu thuc te), can ra soat lai."
