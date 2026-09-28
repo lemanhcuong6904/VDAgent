@@ -1,0 +1,6 @@
+infra_key,infra_id,infra_name,infra_type,lifecycle_stage,construction_progress_pct,original_completion_year,revised_completion_year
+301,INF-EXPRESSWAY-HNHP,Cao toc Ha Noi - Hai Phong (QL5B),EXPRESSWAY,COMMERCIAL_OPERATION,100.00,2015,
+302,INF-COLINH,Nut giao Co Linh,BRIDGE,COMMERCIAL_OPERATION,100.00,2015,
+303,INF-RINGROAD3,Vanh dai 3 Ha Noi,RING_ROAD,COMMERCIAL_OPERATION,100.00,2012,
+304,INF-RINGROAD4,Vanh dai 4 Ha Noi,RING_ROAD,UNDER_CONSTRUCTION,35.00,2027,
+305,INF-METRO8,Tuyen Metro so 8 (Son Dong - Duong Xa),URBAN_METRO,PLANNING_APPROVED,0.00,2035,2035
