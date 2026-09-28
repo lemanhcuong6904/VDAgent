@@ -15,11 +15,25 @@ rate limiter process-local chỉ là defense-in-depth.
 
 Worker/sandbox boundary:
 
-- API không mount Docker socket; worker nội bộ mới có control path.
+- Production Compose không mount Docker socket và đặt `SANDBOX_PROVIDER=none`; quyền vào socket tương
+  đương quyền quản trị Docker trên host. Deployment riêng chỉ bật Docker sandbox khi có supervisor tin cậy.
 - Sandbox chạy non-root, network none, read-only rootfs, dropped capabilities, CPU/RAM/PID/output/
   timeout limits và workspace theo `(space, user, agent)`.
 - `SandboxSupervisor` giới hạn concurrent commands và timeout; provider khác có thể thay Docker.
 - Agent process nhận scope/capability grants, không nhận database/provider/Docker secret.
+
+Delegation: agent chỉ được giao việc cho agent khác khi manifest có tool `agents.delegate` và
+`acceptsDelegation: false` (`canDelegate` trong `src/agent-contract.ts`). Registry từ chối agent vừa
+giao việc vừa nhận việc, nên không thể tạo chuỗi giao việc vô hạn.
+
+Contract stack mới giữ cùng nguyên tắc (một số file chưa được production import, xem
+[PROGRESS](../PROGRESS.md#việc-còn-mở)):
+`src/registry/policy-engine.ts` giao capability/grant và pin policy revision; `src/sandbox-policy.ts`
+kiểm resource/egress/filesystem và chỉ nhận credential reference, từ chối inline secret;
+`src/agent-runner.ts` authorize từng `port_call`, kiểm sequence/correlation và schema protocol không phải
+authorization. A2A gateway và `/api/v1` đã nối production, có security negatives ở
+[contracts/security-negatives](contracts/security-negatives.md). Scan dependency, SBOM, image pin và
+secret rotation: [runbooks/security-scan](runbooks/security-scan.md).
 
 Audit events lưu authorization denial, rate-limit denial và operator/MCP auth failure trong
 `platform_audit_events`; metadata nhạy cảm được redact. Logs/metrics không dùng raw user, space,

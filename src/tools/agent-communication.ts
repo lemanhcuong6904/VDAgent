@@ -14,6 +14,7 @@ const MAX_CHILDREN_PER_TASK = 32;
 const MAX_DEPTH = 8;
 const DEFAULT_WAIT_MS = 30_000;
 const MAX_WAIT_MS = 60_000;
+const DEFAULT_ASK_WAIT_MS = 30_000;
 
 type SendInput = {
   agent?: string;
@@ -21,6 +22,19 @@ type SendInput = {
   capability?: string;
   message: string;
   idempotencyKey?: string;
+};
+
+type AskInput = {
+  agent: string;
+  question: string;
+  questionId?: string;
+  timeoutMs?: number;
+};
+
+type AnswerInput = {
+  questionId: string;
+  output?: unknown;
+  error?: string;
 };
 
 type CommunicationDependencies = {
@@ -78,6 +92,41 @@ export function createAgentCommunicationTools(
       async execute(raw, scope) {
         const value = raw as { runId: string };
         return readRunResult(value.runId, scope, dependencies);
+      },
+    },
+    {
+      name: "agents.ask",
+      description:
+        "Ask a peer agent in the same task a question and block for its answer. Unlike agents.send, the " +
+        "target does not have to be a descendant: any agent running in the same task may be asked, " +
+        "provided doing so would not create a wait-for cycle.",
+      schema: Type.Object({
+        agent: Type.String({ minLength: 1, maxLength: 128 }),
+        question: Type.String({ minLength: 1, maxLength: 4_000 }),
+        questionId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+        timeoutMs: Type.Optional(Type.Integer({ minimum: 0, maximum: MAX_WAIT_MS })),
+      }),
+      mutates: true,
+      agents: ["*"],
+      authorize: (scope) => isInvocationScope(scope),
+      async execute(raw, scope) {
+        return askPeer(raw as AskInput, scope, dependencies);
+      },
+    },
+    {
+      name: "agents.answer",
+      description:
+        "Answer a pending question from a peer agent, waking it if it is blocked on agents.ask.",
+      schema: Type.Object({
+        questionId: Type.String({ minLength: 1, maxLength: 128 }),
+        output: Type.Optional(Type.Unknown()),
+        error: Type.Optional(Type.String({ minLength: 1, maxLength: 4_000 })),
+      }),
+      mutates: true,
+      agents: ["*"],
+      authorize: (scope) => isInvocationScope(scope),
+      async execute(raw, scope) {
+        return answerPeer(raw as AnswerInput, scope, dependencies);
       },
     },
   ];
@@ -257,6 +306,296 @@ async function sendMessage(
   }
 }
 
+async function askPeer(
+  input: AskInput,
+  scope: ToolScope,
+  dependencies: CommunicationDependencies,
+): Promise<Record<string, unknown>> {
+  if (!isInvocationScope(scope)) {
+    throw new Error("Agent messaging is only available to a running agent invocation");
+  }
+  const sender = scope.agentId;
+  if (!sender) throw new Error("Agent identity is required for messaging");
+  const taskId = scope.taskId;
+  if (!taskId) throw new Error("Task identity is required for messaging");
+  if (input.agent === sender) throw new Error("An agent cannot ask itself a question");
+  if (Buffer.byteLength(input.question, "utf8") > MAX_MESSAGE_BYTES) {
+    throw new Error("Agent question is too large");
+  }
+  const targetPlugin = dependencies.pluginRegistry.get(input.agent);
+  if (!targetPlugin) throw new Error(`Unknown target agent '${input.agent}'`);
+  if (!isEdgeAllowed(sender, input.agent, dependencies.allowedEdges)) {
+    throw new Error(`Agent '${sender}' is not allowed to ask '${input.agent}'`);
+  }
+
+  const questionId = input.questionId ?? `q_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+  const askId = `ask_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+  const timeoutMs = Math.min(MAX_WAIT_MS, Math.max(0, input.timeoutMs ?? DEFAULT_ASK_WAIT_MS));
+
+  const client = await dependencies.database.connect();
+  try {
+    await client.query("BEGIN");
+    // Serialize wait-for-graph mutation per task so concurrent asks cannot
+    // race past each other and both pass the cycle check.
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+      `wait-for:${taskId}`,
+    ]);
+
+    const existing = await client.query<ExistingAsk>(
+      `SELECT id, task_id, user_id, space_id, question_id, from_agent, to_agent, content,
+              status, answer, answer_status FROM web_agent_asks
+       WHERE task_id = $1 AND question_id = $2`,
+      [taskId, questionId],
+    );
+    if (existing.rows[0]) {
+      const previous = existing.rows[0];
+      if (
+        previous.task_id !== taskId ||
+        previous.user_id !== scope.userId ||
+        previous.space_id !== scope.spaceId ||
+        previous.from_agent !== sender ||
+        previous.to_agent !== input.agent ||
+        getQuestionText(previous.content) !== input.question
+      ) {
+        throw new Error("question_id_conflict: questionId was already used for a different ask");
+      }
+      await client.query("ROLLBACK");
+      return askOutcome(
+        previous,
+        sender,
+        input.agent,
+        taskId,
+        timeoutMs,
+        scope.signal,
+        dependencies,
+      );
+    }
+
+    if (await wouldCreateWaitForCycle(client, taskId, sender, input.agent)) {
+      throw new Error(
+        `Asking '${input.agent}' would create a wait-for cycle with '${sender}' in this task`,
+      );
+    }
+
+    await client.query(
+      `INSERT INTO web_agent_asks
+       (id, task_id, user_id, space_id, question_id, from_agent, to_agent, content, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')`,
+      [
+        askId,
+        taskId,
+        scope.userId,
+        scope.spaceId,
+        questionId,
+        sender,
+        input.agent,
+        JSON.stringify({ question: input.question }),
+      ],
+    );
+    await client.query(
+      `INSERT INTO web_wait_for_edges (task_id, question_id, waiting_agent, blocked_on_agent)
+       VALUES ($1, $2, $3, $4)`,
+      [taskId, questionId, sender, input.agent],
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  scope.publish?.(scope.userId, "agent.asked", {
+    taskId,
+    questionId,
+    from: sender,
+    to: input.agent,
+  });
+  return pollForAnswer(
+    dependencies,
+    taskId,
+    questionId,
+    sender,
+    input.agent,
+    timeoutMs,
+    scope.signal,
+  );
+}
+
+async function answerPeer(
+  input: AnswerInput,
+  scope: ToolScope,
+  dependencies: CommunicationDependencies,
+): Promise<Record<string, unknown>> {
+  if (!isInvocationScope(scope)) {
+    throw new Error("Agent messaging is only available to a running agent invocation");
+  }
+  const responder = scope.agentId;
+  if (!responder) throw new Error("Agent identity is required for messaging");
+  const taskId = scope.taskId;
+  if (!taskId) throw new Error("Task identity is required for messaging");
+
+  const client = await dependencies.database.connect();
+  try {
+    await client.query("BEGIN");
+    const row = await client.query<{ id: string; to_agent: string; status: string }>(
+      `SELECT id, to_agent, status FROM web_agent_asks
+       WHERE task_id = $1 AND question_id = $2 FOR UPDATE`,
+      [taskId, input.questionId],
+    );
+    const ask = row.rows[0];
+    if (!ask) throw new Error("Question not found in the current task");
+    if (ask.to_agent !== responder)
+      throw new Error("Only the asked agent may answer this question");
+    if (ask.status !== "pending") {
+      await client.query("COMMIT");
+      return { questionId: input.questionId, delivered: false, reason: "already answered" };
+    }
+
+    const answerStatus = input.error ? "error" : "success";
+    await client.query(
+      `UPDATE web_agent_asks
+       SET status = 'answered', answer = $1, answer_status = $2, answered_at = now()
+       WHERE task_id = $3 AND question_id = $4`,
+      [
+        JSON.stringify(input.error ? { error: input.error } : { output: input.output ?? null }),
+        answerStatus,
+        taskId,
+        input.questionId,
+      ],
+    );
+    await client.query(`DELETE FROM web_wait_for_edges WHERE task_id = $1 AND question_id = $2`, [
+      taskId,
+      input.questionId,
+    ]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  scope.publish?.(scope.userId, "agent.answered", {
+    taskId,
+    questionId: input.questionId,
+    by: responder,
+  });
+  return { questionId: input.questionId, delivered: true };
+}
+
+/**
+ * Depth-first search over the current per-task wait-for graph plus the
+ * candidate edge (waitingAgent -> blockedOnAgent). Mirrors
+ * InMemoryMailbox.wouldCreateCycle, but reads the durable, per-task edge set
+ * instead of an in-memory map.
+ */
+async function wouldCreateWaitForCycle(
+  client: PoolClient,
+  taskId: string,
+  waitingAgent: string,
+  blockedOnAgent: string,
+): Promise<boolean> {
+  const edges = await client.query<{ waiting_agent: string; blocked_on_agent: string }>(
+    `SELECT waiting_agent, blocked_on_agent FROM web_wait_for_edges WHERE task_id = $1`,
+    [taskId],
+  );
+  const adjacency = new Map<string, string[]>();
+  for (const edge of edges.rows) {
+    const targets = adjacency.get(edge.waiting_agent) ?? [];
+    targets.push(edge.blocked_on_agent);
+    adjacency.set(edge.waiting_agent, targets);
+  }
+  const candidateTargets = adjacency.get(waitingAgent) ?? [];
+  adjacency.set(waitingAgent, [...candidateTargets, blockedOnAgent]);
+
+  const visited = new Set<string>();
+  const stack = [waitingAgent];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === undefined) break;
+    if (current === waitingAgent && visited.size > 0) return true;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    for (const next of adjacency.get(current) ?? []) {
+      if (next === waitingAgent) return true;
+      stack.push(next);
+    }
+  }
+  return false;
+}
+
+function askOutcome(
+  row: ExistingAsk,
+  from: string,
+  to: string,
+  taskId: string,
+  timeoutMs: number,
+  signal: AbortSignal,
+  dependencies: CommunicationDependencies,
+): Promise<Record<string, unknown>> | Record<string, unknown> {
+  if (row.status === "answered") {
+    return {
+      questionId: row.question_id,
+      from,
+      to,
+      status: row.answer_status,
+      output: (row.answer as { output?: unknown } | null)?.output ?? null,
+      error: (row.answer as { error?: string } | null)?.error ?? null,
+      terminal: true,
+    };
+  }
+  return pollForAnswer(dependencies, taskId, row.question_id, from, to, timeoutMs, signal);
+}
+
+async function pollForAnswer(
+  dependencies: CommunicationDependencies,
+  taskId: string,
+  questionId: string,
+  from: string,
+  to: string,
+  timeoutMs: number,
+  signal: AbortSignal,
+): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    const result = await dependencies.database.query<{
+      status: string;
+      answer: unknown;
+      answer_status: string | null;
+    }>(
+      `SELECT status, answer, answer_status FROM web_agent_asks WHERE task_id = $1 AND question_id = $2`,
+      [taskId, questionId],
+    );
+    const row = result.rows[0];
+    if (!row) throw new Error("Question not found in the current task");
+    if (row.status === "answered") {
+      return {
+        questionId,
+        from,
+        to,
+        status: row.answer_status,
+        output: (row.answer as { output?: unknown } | null)?.output ?? null,
+        error: (row.answer as { error?: string } | null)?.error ?? null,
+        terminal: true,
+      };
+    }
+    if (Date.now() >= deadline) {
+      return {
+        questionId,
+        from,
+        to,
+        status: "timeout",
+        output: null,
+        error: null,
+        terminal: false,
+      };
+    }
+    const remaining = Math.min(100, deadline - Date.now());
+    await delayWithSignal(Math.max(1, remaining), signal);
+  }
+}
+
 type ExistingReceipt = {
   run_id: string;
   run_status: RunStatus;
@@ -264,6 +603,33 @@ type ExistingReceipt = {
   agent: string;
   task_id: string;
 };
+
+type ExistingAsk = {
+  id: string;
+  task_id: string;
+  user_id: string;
+  space_id: string;
+  question_id: string;
+  from_agent: string;
+  to_agent: string;
+  content: unknown;
+  status: string;
+  answer: unknown;
+  answer_status: string | null;
+};
+
+function getQuestionText(content: unknown): string | undefined {
+  let value = content;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!isRecord(value)) return undefined;
+  return typeof value.question === "string" ? value.question : undefined;
+}
 
 function receipt(value: ExistingReceipt): Record<string, unknown> {
   return {

@@ -1,32 +1,26 @@
 # AgentRunner protocol
 
-`agent-runner.v1` is the language-neutral boundary for team agents. The host starts one process per
-invocation and exchanges newline-delimited JSON on stdin/stdout. Python is the reference SDK; a
-TypeScript agent may use the same protocol when process isolation is required.
-
-The host sends one `run` message:
-
-```json
-{
-  "protocol": "agent-runner.v1",
-  "type": "run",
-  "request_id": "run-123",
-  "agent_id": "team.python.summary",
-  "agent_version": "1.0.0",
-  "input": {"prompt": "..."},
-  "scope": {"userId": "u1", "spaceId": "s1", "runId": "run-123"},
-  "tools": ["warehouse.run_query"]
-}
-```
-
-The agent returns `result` or can request a host tool. Every tool call is authorized again by the
-host and is correlated with both `request_id` and `call_id`:
+Process agents speak one protocol: `agent-runner.v2`, newline-delimited JSON over stdin/stdout. The
+host starts one process per invocation. Schema: `schemas/agent-protocol.schema.json` (type
+`AgentProtocol`); host runner `src/agent-runner.ts` (`ProcessAgentRunner`); Python SDK `sdk/python/agent_platform`
+(`serve`). External manifests (`AGENT_EXTERNAL_MANIFESTS`) run on v2; `"protocol"` may be omitted.
 
 ```text
-host -> agent: run | cancel
-agent -> host: tool_call | event | result
-host -> agent: tool_result
+host -> agent: invoke | port_result | cancel
+agent -> host: port_call | event | checkpoint | wait | result
 ```
+
+```json
+{"protocol":"agent-runner.v2","type":"invoke","request_id":"run-123","agent_id":"team.python.summary",
+ "input":{"prompt":"..."},"scope":{"user_id":"u1","space_id":"s1","run_id":"run-123"},
+ "tools":["warehouse.run_query"]}
+```
+
+Every `port_call` goes through the shared host port factory (`src/ports/host-factory.ts`), the same
+one in-process `AgentModule` agents use. Port `tools` with the tool name as `operation`; the host
+checks the manifest grant and the pool allowlist on every call, and checks `sequence`/`call_id`
+correlation. A failed write tool stays `unknown`, never a clean failure. The parser keeps unknown
+fields for forward compatibility; schema validity is not authorization.
 
 The agent process never receives a database connection, Docker socket, provider secret, or internal
 module reference. The runner also strips credential-like environment variables before spawning the
@@ -43,7 +37,7 @@ another agent or to the platform database.
 Python quick start:
 
 ```sh
-pip install -e sdk/python
+uv sync --project agents
 ```
 
 See [the Python SDK guide](../sdk/python/README.md) for a complete agent and external manifest.

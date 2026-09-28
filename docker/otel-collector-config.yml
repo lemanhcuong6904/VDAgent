@@ -1,8 +1,12 @@
 receivers:
   otlp:
     protocols:
+      # Explicit 0.0.0.0 binds: the image's own default binds to localhost inside the
+      # container, which never accepts connections arriving through Docker's port mapping.
       grpc:
+        endpoint: 0.0.0.0:4317
       http:
+        endpoint: 0.0.0.0:4318
 
 processors:
   batch:

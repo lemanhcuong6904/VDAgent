@@ -14,6 +14,8 @@ import type { McpToolPool } from "./tool-pool.js";
 import { bearerToken, verifyWebSession, type WebAuthConfig } from "./web-auth.js";
 
 type Dependencies = {
+  /** SSE poll interval for events written by other processes; tests shorten it. */
+  eventPollMs?: number;
   database: Pool;
   pluginRegistry: AgentPool;
   pool: McpToolPool;
@@ -136,54 +138,23 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
     if (content.length > 4_000) {
       return error(context, 422, "input_too_large", "content must be at most 4000 characters");
     }
-    const taskId = `t_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
-    const invocationId = `inv_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
     const runLedger = dependencies.runLedger;
     const durable = Boolean(runLedger);
-    let platformRun: { id: string } | undefined;
     const client = await database.connect();
+    let created: AgentMessageTask;
     await client.query("BEGIN");
     try {
-      await client.query(
-        "INSERT INTO web_tasks (id, user_id, root_agent, status) VALUES ($1, $2, $3, 'running')",
-        [taskId, user.id, agent],
-      );
-      await client.query(
-        `INSERT INTO web_invocations (id, task_id, user_id, agent, caller, inbound_text, status, started_at)
-         VALUES ($1, $2, $3, $4, 'user', $5, $6, CASE WHEN $6 = 'running' THEN now() ELSE NULL END)`,
-        [invocationId, taskId, user.id, agent, content, durable ? "queued" : "running"],
-      );
-      if (runLedger) {
-        const created = await runLedger.createOnClient(client, {
-          spaceId: process.env.API_SPACE_ID ?? "local-space",
-          userId: user.id,
-          workflowId: "web.agent_message",
-          workflowVersion: "1.0.0",
-          idempotencyKey: `web-task:${taskId}`,
-          input: { taskId, invocationId, agent, content },
-        });
-        platformRun = { id: created.id };
-        await client.query("UPDATE web_tasks SET platform_run_id = $2 WHERE id = $1", [
-          taskId,
-          created.id,
-        ]);
-        await client.query("UPDATE web_invocations SET platform_run_id = $2 WHERE id = $1", [
-          invocationId,
-          created.id,
-        ]);
-      }
-      const savedUserMessage = await writeMessage(client, {
+      created = await createAgentMessageTaskOnClient(client, {
         userId: user.id,
+        spaceId: process.env.API_SPACE_ID ?? "local-space",
         agent,
-        taskId,
-        invocationId,
-        role: "user",
         content,
+        runLedger,
       });
       await client.query("COMMIT");
       await emit(database, user.id, "message.appended", {
         agent,
-        message: messageDto(savedUserMessage),
+        message: messageDto(created.userMessage),
       });
     } catch (failure) {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -191,6 +162,8 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
     } finally {
       client.release();
     }
+    const { taskId, invocationId, runId } = created;
+    const platformRun = runId ? { id: runId } : undefined;
     await emit(database, user.id, "task.updated", { task: await getTask(database, taskId) });
     await emit(database, user.id, "invocation.updated", {
       invocation: await getInvocation(database, invocationId),
@@ -203,7 +176,8 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
         plugin,
         pool,
         runtime,
-        catalog: dependencies.catalog,
+        // Default to the registry catalog so planning never depends on host wiring details.
+        catalog: dependencies.catalog ?? pluginRegistry.plannerCatalog(),
         user,
         agent,
         taskId,
@@ -314,52 +288,35 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
     const group = subscriptions.get(userId) ?? new Set<Subscriber>();
     group.add(subscriber);
     subscriptions.set(userId, group);
-    const replay = await database.query<{
-      id: string;
-      event: string;
-      data: Record<string, unknown>;
-    }>(
-      `SELECT id, event, data FROM web_events WHERE user_id = $1 AND id > $2
-       ORDER BY id ASC LIMIT 1000`,
-      [userId, cursor],
-    );
-    const replayEvents = replay.rows.map((row) => ({
-      id: Number(row.id),
-      event: row.event,
-      data: row.data,
-    }));
-    const liveEvents = subscriber.queue;
-    const liveIds = new Set(liveEvents.map((event) => event.id));
-    subscriber.queue = [...replayEvents.filter((event) => !liveIds.has(event.id)), ...liveEvents]
-      .filter(
-        (event, index, events) =>
-          event.id === undefined ||
-          events.findIndex((candidate) => candidate.id === event.id) === index,
-      )
-      .sort(
-        (left, right) =>
-          (left.id ?? Number.MAX_SAFE_INTEGER) - (right.id ?? Number.MAX_SAFE_INTEGER),
-      );
+    // PostgreSQL is the only delivery source (M13.4). A local publish only wakes the
+    // loop early; the poll interval covers events written by another API replica or
+    // by the worker process, which a process-local publish can never reach.
+    const pollMs = dependencies.eventPollMs ?? 1_000;
+    const tail = new EventTail(database, userId, cursor);
     return streamSSE(context, async (stream) => {
       try {
         while (!subscriber.closed && !context.req.raw.signal.aborted) {
-          const event = subscriber.queue.shift();
-          if (!event) {
-            let onAbort: () => void = () => undefined;
-            await new Promise<void>((resolve) => {
-              subscriber.wake = resolve;
-              onAbort = () => resolve();
-              context.req.raw.signal.addEventListener("abort", onAbort, { once: true });
+          subscriber.queue.length = 0;
+          const events = await tail.next();
+          for (const event of events) {
+            await stream.writeSSE({
+              id: String(event.id),
+              event: event.event,
+              data: JSON.stringify(event.data),
             });
-            context.req.raw.signal.removeEventListener("abort", onAbort);
-            subscriber.wake = undefined;
-            continue;
           }
-          await stream.writeSSE({
-            id: event.id === undefined ? undefined : String(event.id),
-            event: event.event,
-            data: JSON.stringify(event.data),
+          if (events.length === EVENT_PAGE) continue;
+          let onAbort: () => void = () => undefined;
+          let timer: NodeJS.Timeout | undefined;
+          await new Promise<void>((resolve) => {
+            subscriber.wake = resolve;
+            timer = setTimeout(resolve, pollMs);
+            onAbort = () => resolve();
+            context.req.raw.signal.addEventListener("abort", onAbort, { once: true });
           });
+          clearTimeout(timer);
+          context.req.raw.signal.removeEventListener("abort", onAbort);
+          subscriber.wake = undefined;
         }
       } finally {
         subscriber.closed = true;
@@ -421,7 +378,7 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
     return context.json(chart);
   });
   app.get("/api/reports/:id", async (context) => {
-    const user = await requireUser(context, database);
+    const user = await requireUser(context, database, webAuth);
     if (!user) return error(context, 401, "user_required", "Select a user first");
     const result = await database.query(
       `SELECT id, title, markdown, created_at FROM web_reports WHERE id = $1 AND user_id = $2`,
@@ -431,6 +388,76 @@ export function registerWebApi(app: Hono, dependencies: Dependencies): void {
     if (!report) return error(context, 404, "not_found", "Report not found");
     return context.json({ ...report, created_at: new Date(report.created_at).toISOString() });
   });
+}
+
+export type AgentMessageTask = {
+  taskId: string;
+  invocationId: string;
+  runId?: string;
+  userMessage: Awaited<ReturnType<typeof writeMessage>>;
+};
+
+/**
+ * Write a user message as a new task, invocation and (when a ledger is present) durable
+ * run, in the caller's transaction. Shared by the web route and the A2A gateway so both
+ * produce exactly the rows the durable worker executes.
+ */
+export async function createAgentMessageTaskOnClient(
+  client: PoolClient,
+  input: {
+    userId: string;
+    spaceId: string;
+    agent: string;
+    content: string;
+    runLedger?: RunLedger;
+    idempotencyKey?: string;
+  },
+): Promise<AgentMessageTask> {
+  const taskId = `t_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+  const invocationId = `inv_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+  const durable = Boolean(input.runLedger);
+  await client.query(
+    "INSERT INTO web_tasks (id, user_id, root_agent, status) VALUES ($1, $2, $3, 'running')",
+    [taskId, input.userId, input.agent],
+  );
+  await client.query(
+    `INSERT INTO web_invocations (id, task_id, user_id, agent, caller, inbound_text, status, started_at)
+     VALUES ($1, $2, $3, $4, 'user', $5, $6, CASE WHEN $6 = 'running' THEN now() ELSE NULL END)`,
+    [
+      invocationId,
+      taskId,
+      input.userId,
+      input.agent,
+      input.content,
+      durable ? "queued" : "running",
+    ],
+  );
+  let runId: string | undefined;
+  if (input.runLedger) {
+    const created = await input.runLedger.createOnClient(client, {
+      spaceId: input.spaceId,
+      userId: input.userId,
+      workflowId: "web.agent_message",
+      workflowVersion: "1.0.0",
+      idempotencyKey: input.idempotencyKey ?? `web-task:${taskId}`,
+      input: { taskId, invocationId, agent: input.agent, content: input.content },
+    });
+    runId = created.id;
+    await client.query("UPDATE web_tasks SET platform_run_id = $2 WHERE id = $1", [taskId, runId]);
+    await client.query("UPDATE web_invocations SET platform_run_id = $2 WHERE id = $1", [
+      invocationId,
+      runId,
+    ]);
+  }
+  const userMessage = await writeMessage(client, {
+    userId: input.userId,
+    agent: input.agent,
+    taskId,
+    invocationId,
+    role: "user",
+    content: input.content,
+  });
+  return { taskId, invocationId, runId, userMessage };
 }
 
 export async function reconcileInterruptedTasks(database: Pool): Promise<void> {
@@ -485,7 +512,7 @@ export function createWebTaskRunExecutor(dependencies: {
           plugin,
           pool: dependencies.pool,
           runtime: dependencies.runtime,
-          catalog: dependencies.catalog,
+          catalog: dependencies.catalog ?? dependencies.pluginRegistry.plannerCatalog(),
           user: { id: run.user_id },
           agent: input.agent,
           taskId: input.taskId,
@@ -798,16 +825,67 @@ function renderOutput(output: unknown): string {
   return JSON.stringify(output, null, 2);
 }
 
+/** Wake local subscribers; the event itself is read back from `web_events`. */
 function publish(userId: string, event: string, data: Record<string, unknown>, id?: number) {
   for (const subscriber of subscriptions.get(userId) ?? []) {
-    if (subscriber.queue.length >= 1000) {
-      subscriber.closed = true;
-      subscriber.wake?.();
-      subscriptions.get(userId)?.delete(subscriber);
-      continue;
-    }
     subscriber.queue.push({ id, event, data });
     subscriber.wake?.();
+  }
+}
+
+const EVENT_PAGE = 500;
+/** Rows committed out of id order stay visible to the tail for this long. */
+const EVENT_LATE_WINDOW_MS = 2_000;
+
+/**
+ * Reads `web_events` after a cursor. Two concurrent inserts can commit in the opposite
+ * order to their ids, so a plain `id > cursor` read could step past a row that becomes
+ * visible a moment later. The tail re-reads a short recent window and drops ids it has
+ * already sent, so a late row is still delivered, once.
+ */
+export class EventTail {
+  private cursor: number;
+  /** The client's resume point: nothing at or below it is ever re-sent. */
+  private readonly floor: number;
+  private readonly sent = new Set<number>();
+
+  constructor(
+    private readonly database: Pick<Pool, "query">,
+    private readonly userId: string,
+    after: number,
+  ) {
+    this.cursor = after;
+    this.floor = after;
+  }
+
+  async next(): Promise<Array<{ id: number; event: string; data: Record<string, unknown> }>> {
+    const result = await this.database.query<{
+      id: string;
+      event: string;
+      data: Record<string, unknown>;
+    }>(
+      `SELECT id, event, data FROM web_events
+       WHERE user_id = $1
+         AND (id > $2 OR (id > $3 AND created_at > now() - ($4 * interval '1 millisecond')))
+       ORDER BY id ASC LIMIT $5`,
+      [this.userId, this.cursor, this.floor, EVENT_LATE_WINDOW_MS, EVENT_PAGE],
+    );
+    const fresh = result.rows
+      .map((row) => ({ id: Number(row.id), event: row.event, data: row.data }))
+      .filter((row) => !this.sent.has(row.id));
+    for (const row of fresh) {
+      this.sent.add(row.id);
+      if (row.id > this.cursor) this.cursor = row.id;
+    }
+    this.prune();
+    return fresh;
+  }
+
+  private prune(): void {
+    if (this.sent.size <= 4 * EVENT_PAGE) return;
+    const keep = [...this.sent].sort((left, right) => right - left).slice(0, 2 * EVENT_PAGE);
+    this.sent.clear();
+    for (const id of keep) this.sent.add(id);
   }
 }
 
@@ -817,12 +895,24 @@ async function emit(
   event: string,
   data: Record<string, unknown>,
 ): Promise<void> {
-  const result = await database.query<{ id: string }>(
-    `INSERT INTO web_events (user_id, event, data)
-     VALUES ($1, $2, $3::jsonb) RETURNING id`,
-    [userId, event, JSON.stringify(data)],
-  );
-  publish(userId, event, data, Number(result.rows[0]?.id));
+  try {
+    const result = await database.query<{ id: string }>(
+      `INSERT INTO web_events (user_id, event, data)
+       VALUES ($1, $2, $3::jsonb) RETURNING id`,
+      [userId, event, JSON.stringify(data)],
+    );
+    publish(userId, event, data, Number(result.rows[0]?.id));
+  } catch (error) {
+    // A task may finish after its user has been deleted. The FK rejection is a
+    // terminal no-op for the event projection; never turn it into an unhandled
+    // worker rejection or recreate deleted tenant data.
+    if (isPgForeignKeyViolation(error)) return;
+    throw error;
+  }
+}
+
+function isPgForeignKeyViolation(error: unknown): boolean {
+  return isRecord(error) && error.code === "23503";
 }
 
 function isCancellationReason(reason: unknown): boolean {

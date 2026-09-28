@@ -135,7 +135,7 @@ export class McpToolPool {
 
 export async function loadToolPool(
   specifiers: readonly string[],
-  services: { database?: unknown; telemetry?: Telemetry } = {},
+  services: { database?: unknown; warehouseDatabase?: unknown; telemetry?: Telemetry } = {},
 ): Promise<McpToolPool> {
   const pool = new McpToolPool(services.telemetry);
   for (const specifier of specifiers) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RateLimiter, requestKey } from "../src/rate-limit.js";
+import { clientAddress, RateLimiter, requestKey } from "../src/rate-limit.js";
 
 describe("rate limiter", () => {
   it("bounds requests per key and resets the window", () => {
@@ -9,5 +9,14 @@ describe("rate limiter", () => {
     expect(limiter.allow(key, 200)).toBe(true);
     expect(limiter.allow(key, 300)).toBe(false);
     expect(limiter.allow(key, 1100)).toBe(true);
+  });
+
+  it("does not trust a spoofed forwarding header unless a proxy is explicitly trusted", () => {
+    expect(
+      clientAddress({ remoteAddress: "10.0.0.8", forwardedFor: "attacker", trustProxy: false }),
+    ).toBe("10.0.0.8");
+    expect(
+      clientAddress({ remoteAddress: "10.0.0.8", forwardedFor: "client, proxy", trustProxy: true }),
+    ).toBe("client");
   });
 });

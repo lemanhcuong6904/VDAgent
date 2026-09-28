@@ -90,11 +90,22 @@ Hỗ trợ `tools/list` và `tools/call`. `tools/list` chỉ trả tool pool c�
 
 ## Health check
 
-`GET /health` trả `{ "status": "ok" }` khi process API đã khởi động. Endpoint này không xác nhận
-PostgreSQL hoặc Docker sandbox đã sẵn sàng cho mọi workflow.
+`GET /live` (alias `GET /health`) trả `{ "status": "ok" }` khi process còn sống; không kiểm
+dependency. Dùng cho liveness probe.
 
-`GET /ready` chạy `SELECT 1` và trả `503` nếu PostgreSQL chưa sẵn sàng. `GET /metrics` trả text
-Prometheus; metric labels không chứa identity, prompt, query result hoặc secret.
+`GET /ready` trả `503` khi process đang start hoặc drain, khi PostgreSQL không trả lời, hoặc khi
+schema database chưa khớp image. Dùng cho readiness probe; chi tiết drain ở
+[operations](operations.md). `GET /metrics` trả text Prometheus; metric labels không chứa
+identity, prompt, query result hoặc secret.
+
+## Versioned API, MCP và A2A
+
+- `/api/v1/*`: registry/activation/plan/run/step/checkpoint/memory/evidence, cursor replay,
+  idempotency và legacy adapter. Contract: [web-api-v1](contracts/platform-api.md).
+- `/mcp`: resources/tools với auth, audience và size limit. Contract: [mcp-server](contracts/mcp-server.md).
+- `/.well-known/agent-card.json` và `/a2a`: gateway A2A tùy chọn với rate limit và tenant mapping.
+  Contract: [a2a-gateway](contracts/a2a-gateway.md).
+- Browser/API security negatives: [security-negatives](contracts/security-negatives.md).
 
 ## UI/workflow API (`/api`)
 

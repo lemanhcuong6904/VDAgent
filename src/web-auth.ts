@@ -16,10 +16,20 @@ export interface WebSession {
 const TOKEN_PREFIX = "vdagent.v1";
 
 export function createWebAuth(env: NodeJS.ProcessEnv = process.env): WebAuthConfig {
-  const mode = env.WEB_AUTH_MODE === "session" ? "session" : "demo";
+  const requestedMode = env.WEB_AUTH_MODE?.trim() as WebAuthMode | undefined;
+  if (requestedMode && requestedMode !== "session" && requestedMode !== "demo") {
+    throw new Error("WEB_AUTH_MODE must be either 'demo' or 'session'");
+  }
+  const production = env.NODE_ENV === "production";
+  const mode: WebAuthMode = requestedMode ? requestedMode : production ? "session" : "demo";
+  if (production && mode !== "session") {
+    throw new Error("WEB_AUTH_MODE=session is required in production");
+  }
   const secret = env.WEB_AUTH_SECRET?.trim();
-  if (mode === "session" && (!secret || isPlaceholder(secret))) {
-    throw new Error("WEB_AUTH_SECRET is required and must not be a placeholder in session mode");
+  if (mode === "session" && (!secret || isPlaceholder(secret) || secret.length < 32)) {
+    throw new Error(
+      "WEB_AUTH_SECRET must be at least 32 characters and must not be a placeholder in session mode",
+    );
   }
   const ttl = Number(env.WEB_SESSION_TTL_SECONDS ?? 86_400);
   return {

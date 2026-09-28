@@ -1,5 +1,20 @@
 # Tạo MCP tool và cấp quyền
 
+Trang này mô tả `McpToolPool` production. Agent `agent.v1` và process agent gọi tool qua `ToolPort` của
+host factory (`src/ports/host-factory.ts`): grant trong manifest ∩ pool allowlist, kiểm tra ở mỗi lần gọi.
+Trong production, `tools` port (`src/ports/host-tools.ts`) chạy qua adapter M4 (`src/ports/tool-port.ts`,
+`mcp-adapter.ts`). Mỗi lần gọi: kiểm grant, gọi `pool.call`, nhớ kết quả theo idempotency key (gọi lại cùng key
+không chạy lại tool), và khóa tool 60 giây nếu nó vừa lỗi (`tool_backoff`, học từ pi-mcp-adapter). Các khái niệm:
+
+- `ToolManifest` (`src/ports/tool-port.ts`): `effectClass` (`read|write|delete|execute|network|sensitive`),
+  `idempotent`, `compensation`, `limits` (input/output bytes, timeout) và `sensitivity`.
+- `ToolContext` do host inject: run/attempt, scope, idempotency key, deadline và fence.
+- Kết quả canonical cho agent là `PortOutcome` của `tools.invoke` (`schemas/port-result.schema.json`):
+  `ok|queued|needs_approval|needs_input|denied|failed|unknown`. `unknown` nghĩa là effect có thể đã
+  xảy ra; không retry mù. `ToolResult` nội bộ của adapter dùng `success|error|timeout|unknown`.
+- `src/ports/mcp-adapter.ts`: MCP allowlist theo server, mặc định deny; kiểm version/resource URI
+  và output bounds (`test/ports/mcp-adapter.test.ts`, `test/ports/tool-conformance.test.ts`).
+
 ## 1. Cách pool hoạt động
 
 Tool server-side là `McpPoolTool` trong `src/tool-pool.ts`. Module được nạp lúc API khởi động,
@@ -113,8 +128,8 @@ AGENT_TOOL_MODULES=src/tools/warehouse.ts,src/tools/inventory.ts
 
 Nếu cấu hình biến này, liệt kê module warehouse hiện tại nếu vẫn cần chúng. Startup cũng tự gắn các
 tool nền tảng `memory.*`, `sandbox.execute` (trừ khi `SANDBOX_PROVIDER=none`) và
-`agents.catalog`, `agents.delegate`, `agents.send`, `agents.wait`, `agents.result`; không đăng ký
-lại tên đó trong module riêng.
+`agents.catalog`, `agents.delegate`, `agents.send`, `agents.wait`, `agents.result`,
+`artifacts.store`, `artifacts.read`; không đăng ký lại tên đó trong module riêng.
 
 ## 4. Cho agent nhận tool
 
@@ -164,11 +179,9 @@ không nhúng token trong frontend/browser.
 
 ## 6. Kết nối remote MCP
 
-`defineRemoteMcpTool` trong `src/mcp-client-tool.ts` bọc remote tool thành một tool trong pool.
-Module wrapper vẫn phải khai báo schema, `agents`, authorization và `remoteName`. Endpoint và
-credential phải lấy từ trusted connection settings phía server. Helper bắt buộc HTTPS trừ
-localhost; không cho model cung cấp endpoint, header hoặc token. Xử lý lỗi, timeout và giới hạn
-kết quả remote như với mọi integration khác.
+Helper client remote MCP đã bị gỡ cùng các agent TypeScript. Nếu cần, viết tool module riêng lấy
+endpoint/credential từ trusted server settings, bắt buộc HTTPS và giới hạn kết quả; không cho model
+cung cấp endpoint, header hoặc token.
 
 ## 7. Memory dùng chung qua pool
 

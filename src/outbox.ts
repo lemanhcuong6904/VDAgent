@@ -13,6 +13,8 @@ export interface OutboxPublisherOptions {
   leaseMs?: number;
   batchSize?: number;
   pollMs?: number;
+  /** Rows that failed this many times stay unpublished (dead letter) instead of retrying forever. */
+  maxAttempts?: number;
 }
 
 export type OutboxDispatcher = (event: OutboxEvent) => Promise<void>;
@@ -75,6 +77,7 @@ export class OutboxPublisher {
       `WITH picked AS (
          SELECT id FROM platform_outbox_events
          WHERE published_at IS NULL
+           AND attempts < $4
            AND (claimed_until IS NULL OR claimed_until < now())
          ORDER BY id
          FOR UPDATE SKIP LOCKED LIMIT $1
@@ -84,7 +87,7 @@ export class OutboxPublisher {
        FROM picked
        WHERE event.id = picked.id
        RETURNING event.id, event.run_id, event.event_type, event.payload, event.attempts`,
-      [batchSize, this.options.publisherId, leaseMs],
+      [batchSize, this.options.publisherId, leaseMs, Math.max(1, this.options.maxAttempts ?? 10)],
     );
     return result.rows;
   }

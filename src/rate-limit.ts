@@ -43,3 +43,22 @@ export class RateLimiter {
 export function requestKey(input: { ip?: string; tenant?: string; route: string }): string {
   return `${input.tenant ?? "anonymous"}:${input.ip ?? "unknown"}:${input.route}`;
 }
+
+/**
+ * Resolve a client address without trusting user supplied forwarding headers by default.
+ * A proxy may opt in only after it has been configured as trusted at the deployment boundary.
+ */
+export function clientAddress(input: {
+  remoteAddress?: string;
+  forwardedFor?: string;
+  trustProxy?: boolean;
+}): string {
+  if (input.trustProxy && input.forwardedFor) {
+    const forwarded = input.forwardedFor
+      .split(",")
+      .map((value) => value.trim())
+      .find(Boolean);
+    if (forwarded) return forwarded;
+  }
+  return input.remoteAddress?.trim() || "unknown";
+}
