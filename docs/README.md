@@ -1,51 +1,67 @@
 # Tài liệu VDaAgent / Team 6 cAi
 
-Tài liệu này mô tả code hiện có và các contract để mở rộng repository. README ở thư mục gốc là
-hướng dẫn bắt đầu nhanh; trang này giúp tìm tài liệu theo công việc.
+README ở thư mục gốc giúp chạy thử nhanh. Trang này giải thích hệ thống bằng lời đơn giản và chỉ
+tới tài liệu chi tiết.
 
-## Chọn hướng dẫn
+## Hệ thống hoạt động thế nào (đọc trước)
 
-- Khởi động nhanh, cấu hình môi trường và lệnh kiểm tra: [README](../README.md).
-- Luồng dữ liệu, memory, sandbox, scale và deploy: [Kiến trúc](architecture.md).
-- Tạo agent plugin, prompt, guardrail, input/output schema và đăng ký roster: [Agent guide](agents.md).
-- Viết MCP tool, đăng ký tool pool và cấp quyền cho từng agent: [MCP tool guide](tools.md).
-- Gọi HTTP/MCP API, headers, payload, event và lỗi: [API reference](api.md).
-- Quyền sở hữu file và phân chia vùng làm việc: [Folder ownership](folder-ownership.md).
-- Liên kết developer API cũ: [Developer API](developer-api.md).
+1. Người dùng gửi câu hỏi qua web UI hoặc API (`src/server.ts`).
+2. API ghi một "run" vào PostgreSQL rồi trả về ngay. Worker (`src/worker.ts`) nhận run đó và chạy.
+3. Worker chọn agent. Agent là một khối code có manifest: tên, input/output, và danh sách quyền.
+4. Agent không tự kết nối database hay model. Nó chỉ gọi các "port" do host cấp
+   (`src/ports/host-factory.ts`): `model`, `tools`, `warehouse`, `artifacts`, `memory`, `collaboration`.
+5. Mỗi port lại gọi tool trong tool pool. Tool chỉ chạy nếu manifest của agent có quyền (`toolGrants`)
+   và pool cũng cho phép agent đó. Thiếu một trong hai là bị từ chối.
+6. Mọi kết quả port có một `status`: `ok`, `denied`, `failed`, `unknown`... `unknown` nghĩa là việc có thể
+   đã xảy ra (ví dụ đã ghi DB nhưng mất kết nối), nên không được tự động thử lại.
+7. Kết quả, token và chi phí được ghi lại; event gửi ra ngoài qua outbox.
 
-## Mô hình đăng ký hiện tại
+Ví dụ: câu "vùng nào bán nhiều nhất?" → agent analytics lập kế hoạch → gọi `warehouse` đọc bảng sales →
+gọi `model` tóm tắt → trả "North".
 
-Agent plugin và tool pool được lắp ráp lúc API khởi động từ `AGENT_PLUGIN_MODULES` và
-`AGENT_TOOL_MODULES`. Đây là code TypeScript tin cậy được triển khai cùng server. Hiện không có
-HTTP endpoint để upload module, tạo agent/tool động hoặc sửa quyền pool. `GET /v1/agents` và
-`GET /v1/tools` chỉ đọc registry; `POST /v1/agents/{id}/run` gọi một agent đã đăng ký. Không gửi
-source code hoặc credential provider từ model/browser.
+## Chọn tài liệu theo việc cần làm
 
-Kiến trúc là modular monolith: một API process lắp ráp sáu agent mặc định và tool pool; PostgreSQL
-lưu task, invocation, chat, Pi session, memory và artifact; Docker chạy sandbox. Xem
-[architecture](architecture.md) để phân biệt khả năng hiện có với hướng nâng cấp scale.
+| Tôi muốn... | Đọc |
+| --- | --- |
+| Chạy thử, cấu hình `.env`, lệnh kiểm tra | [README](../README.md) |
+| Viết agent mới (có template và test sẵn) | [Agent authoring](agent-authoring.md) |
+| Hiểu agent plugin cũ, prompt, guardrail | [Agents](agents.md) |
+| Viết tool và cấp quyền cho agent | [Tools](tools.md) |
+| Viết agent bằng Python | [AgentRunner protocol](agent-runner.md) |
+| Gọi HTTP/MCP API | [API reference](api.md) |
+| Hiểu contract `agent.v1`, ports, schemas | [Public contracts](public-contracts.md) |
+| Xem luồng dữ liệu, memory, scale, deploy | [Kiến trúc](architecture.md) |
+| Vận hành, backup, worker/outbox | [Operations](operations.md) |
+| Auth, rate limit, sandbox, delegation | [Security](security.md) |
+| Xử lý sự cố | [Runbooks](runbooks/README.md) |
+| Biết ai sở hữu thư mục nào | [Folder ownership](folder-ownership.md) |
+| Xem tiến độ và việc còn mở | [PROGRESS](../PROGRESS.md) |
+| Xem bằng chứng, receipts | [Execution evidence](execution/README.md) |
+| Contract từng subsystem | `docs/contracts/` |
 
 ## Chạy local
 
-1. Cài Node.js 22 trở lên, Corepack, Docker Engine/Desktop và Docker Compose.
-2. Cài dependencies bằng `corepack pnpm install --frozen-lockfile` và
-   `npm --prefix frontend ci`.
-3. Sao chép `.env.example` thành `.env`; đặt token local, mật khẩu PostgreSQL và `MODEL_API_KEY`.
-   `DATABASE_URL` trong Compose phải dùng cùng user/password với cấu hình PostgreSQL.
-4. Chạy `docker compose up --build -d`; API phục vụ UI tại `http://localhost:3000`.
-5. Xác minh `curl -fsS http://localhost:3000/health` trả `{"status":"ok"}`.
+1. Cài Node.js 22+, Corepack, Docker và Docker Compose.
+2. `corepack pnpm install --frozen-lockfile` và `npm --prefix frontend ci`.
+3. Chép `.env.example` thành `.env`; điền token local, mật khẩu PostgreSQL và `MODEL_API_KEY`.
+   `DATABASE_URL` phải dùng cùng user/password với PostgreSQL trong Compose.
+4. `docker compose up --build -d`; mở `http://localhost:3000`.
+5. Kiểm tra: `curl -fsS http://localhost:3000/live` trả `{"status":"ok"}`, `/ready` trả 200.
 
-Không commit `.env` hoặc dùng dữ liệu thật trong test. `docker compose down` giữ named volume DB;
-chỉ dùng `docker compose down -v` nếu chủ ý xóa dữ liệu local. Chi tiết và lệnh hot reload nằm ở
-[README](../README.md).
+Không commit `.env`. `docker compose down` giữ dữ liệu; `docker compose down -v` xóa dữ liệu local.
 
 ## Kiểm thử
 
-Chạy `corepack pnpm check`, `corepack pnpm lint`, `corepack pnpm test`,
-`corepack pnpm frontend:build` và `npm --prefix frontend test`. Test mặc định không gọi model/warehouse
-thật. PostgreSQL integration tests gồm memory isolation, Pi session locking và analytics E2E; chúng
-chỉ chạy khi `TEST_DATABASE_URL` trỏ tới database test dùng riêng. Nếu biến này không có, Vitest sẽ
-skip các integration test đó. Không trỏ biến test tới production hoặc database có dữ liệu cần giữ.
+| Lệnh | Kiểm gì | Tốn tiền? |
+| --- | --- | --- |
+| `corepack pnpm check` | TypeScript | Không |
+| `corepack pnpm lint` | Biome | Không |
+| `corepack pnpm test` | Backend tests (model giả) | Không |
+| `corepack pnpm frontend:build`, `npm --prefix frontend test` | Frontend | Không |
+| `corepack pnpm baseline:postgres` | Toàn bộ gate trên PostgreSQL dùng một lần, ghi receipt | Không |
+| `corepack pnpm bench:e2e` | API + worker + model thật từ `.env`, đo thời gian | Có (dừng khi chạm `--budget`, mặc định $0.30) |
 
-Xem [folder ownership](folder-ownership.md) để biết team nào cập nhật contract, code và test tương
-ứng. Quyền push/PR theo nhánh được quy định riêng ở [`GIT_RULE.md`](../GIT_RULE.md).
+Khoảng 84 test cần PostgreSQL. Chúng chỉ chạy khi có `TEST_DATABASE_URL` trỏ tới database test riêng;
+thiếu biến này thì test bị skip và receipt không được PASS. Không trỏ biến này tới production.
+
+Quyền push/PR theo nhánh: [`GIT_RULE.md`](../GIT_RULE.md).

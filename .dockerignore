@@ -3,5 +3,13 @@
 .git
 **/node_modules
 **/dist
+**/*.test.*
+**/*.spec.*
 coverage
 *.tsbuildinfo
+**/.venv
+**/__pycache__
+**/*.egg-info
+docs/
+test/
+scripts/

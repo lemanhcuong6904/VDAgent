@@ -1,48 +1,65 @@
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { Type } from "typebox";
-import type { PiRuntime } from "../pi-runtime.js";
+import { type AgentRuntime, canDelegate, DELEGATION_TOOL } from "../agent-contract.js";
 import type { AgentPool } from "../registry.js";
 import type { McpPoolTool, McpToolPool, ToolScope } from "../tool-pool.js";
 
-const SPECIALISTS = ["data", "compare", "insight", "visualize", "report"] as const;
 const MAX_DELEGATIONS_PER_TASK = 5;
+const MAX_DELEGATION_DEPTH = 4;
 export function createAgentDelegationTool(dependencies: {
   database: Pool;
   pluginRegistry: AgentPool;
   pool: McpToolPool;
-  runtime: PiRuntime;
+  runtime: AgentRuntime;
+  catalog?: import("../planner.js").PlannerCatalog;
 }): McpPoolTool {
   return {
-    name: "agents.delegate",
-    description: "Ask one specialist agent to complete a focused task and return its result.",
+    name: DELEGATION_TOOL,
+    description:
+      "Ask a registered agent, selected by id or capability, to complete a focused task and return its typed result.",
     schema: Type.Object({
-      agent: Type.Union(SPECIALISTS.map((id) => Type.Literal(id))),
+      agent: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+      capability: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
       message: Type.String({ minLength: 1, maxLength: 4000 }),
     }),
     mutates: true,
-    agents: ["orchestrator"],
-    authorize: (scope) => scope.agentId === "orchestrator",
+    // A child agent may make several model calls; the 30s pool default is too short.
+    timeoutMs: 120_000,
+    // Visibility comes from each agent's manifest grant; authorization re-checks the caller.
+    agents: ["*"],
+    authorize: (scope) => isDelegator(dependencies.pluginRegistry, scope.agentId),
     async execute(raw, scope) {
-      const value = raw as { agent: (typeof SPECIALISTS)[number]; message: string };
+      const value = raw as { agent?: string; capability?: string; message: string };
       return delegate(value, scope, dependencies);
     },
   };
 }
 
 async function delegate(
-  input: { agent: (typeof SPECIALISTS)[number]; message: string },
+  input: { agent?: string; capability?: string; message: string },
   scope: ToolScope,
   dependencies: {
     database: Pool;
     pluginRegistry: AgentPool;
     pool: McpToolPool;
-    runtime: PiRuntime;
+    runtime: AgentRuntime;
+    catalog?: import("../planner.js").PlannerCatalog;
   },
 ): Promise<string> {
   const { database, pluginRegistry, pool, runtime } = dependencies;
-  if (scope.agentId !== "orchestrator" || scope.depth !== 0 || !scope.taskId || !scope.runId) {
-    throw new Error("Agent delegation is only available to a running orchestrator task");
+  const caller = scope.agentId;
+  if (
+    !caller ||
+    !isDelegator(pluginRegistry, caller) ||
+    scope.depth !== 0 ||
+    !scope.taskId ||
+    !scope.runId
+  ) {
+    throw new Error("Agent delegation is only available to a running root task of a delegator");
+  }
+  if (!input.agent && !input.capability) {
+    throw new Error("Invalid delegation: provide an agent id or capability");
   }
   const callCount = await database.query<{ count: string }>(
     "SELECT count(*)::text AS count FROM web_invocations WHERE task_id = $1 AND depth > 0",
@@ -54,15 +71,18 @@ async function delegate(
 
   const parent = await database.query<{ task_id: string; user_id: string; depth: number }>(
     `SELECT task_id, user_id, depth FROM web_invocations
-     WHERE id = $1 AND agent = 'orchestrator' AND status = 'running'`,
-    [scope.runId],
+     WHERE id = $1 AND agent = $2 AND status = 'running'`,
+    [scope.runId, caller],
   );
   const parentInvocation = parent.rows[0];
   if (!parentInvocation || parentInvocation.task_id !== scope.taskId) {
     throw new Error("The parent invocation is unavailable");
   }
-  const plugin = pluginRegistry.get(input.agent);
-  if (!plugin) throw new Error(`Specialist '${input.agent}' is unavailable`);
+  const plugin = resolveTarget(input, pluginRegistry, caller);
+  const childDepth = (scope.depth ?? 0) + 1;
+  if (childDepth > MAX_DELEGATION_DEPTH) {
+    throw new Error("This task has reached its delegation depth limit");
+  }
 
   const invocationId = `inv_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
   const client = await database.connect();
@@ -71,29 +91,31 @@ async function delegate(
     await client.query(
       `INSERT INTO web_invocations
        (id, task_id, user_id, agent, caller, parent_id, tool_call_id, depth, inbound_text, status, started_at)
-       VALUES ($1, $2, $3, $4, 'orchestrator', $5, $6, 1, $7, 'running', now())`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'running', now())`,
       [
         invocationId,
         scope.taskId,
         scope.userId,
-        input.agent,
+        plugin.descriptor.id,
+        caller,
         scope.runId,
         scope.toolCallId ?? null,
+        childDepth,
         input.message,
       ],
     );
     const inbound = await insertMessage(client, {
       userId: scope.userId,
-      agent: input.agent,
+      agent: plugin.descriptor.id,
       taskId: scope.taskId,
       invocationId,
       role: "user",
-      sender: "orchestrator",
+      sender: caller,
       content: input.message,
     });
     await client.query("COMMIT");
     scope.publish?.(scope.userId, "message.appended", {
-      agent: input.agent,
+      agent: plugin.descriptor.id,
       message: messageDto(inbound),
     });
   } catch (failure) {
@@ -109,15 +131,18 @@ async function delegate(
       { prompt: input.message },
       {
         runId: invocationId,
-        sessionId: `web:${scope.userId}:${input.agent}`,
+        sessionId: `web:${scope.userId}:${plugin.descriptor.id}`,
         userId: scope.userId,
         spaceId: scope.spaceId,
         signal: scope.signal,
         tools: pool.forNames(plugin.descriptor.tools),
         runtime,
+        modelProfile: plugin.descriptor.modelProfile,
+        catalog: dependencies.catalog ?? dependencies.pluginRegistry.plannerCatalog(),
+        trace: scope.trace,
         pool,
         taskId: scope.taskId,
-        depth: 1,
+        depth: childDepth,
         publish: scope.publish,
       },
     );
@@ -125,12 +150,12 @@ async function delegate(
       database,
       scope.userId,
       invocationId,
-      input.agent,
+      plugin.descriptor.id,
       renderOutput(output),
     );
     const saved = await insertOutputMessage(database, {
       userId: scope.userId,
-      agent: input.agent,
+      agent: plugin.descriptor.id,
       taskId: scope.taskId,
       invocationId,
       content: resultText,
@@ -141,7 +166,7 @@ async function delegate(
       [invocationId, resultText],
     );
     scope.publish?.(scope.userId, "message.appended", {
-      agent: input.agent,
+      agent: plugin.descriptor.id,
       message: messageDto(saved),
     });
     await publishInvocation(database, scope, invocationId);
@@ -157,6 +182,40 @@ async function delegate(
     await publishInvocation(database, scope, invocationId);
     return result;
   }
+}
+
+function isDelegator(pluginRegistry: AgentPool, agentId: string | undefined): boolean {
+  const plugin = agentId ? pluginRegistry.get(agentId) : undefined;
+  return plugin !== undefined && canDelegate(plugin.descriptor);
+}
+
+function resolveTarget(
+  input: { agent?: string; capability?: string },
+  pluginRegistry: AgentPool,
+  caller: string,
+) {
+  if (input.agent) {
+    const plugin = pluginRegistry.get(input.agent);
+    if (!plugin || plugin.descriptor.id === caller || !plugin.descriptor.acceptsDelegation) {
+      throw new Error(`Specialist '${input.agent}' is unavailable for delegation`);
+    }
+    if (
+      input.capability &&
+      !plugin.descriptor.capabilities?.some(
+        (capability) => capability.toLowerCase() === input.capability?.trim().toLowerCase(),
+      )
+    ) {
+      throw new Error(`Agent '${input.agent}' does not provide capability '${input.capability}'`);
+    }
+    return plugin;
+  }
+
+  const candidates = pluginRegistry
+    .findByCapability(input.capability ?? "")
+    .filter(({ descriptor }) => descriptor.id !== caller && descriptor.acceptsDelegation);
+  const plugin = candidates[0];
+  if (!plugin) throw new Error(`No delegatable agent provides '${input.capability}'`);
+  return plugin;
 }
 
 async function insertOutputMessage(

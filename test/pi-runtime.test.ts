@@ -1,6 +1,11 @@
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { pruneSessionContext, toPiToolName, withRelevantMemory } from "../src/pi-runtime.js";
+import {
+  pruneSessionContext,
+  toPiToolName,
+  turnUsage,
+  withRelevantMemory,
+} from "../src/pi-runtime.js";
 import { McpToolPool } from "../src/tool-pool.js";
 
 describe("Pi tool names", () => {
@@ -24,6 +29,25 @@ describe("Pi tool names", () => {
     const retained = pruneSessionContext(messages);
     expect(retained.length).toBeLessThanOrEqual(80);
     expect(retained[0]?.role).toBe("user");
+  });
+});
+
+describe("Pi usage accounting", () => {
+  it("counts cache tokens as input and also reports them separately", () => {
+    const usage = turnUsage([
+      { role: "user", content: "q" },
+      {
+        role: "assistant",
+        usage: { input: 10, output: 5, cacheRead: 30, cacheWrite: 2, cost: { total: 0.01 } },
+      },
+    ]);
+    expect(usage).toEqual({
+      inputTokens: 42,
+      outputTokens: 5,
+      estimatedCost: 0.01,
+      cacheReadTokens: 30,
+      cacheWriteTokens: 2,
+    });
   });
 });
 

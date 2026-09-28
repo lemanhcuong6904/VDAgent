@@ -26,7 +26,6 @@ export function createSandboxTool(provider: SandboxProvider): McpPoolTool {
       timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 300_000 })),
     }),
     mutates: true,
-    alwaysAvailable: true,
     timeoutMs: 300_000,
     agents: ["*"],
     authorize: () => true,

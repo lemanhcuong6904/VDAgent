@@ -6,40 +6,49 @@ là **định hướng**, không phải năng lực đã benchmark.
 
 ## 1. Tóm tắt
 
-Team 6 cAi hiện là **modular monolith** viết bằng TypeScript. Một API process phục vụ HTTP, lắp ráp
-registry, điều phối workflow và chạy agent. React được build thành static assets và phục vụ cùng
-API. PostgreSQL là một database dùng chung cho ứng dụng; dữ liệu được tách logic theo user, space,
-agent và task. Docker là execution sandbox. Pi Agent Core xử lý vòng lặp model/tool.
+Team 6 cAi hiện là **modular monolith có durable worker boundary** viết bằng TypeScript. API process
+phục vụ HTTP và enqueue run; worker process claim run bằng PostgreSQL lease/fencing rồi chạy agent.
+Local mặc định dùng `embedded` runner để dễ khởi động, còn Compose dùng API và worker riêng. React
+được build thành static assets và phục vụ cùng API. PostgreSQL là một database dùng chung; Docker là
+execution sandbox. Pi Agent Core xử lý vòng lặp model/tool; external agent chạy qua
+`agent-runner.v2` JSONL process bridge.
 
 ```text
 Browser / API client / MCP client
                 |
                 v
-       Hono API (một process)
-       |        |         |
-       |        |         +-- Pi Agent Core
-       |        |                  |
-       |        +-- AgentPool -----+-- MCP ToolPool
-       |                              |-- warehouse providers
-       |                              |-- PostgreSQL memory/artifacts
-       |                              +-- Docker sandbox
+       Hono API (stateless)
+       |        |
+       |        +-- PostgreSQL run ledger / outbox
+       |                         |
+       |                         +-- worker process
+       |                              |-- AgentPool / AgentRunner
+       |                              |-- Pi Agent Core
+       |                              +-- MCP ToolPool
+       |                                   |-- warehouse providers
+       |                                   |-- memory/artifacts
+       |                                   +-- Docker sandbox
        |
        +-- PostgreSQL: users, tasks, invocations, messages,
-                       Pi sessions, agent memory, artifacts
+                       runs, leases, events, sessions, memory, artifacts
 ```
 
 Không có một PostgreSQL/database riêng cho mỗi agent. Cũng chưa có microservice riêng cho từng
-agent, tool pool hay Pi. Các agent là module cùng được nạp vào process API.
+agent, tool pool hay Pi. Agent TypeScript được nạp như trusted module; agent ngoài process được
+đăng ký bằng manifest và worker khởi chạy qua AgentRunner.
 
 ## 2. Ranh giới kiến trúc
 
 ```mermaid
 flowchart LR
-  Browser[React browser client] -->|/api + X-User-Id| API[Hono API / composition root]
+  Browser[React browser client] -->|/api + web session or demo identity| API[Hono API / composition root]
   Operator[Operator client] -->|/v1 + API_TOKEN| API
   MCP[MCP client] -->|/mcp + agent token| API
 
   API --> Workflow[Workflow routes / task lifecycle]
+  API --> Ledger[RunLedger / durable enqueue]
+  Worker[Durable worker process] --> Ledger
+  Worker --> Runner[AgentRunner / Python JSONL bridge]
   API --> Registry[AgentPool]
   API --> ToolPool[McpToolPool]
   Workflow --> PG[(Shared PostgreSQL)]
@@ -63,7 +72,7 @@ flowchart LR
   Artifacts --> PG
   Pi --> Sessions[Postgres Pi sessions]
   Sandbox --> Docker[Docker Engine]
-  Workflow --> UIEvents[In-process SSE subscribers]
+  Workflow --> UIEvents[DB cursor + in-process wake-up]
   UIEvents --> Browser
 ```
 
@@ -71,8 +80,8 @@ flowchart LR
 
 `src/server.ts` là composition root: xác thực cấu hình khởi động, mở PostgreSQL pool, chạy
 migrations, nạp agent/tool modules, gắn các tool nền tảng rồi đăng ký routes. `src/web-api.ts` sở
-hữu các workflow HTTP, ghi task/message/invocation, cancellation và artifact reads. `/v1` là API
-operator; `/mcp` là MCP server; `/api` là API workflow mà frontend hiện dùng.
+hữu các workflow HTTP, ghi task/message/invocation, enqueue durable run, cancellation và artifact
+reads. `/v1` là API operator; `/mcp` là MCP server; `/api` là API workflow mà frontend hiện dùng.
 
 API chịu trách nhiệm kiểm tra request, authorization ở boundary, lifecycle task và phối hợp
 provider. Agent không mở port riêng và không kết nối warehouse tùy ý. Mã agent/tool được import
@@ -82,16 +91,16 @@ như code tin cậy lúc startup; thay đổi module cần deploy/restart proces
 
 | Agent | Trách nhiệm | Quyền chính |
 | --- | --- | --- |
-| `orchestrator` | Hiểu yêu cầu, quyết định specialist cần gọi, tổng hợp câu trả lời cuối. | `agents.delegate`; đọc artifact khi cần. |
+| `orchestrator` | Hiểu yêu cầu, quyết định specialist cần gọi, tổng hợp câu trả lời cuối. | `agents.catalog`, `agents.delegate`, `agents.send/wait/result`; đọc artifact khi cần. |
 | `data` | Khám phá warehouse, kiểm tra bảng và persist dataset. | Warehouse read/query, đọc dataset. |
 | `compare` | So sánh dữ liệu/period/segment được cung cấp. | Đọc dataset. |
 | `insight` | Giải thích pattern dựa trên evidence, tách fact khỏi hypothesis. | Đọc dataset. |
 | `visualize` | Đọc kết quả Compare và Insight, chọn và persist chart từ dataset đã xác minh. | Đọc dataset, tạo chart. |
 | `report` | Viết và lưu report dựa trên kết quả Compare, Insight và Visualize. | Đọc dataset, lưu report. |
 
-Implementation theo agent nằm ở `src/agents/<id>/`. `src/agents/index.ts` định nghĩa roster mặc
-định; `src/agents/analytics.ts` giữ runtime workflow dùng chung. `defineAgent` ở
-`src/agents/factory.ts` là đường ngắn để thêm plugin dùng Pi mà vẫn theo contract của platform.
+Implementation là các file Python trong `agents/` (uv project, SDK `agent_platform`), chạy qua
+`agent-runner.v2`. Manifest sinh bởi `agents/gen_manifests.py` vào `agents/manifests/`; host nạp
+`DEFAULT_AGENT_MANIFESTS` khi `AGENT_EXTERNAL_MANIFESTS` trống. Model call đi qua host (`context.model`).
 
 ### AgentPool và MCP ToolPool
 
@@ -160,16 +169,17 @@ sequenceDiagram
   API-->>U: SSE message/task/invocation updates
 ```
 
-Giao diện nhận `202` trước khi tác vụ hoàn tất; client đọc task và SSE event để cập nhật. Agent
-workflow hiện chạy bất đồng bộ trong cùng process thông qua Promise, không được đưa vào durable
-queue. `agents.delegate` hiện chạy specialist con trực tiếp trong cùng process và lưu invocation
-con vào PostgreSQL.
+Giao diện nhận `202` trước khi tác vụ hoàn tất; API ghi web task và `platform_run` trong cùng
+transaction. Worker claim run sau đó; `PLATFORM_RUNNER_MODE=embedded` chỉ gộp worker vào API cho
+local development. `agents.delegate` giữ đường chạy đồng bộ tương thích cũ; `agents.send` tạo child
+`platform_run` durable, để `agents.wait/result` đọc sau qua cùng task/tenant scope. Parent/child
+invocation, trace context, message và artifact được lưu PostgreSQL.
 
 Frontend kết hợp SSE với React Query để tránh phụ thuộc hoàn toàn vào event stream: chat, task list
 và report list refetch mỗi 5 giây; roster agent mỗi 10 giây; task detail đang chạy mỗi 3 giây.
 Query stale được refetch khi tab được focus hoặc mạng kết nối lại. Khi SSE reconnect, frontend
-invalidate cache; khi task kết thúc, report list cũng được invalidate. SSE hiện chỉ có subscriber
-in-memory, không lưu/replay event; các chu kỳ polling là fallback để nhận trạng thái bền vững từ API,
+tiếp tục từ cursor PostgreSQL của event cuối và invalidate cache; khi task kết thúc, report list cũng
+được invalidate. Subscriber trong process chỉ là wake-up tối ưu, còn event replay đọc từ database,
 không phải cam kết cập nhật tức thời.
 
 ### Nhánh greeting và lỗi
@@ -186,7 +196,8 @@ Visualize hoặc Report lỗi, deterministic fallback tạo chart/report từ da
   workflow task/message của UI.
 - `GET /v1/agents` và `GET /v1/tools` chỉ đọc registry đã nạp.
 - `/mcp` xác minh agent ID/token; `tools/list` và `tools/call` chỉ dùng tool được cấp cho agent.
-- `/api` demo hiện xác định user qua `X-User-Id`; đây chưa phải public authentication.
+- `/api` dùng signed bearer web session khi `WEB_AUTH_MODE=session`; `X-User-Id` chỉ là compatibility
+  trong demo mode. `/v1` vẫn dùng operator `API_TOKEN`, còn `/mcp` dùng token riêng của agent.
 
 ## 4. Dữ liệu, memory và cách ly
 
@@ -204,6 +215,11 @@ người dùng. Những bảng chính:
 | `pi_sessions` | Transcript phục vụ Pi. | `space_id`, `user_id`, `agent_id`, `session_id` |
 | `agent_memory_entries` | Ghi nhớ lâu dài của agent. | `space_id`, `user_id`, `agent_id`, `memory_key` |
 | `web_datasets`, `web_charts`, `web_reports` | Artifact analytics. | `user_id`, `invocation_id` |
+| `platform_runs`, `platform_run_steps`, `platform_run_events` | Durable run, step, event và fencing state. | `space_id`, `user_id`, `run_id` |
+| `platform_outbox_events`, `platform_worker_leases` | Transactional outbox và worker lease. | `run_id`, `worker_id` |
+| `platform_usage_records` | Model/tool/sandbox usage và latency. | `run_id`, `user_id` |
+| `web_events` | Durable per-user SSE cursor/replay. | `user_id`, `id` |
+| `platform_audit_events` | Authorization, rate-limit và operator/MCP denial audit. | `space_id`, `user_id`, `created_at` |
 
 Ứng dụng áp dụng scope trong query; hiện schema không phải database-per-tenant. Nếu yêu cầu có
 isolated tenant database, encryption key riêng hoặc noisy-neighbor isolation thì cần một tầng
@@ -237,9 +253,10 @@ không phải kho lưu trữ bảng warehouse lớn. Khi artifact lớn lên, n�
 storage hoặc bảng artifact phân trang, còn PostgreSQL giữ metadata, ownership, checksum và storage
 key.
 
-Memory/session/task/artifact đều bền qua restart API. Không có state memory/session cốt lõi chỉ nằm
-trong RAM. Tuy vậy active task controllers và SSE subscriber hiện là in-process state; xem giới hạn
-scale ở phần sau.
+Memory/session/task/artifact và run ledger đều bền qua restart API. Active worker controller vẫn là
+process-local implementation detail, nhưng lease/fencing/cancel request trong PostgreSQL cho phép
+worker khác reclaim run. SSE wake-up vẫn in-memory nhưng event cursor được lưu trong `web_events` để
+replay sau reconnect; xem giới hạn scale ở phần sau.
 
 ### Docker sandbox
 
@@ -247,8 +264,8 @@ scale ở phần sau.
 Mỗi workspace được đặt tên theo hash của `(space, user, agent)` và dùng Docker volume bền. Container
 không có network, chạy user không đặc quyền, giới hạn CPU/RAM/PID, read-only root filesystem, bỏ
 Linux capabilities và giới hạn output/time. `SANDBOX_PROVIDER=none` tắt tool. Docker socket chỉ
-được gắn vào API container trong cấu hình Compose hiện tại; quyền truy cập socket tương đương quyền
-quản trị Docker host nên production cần cô lập deployment/host phù hợp.
+được gắn vào worker nội bộ trong cấu hình Compose; API public không có host control path. Quyền truy cập
+socket tương đương quyền quản trị Docker host nên production vẫn cần cô lập worker/supervisor phù hợp.
 
 #### Sandbox và thư viện
 
@@ -286,20 +303,21 @@ tốn memory ở PostgreSQL.
 
 ### Giới hạn hiện tại trước khi horizontal scale API
 
-1. **Workflow chạy trong API process.** Restart/deploy giữa run có thể làm mất công việc đang chạy;
-   task row có thể còn `running` mà không có worker tiếp tục.
-2. **Cancellation là in-memory map.** Request hủy trên replica khác không chắc tìm được
-   `AbortController` của replica đang chạy.
-3. **SSE subscribers là in-memory map.** Event chỉ được phát tới client nối đúng process; nhiều
-   replicas cần pub/sub hoặc đọc event bền vững từ database.
+1. **Worker reclaim chưa thay thế recovery test đầy đủ.** Lease/fencing đã có, nhưng cần integration
+   test kill worker trước/sau side effect và reconciler cho mọi workflow.
+2. **Active controller là in-memory map trong từng worker.** Cancellation request đã durable, nhưng
+   worker cần heartbeat/retry đúng để dừng provider call; không dùng map làm source of truth.
+3. **SSE wake-up là in-memory map.** Lịch sử event và cursor đã ở PostgreSQL; nhiều replicas vẫn
+  replay được, còn pub/sub chỉ là tối ưu để đánh thức connection ngay lập tức.
 4. **Shared Pi session lease dùng PostgreSQL.** Điều này hỗ trợ cross-process serialize transcript,
    nhưng không tự tạo job recovery hay streaming event fan-out.
-5. **Compose chỉ mô tả một API và một PostgreSQL.** Chưa có resource limits, autoscaling,
-   PgBouncer, backup/restore job, metrics/alerting hay load profile production.
-6. **UI identity là `X-User-Id`.** Đây là demo identity, chưa đủ cho public multi-tenant service.
+5. **Compose đã có API + worker + PostgreSQL**, nhưng chưa có resource limits, autoscaling, PgBouncer,
+   backup/restore job, metrics/alerting hay load profile production.
+6. **Identity provider vẫn ở ngoài repository.** Signed session mode đã chặn spoofing trong web API,
+   nhưng OIDC/gateway provisioning, key rotation và production tenant policy chưa được diễn tập.
 
-Do đó có thể tăng CPU/RAM cho một API để tăng concurrency trong giới hạn process, nhưng không nên
-coi nhiều replicas là scale-out an toàn cho workflow trước khi giải quyết task/event/cancellation.
+Do đó có thể tăng CPU/RAM cho một API hoặc thêm worker trong giới hạn đã đo, nhưng chưa nên công bố
+RPS/concurrency hay rolling-deploy SLO trước khi hoàn tất recovery, backup và load evidence.
 
 ### Đường nâng cấp theo giai đoạn
 
@@ -338,26 +356,25 @@ ngưỡng dừng.
 
 ### Local hiện tại
 
-`docker compose up --build -d` chạy API + PostgreSQL; API bind localhost port 3000 và nhận Docker socket.
+`docker compose up --build -d` chạy API, worker và PostgreSQL; API bind localhost port 3000. Chỉ
+worker nội bộ nhận Docker socket để thực hiện sandbox.
 Dockerfile build frontend trước rồi đóng gói frontend static, backend TypeScript và migrations. Volume
 `postgres-data` giữ PostgreSQL qua restart. API chạy migrations lúc startup trước khi nhận request.
 Lệnh chạy nền, prerequisites và frontend hot reload nằm trong [README](../README.md).
 
-### Production cần bổ sung trước khi public
+### Production prerequisites còn lại
 
-- Thay `X-User-Id` bằng authentication/session thật; enforce space/user authorization ở tất cả routes,
-  SSE subscriptions và artifact reads.
-- Quản lý secrets ngoài repository, rotate operator/agent/provider credentials và không để browser
-  nhận API/agent token.
-- Bổ sung TLS/reverse proxy, rate limits, request/body limits, secure headers, health/readiness
-  probes, graceful shutdown và structured logs/metrics/traces.
-- Đặt resource requests/limits, process count, pool budget và Docker sandbox quota; cô lập Docker
-  socket khỏi public-facing workload khi có thể.
-- Thiết lập PostgreSQL backups, encryption-at-rest, restore rehearsal, retention và alert disk/WAL/
-  connection saturation.
-- Chuyển durable workflow ra worker trước khi chạy nhiều API replicas hoặc rolling deployment có
-  thể ngắt run.
-- Thiết kế event delivery có replay/consumer cursor thay vì chỉ dựa trên SSE queue trong RAM.
+Các kiểm soát nền tảng sau đã có implementation local: signed web session, operator/MCP bearer
+auth, body limit, secure headers, per-process rate limit, `/ready`, `/metrics`, audit denial events,
+worker-only Docker socket, durable run/outbox/lease primitives và SSE cursor replay. Trước public
+deployment vẫn cần bằng chứng vận hành bên ngoài repository:
+
+- OIDC/session gateway thật, provisioning `web_users`, key rotation và tenant policy review.
+- Distributed rate limiting, TLS/reverse proxy, CORS/CSRF policy và secret manager.
+- Backup/PITR restore rehearsal, migration rollback/forward test, retention và disk/WAL alerts.
+- Worker kill/recovery, duplicate side-effect/idempotency và DB outage integration tests.
+- OTel exporter/collector delivery, dashboard/alert queries và redaction review trên môi trường đích.
+- Load/capacity benchmark cho API, worker, PostgreSQL và sandbox trước khi đặt SLO hoặc scale replicas.
 
 ## 7. Bố trí mã nguồn và ownership
 
@@ -403,3 +420,48 @@ corepack pnpm lint
 corepack pnpm frontend:build
 npm --prefix frontend test
 ```
+
+## 8. Platform refactor direction
+
+`PLAN.md` là tài liệu chuẩn cho lộ trình từ modular monolith lên platform. Phần P1 hiện đã bắt đầu
+được hiện thực trong code:
+
+- `AgentPool` có capability discovery, manifest validation và catalog port.
+- `ModelRegistry` hỗ trợ model profile cấu hình ngoài agent code.
+- `WarehouseAdapter`/`WarehouseRegistry` công bố capability để nhiều provider dùng cùng contract.
+- Planner tạo plan theo capability; orchestrator delegate theo capability thay vì chỉ biết specialist
+  ID trong đường chạy mới.
+- `AgentRuntime`/`agent-sdk` tách contract agent khỏi implementation của API và PiRuntime.
+- `platform_runs` cùng worker lease, fencing, outbox và idempotency schema là nền tảng cho bước tách
+  execution ra worker; `src/worker.ts` và Compose worker đã nối web task vào queue.
+- `agent-runner.v2`, `src/agent-runner.ts`, external manifest loader và `sdk/python` là đường tích hợp
+  Python process-isolated đầu tiên; host vẫn giữ tool authorization và scope. `agents.send`,
+  `agents.wait`, `agents.result` đi cùng bridge này để Python team agent trao đổi qua durable child
+  runs, không gọi backend trực tiếp.
+
+## Trạng thái contract stack mới
+
+`pnpm compat:matrix` (`docs/execution/compatibility-matrix.json`) cho biết lớp nào production import.
+
+Đã nối vào production:
+
+- `src/contracts/`: `agent.v1` manifest, `AgentModule` và ports, cùng generated types từ `schemas/`.
+- `src/ports/host-factory.ts` và `module-plugin.ts`: factory port dùng chung cho `AgentModule` và process agent v2.
+- `src/registry/agent-registry.ts`: activation gate (`enabled` mới phục vụ traffic).
+- `src/agent-runner.ts`: process protocol (`agent-runner.v2`) cho external manifest.
+- `/api/v1`, MCP server, A2A gateway; artifact, evidence và receipt storage; OTel, observatory; lifecycle
+  probes; `AlertScheduler` trong worker.
+
+- Port `tools`, `warehouse`, `artifacts`, `memory`, `collaboration` (`src/ports/host-*.ts`), event outbox
+  fan-out (`src/outbox-consumers.ts`) và shaping ngữ cảnh model (`src/session/runtime-context.ts`).
+
+Chưa được production import: port `sandbox`, `src/ports/mailbox.ts`, `src/checkpoint-manifest.ts`,
+`src/sandbox-policy.ts`, `src/registry/policy-engine.ts`, workflow planner/child-run và reference agents.
+Danh sách việc còn mở: [PROGRESS](../PROGRESS.md#việc-còn-mở).
+
+Các giới hạn còn lại, đặc biệt recovery/side-effect test, external OIDC provisioning, distributed
+rate limiting, backup/load evidence, process/container hardening và OpenTelemetry exporter, vẫn phải
+đi qua các phase P2-P5 trong [PLAN](../PLAN.md). Event cursor replay, local auth controls, worker
+lease/outbox và sandbox quotas đã có code nhưng chưa tự động chứng minh production conformance. Sơ đồ
+ở các phần trước mô tả target architecture; không coi các thành phần chưa có evidence vận hành là đã
+được triển khai.

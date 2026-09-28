@@ -15,6 +15,8 @@ export const queryKeys = {
   chart: (id: string) => ["chart", id] as const,
   reports: ["reports"] as const,
   report: (id: string) => ["report", id] as const,
+  taskRun: (taskId: string) => ["taskRun", taskId] as const,
+  runView: (runId: string) => ["runView", runId] as const,
 };
 
 /**

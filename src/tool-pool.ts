@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { TSchema } from "typebox";
 import { Value } from "typebox/value";
+import type { Telemetry, TraceContext } from "./observability.js";
 
 export interface ToolScope {
   userId: string;
@@ -10,9 +11,11 @@ export interface ToolScope {
   sessionId?: string;
   runId?: string;
   taskId?: string;
+  parentRunId?: string;
   depth?: number;
   toolCallId?: string;
   publish?: (userId: string, event: string, data: Record<string, unknown>) => void;
+  trace?: TraceContext;
   signal: AbortSignal;
 }
 
@@ -30,6 +33,15 @@ export interface McpPoolTool {
 
 export class McpToolPool {
   private readonly tools = new Map<string, McpPoolTool>();
+  private readonly agentTools = new Map<string, ReadonlySet<string>>();
+  private manifestsEnforced = false;
+
+  constructor(private readonly telemetry: Telemetry | undefined = undefined) {}
+
+  registerAgentManifest(agentId: string, names: readonly string[]): void {
+    this.manifestsEnforced = true;
+    this.agentTools.set(agentId, new Set(names));
+  }
 
   register(tool: McpPoolTool): void {
     if (!/^[a-zA-Z0-9_.-]{1,128}$/.test(tool.name)) throw new Error("Invalid tool name");
@@ -43,9 +55,7 @@ export class McpToolPool {
   }
 
   forAgent(agentId: string) {
-    return [...this.tools.values()].filter(
-      (tool) => tool.agents.includes(agentId) || tool.agents.includes("*"),
-    );
+    return [...this.tools.values()].filter((tool) => this.isAvailableTo(tool, agentId));
   }
 
   forNames(names: readonly string[]) {
@@ -53,17 +63,29 @@ export class McpToolPool {
     return [...this.tools.values()].filter((tool) => requested.has(tool.name));
   }
 
-  async call(name: string, input: unknown, scope: ToolScope, agentId: string): Promise<unknown> {
+  async call(
+    name: string,
+    input: unknown,
+    scope: ToolScope,
+    agentId: string,
+    allowedTools?: readonly string[],
+  ): Promise<unknown> {
     const tool = this.tools.get(name);
     if (
       !tool ||
-      (!tool.agents.includes(agentId) && !tool.agents.includes("*")) ||
+      !this.isAvailableTo(tool, agentId, allowedTools) ||
       !(await tool.authorize({ ...scope, agentId }))
     ) {
       throw new Error(`Tool '${name}' is not authorized for agent '${agentId}'`);
     }
     if (!Value.Check(tool.schema, input)) throw new Error(`Invalid input for tool '${name}'`);
     scope.signal.throwIfAborted();
+    const span = this.telemetry?.startSpan("agent.tool", scope.trace, {
+      tool: name,
+      agent: agentId,
+      mutates: tool.mutates,
+    });
+    const started = performance.now();
     const timeoutController = new AbortController();
     const timeout = setTimeout(
       () => timeoutController.abort(new Error("Tool timed out")),
@@ -84,6 +106,11 @@ export class McpToolPool {
     } finally {
       clearTimeout(timeout);
       signal.removeEventListener("abort", onAbort);
+      this.telemetry?.observe("agent_tool_duration_ms", performance.now() - started, {
+        tool: name,
+        agent: agentId,
+      });
+      span?.end();
     }
     const encoded = JSON.stringify(result);
     if (encoded === undefined || Buffer.byteLength(encoded) > 1_000_000) {
@@ -91,13 +118,26 @@ export class McpToolPool {
     }
     return result;
   }
+
+  private isAvailableTo(
+    tool: McpPoolTool,
+    agentId: string,
+    allowedTools?: readonly string[],
+  ): boolean {
+    const manifest = this.agentTools.get(agentId);
+    const declaredForAgent = tool.agents.includes(agentId) || tool.agents.includes("*");
+    if (!declaredForAgent || (this.manifestsEnforced && !manifest)) return false;
+    return (
+      (!manifest || manifest.has(tool.name)) && (!allowedTools || allowedTools.includes(tool.name))
+    );
+  }
 }
 
 export async function loadToolPool(
   specifiers: readonly string[],
-  services: { database?: unknown } = {},
+  services: { database?: unknown; warehouseDatabase?: unknown; telemetry?: Telemetry } = {},
 ): Promise<McpToolPool> {
-  const pool = new McpToolPool();
+  const pool = new McpToolPool(services.telemetry);
   for (const specifier of specifiers) {
     const url = specifier.startsWith("file:") ? specifier : pathToFileURL(resolve(specifier)).href;
     const module = await import(url);

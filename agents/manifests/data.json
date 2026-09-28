@@ -1,0 +1,55 @@
+{
+  "apiVersion": "agent-plugin.v2",
+  "id": "data",
+  "version": "1.0.0",
+  "name": "Data",
+  "description": "Finds warehouse data and returns datasets with clear column definitions.",
+  "capabilities": [
+    "warehouse.discovery",
+    "warehouse.query",
+    "dataset.create",
+    "data.prepare",
+    "analytics"
+  ],
+  "requiredCapabilities": [],
+  "acceptsDelegation": true,
+  "tools": [
+    "warehouse.list_sources",
+    "warehouse.list_tables",
+    "warehouse.describe_table",
+    "warehouse.run_query",
+    "warehouse.describe_dataset",
+    "warehouse.get_dataset_rows"
+  ],
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "prompt": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4000
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "additionalProperties": false
+  },
+  "guardrails": [
+    "Use only evidence available in the scoped tools and supplied prompt.",
+    "Never expose secrets or claim an artifact that was not persisted."
+  ],
+  "outputSchema": {
+    "type": "string"
+  },
+  "modelProfile": "default",
+  "command": "uv",
+  "args": [
+    "run",
+    "--no-sync",
+    "--project",
+    "agents",
+    "python",
+    "agents/data.py"
+  ]
+}

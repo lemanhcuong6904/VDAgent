@@ -1,6 +1,6 @@
 import { createContext, type ReactNode, useContext, useMemo, useReducer } from "react";
 
-export type InspectorTab = "task" | "artifact";
+export type InspectorTab = "task" | "run" | "artifact";
 
 export interface UiState {
   /** Agent whose chat is shown; null → default (orchestrator). */

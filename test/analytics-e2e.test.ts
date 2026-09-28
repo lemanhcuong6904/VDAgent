@@ -3,8 +3,10 @@ import { Hono } from "hono";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { migrateDatabase } from "../src/database.js";
-import { loadAgentPool } from "../src/registry.js";
+import { DEFAULT_AGENT_MANIFESTS } from "../src/platform-services.js";
+import { AgentPool, loadExternalAgentPlugins } from "../src/registry.js";
 import { loadToolPool } from "../src/tool-pool.js";
+import { createAgentCatalogTool } from "../src/tools/agent-catalog.js";
 import { createAgentDelegationTool } from "../src/tools/agent-delegation.js";
 import { registerWebApi } from "../src/web-api.js";
 
@@ -24,43 +26,48 @@ afterAll(async () => {
 
 integration("analytics workflow end to end", () => {
   it("runs all specialists and reads the persisted final artifacts through the API", async () => {
-    const agents = await loadAgentPool(["src/agents/index.ts"]);
+    const agents = new AgentPool();
+    for (const plugin of await loadExternalAgentPlugins(DEFAULT_AGENT_MANIFESTS)) {
+      agents.register(plugin);
+    }
     const tools = await loadToolPool(["src/tools/warehouse.ts"], { database });
+    tools.register(createAgentCatalogTool(agents));
+    // Python agents call the model only through the host; tools stay host-side.
     const runtime = {
-      async prompt(input: { agentId: string; prompt: string }) {
-        if (input.agentId === "report") throw new Error("Use deterministic report fallback");
+      async prompt(input: { agentId: string; system: string; prompt: string }) {
+        const json = input.system.includes("JSON Schema");
+        if (input.agentId === "orchestrator" && json) {
+          return JSON.stringify({
+            answer: "",
+            steps: [
+              "warehouse.query",
+              "dataset.compare",
+              "dataset.insight",
+              "dataset.visualize",
+              "dataset.report",
+            ],
+          });
+        }
+        if (input.agentId === "visualize" && json) {
+          return JSON.stringify({
+            kind: "line",
+            x: "month",
+            y: "revenue",
+            title: "Monthly revenue",
+          });
+        }
+        if (input.agentId === "report") throw new Error("Use deterministic report draft");
         if (input.agentId === "orchestrator") {
           const artifactIds = [
-            ...new Set(input.prompt.match(/\b(?:ds|ch|rp)_[a-zA-Z0-9]{12}\b/g) ?? []),
+            ...new Set(
+              input.prompt.match(
+                /\b(?:ds_(?:[a-zA-Z0-9]{12}|[a-f0-9]{24})|ch_[a-zA-Z0-9]{12}|rp_[a-zA-Z0-9]{12})\b/g,
+              ) ?? [],
+            ),
           ];
           return `Analysis complete. Verified artifacts: ${artifactIds.join(", ")}`;
         }
-        if (input.agentId === "data") return "Loaded monthly_sales with its persisted dataset.";
-        if (input.agentId === "compare") return "January to February revenue changed by region.";
-        if (input.agentId === "insight")
-          return "North increased and South decreased in the sample.";
-        if (input.agentId === "visualize") {
-          const datasetId = input.prompt.match(/\bds_[a-zA-Z0-9]{12}\b/)?.[0];
-          if (!datasetId) throw new Error("Visualize did not receive the dataset ID");
-          const runtimeContext = input as unknown as {
-            pool: typeof tools;
-            scope: Parameters<typeof tools.call>[2];
-          };
-          const chart = (await runtimeContext.pool.call(
-            "warehouse.create_chart",
-            {
-              datasetId,
-              kind: "line",
-              x: "month",
-              y: "revenue",
-              title: "Monthly revenue by month",
-            },
-            runtimeContext.scope,
-            "visualize",
-          )) as { id: string };
-          return `Created chart ${chart.id} from Compare and Insight findings.`;
-        }
-        throw new Error(`Unexpected agent '${input.agentId}'`);
+        return `${input.agentId} findings for the supplied dataset.`;
       },
     };
     tools.register(
@@ -102,7 +109,7 @@ integration("analytics workflow end to end", () => {
       expect(startResponse.status).toBe(202);
       taskId = ((await startResponse.json()) as { task_id: string }).task_id;
 
-      const deadline = Date.now() + 15_000;
+      const deadline = Date.now() + 45_000;
       let detailResponse: Response;
       let detail: {
         task: { status: string };
@@ -154,9 +161,11 @@ integration("analytics workflow end to end", () => {
       expect(finalMessage?.content).toContain("Analysis complete");
       expect(finalMessage?.content).toContain("ch_");
 
-      const [datasetId, chartId, reportId] = ["ds", "ch", "rp"].map(
-        (prefix) => finalMessage?.content.match(new RegExp(`\\b${prefix}_[a-zA-Z0-9]{12}\\b`))?.[0],
-      );
+      const [datasetId, chartId, reportId] = [
+        finalMessage?.content.match(/\bds_(?:[a-zA-Z0-9]{12}|[a-f0-9]{24})\b/)?.[0],
+        finalMessage?.content.match(/\bch_[a-zA-Z0-9]{12}\b/)?.[0],
+        finalMessage?.content.match(/\brp_[a-zA-Z0-9]{12}\b/)?.[0],
+      ];
       expect(datasetId).toBeDefined();
       expect(chartId).toBeDefined();
       expect(reportId).toBeDefined();
@@ -189,5 +198,5 @@ integration("analytics workflow end to end", () => {
         await database.query("DELETE FROM web_users WHERE id = $1", [userId]);
       }
     }
-  }, 20_000);
+  }, 60_000);
 });

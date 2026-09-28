@@ -44,7 +44,7 @@ Dockerfile hoặc Compose mà không cập nhật startup/test/deploy.
 ├── package.json            # Backend scripts/dependencies
 ├── frontend/package.json   # Frontend dependencies/scripts
 ├── Dockerfile              # Build frontend và đóng gói API runtime
-└── docker-compose.yml      # API + PostgreSQL local và Docker socket cho sandbox
+└── docker-compose.yml      # API + worker + PostgreSQL local; worker giữ sandbox control path
 ```
 
 ## Ownership theo thư mục đang có
@@ -52,8 +52,9 @@ Dockerfile hoặc Compose mà không cập nhật startup/test/deploy.
 | Vùng | Team chịu trách nhiệm | Có thể sửa | Cần phối hợp khi |
 | --- | --- | --- | --- |
 | `src/agent-contract.ts`, `src/registry.ts` | Platform/agent runtime | Contract và loader agent | Thêm field/thay đổi lifecycle ảnh hưởng mọi plugin hoặc API consumer. |
-| `src/agents/<agent>/`, `src/agents/analytics.ts` | Agent workflow | Prompt, schema, manifest, logic của agent thuộc team | Đổi delegation, roster mặc định, input contract public hoặc output UI. |
-| `src/tool-pool.ts`, `src/mcp-server.ts`, `src/mcp-client-tool.ts` | Platform/tools | Pool policy, MCP boundary, adapter | Đổi schema/policy/cấp quyền hoặc tương thích MCP. |
+| `sdk/python/` | Platform/agent runtime | Public agent ports và Python reference SDK | Đổi protocol, scope, tool bridge hoặc compatibility của team agent. |
+| `agents/<agent>.py`, `agents/manifests/` | Agent workflow | Prompt, schema, manifest, logic của agent thuộc team | Đổi delegation, roster mặc định, input contract public hoặc output UI. |
+| `src/tool-pool.ts`, `src/mcp-server.ts` | Platform/tools | Pool policy, MCP boundary, adapter | Đổi schema/policy/cấp quyền hoặc tương thích MCP. |
 | `src/tools/` | Team domain/integration tương ứng | Tool schema, service adapter, test của integration | Tool dùng chung, thay permission/schema hoặc tạo migration. |
 | `src/warehouse.ts`, `src/providers/warehouse/` | Data platform | Provider contract và warehouse adapter | Đổi semantics query/artifact hoặc cấp thêm warehouse credential. |
 | `src/web-api.ts`, `src/agent-guardrails.ts` | Backend/API | Workflow REST, task lifecycle, API validation | Thay response/API contract, database writes hoặc auth. |
@@ -91,14 +92,14 @@ chạm nhiều domain, tác giả cần phối hợp với các owner tương �
 Để giảm va chạm trước khi có package workspace riêng:
 
 ```text
-src/agents/<team>-<agent>/index.ts
+agents/<team>_<agent>.py
 src/tools/<team>-<domain>.ts
 test/<team>-<domain>-agent.test.ts
 test/<team>-<domain>-tools.test.ts
 docs/<team>-<domain>.md              # Chỉ khi domain có quy trình riêng đáng tài liệu hóa
 ```
 
-Ví dụ path module phải được thêm vào `AGENT_PLUGIN_MODULES` hoặc `AGENT_TOOL_MODULES`. Nhiều team
+Ví dụ path module phải được thêm vào `AGENT_EXTERNAL_MANIFESTS` hoặc `AGENT_TOOL_MODULES`. Nhiều team
 cùng chỉnh `.env.example`/Compose có thể conflict; platform owner tổng hợp cấu hình startup thay vì
 để mỗi team đổi default roster riêng.
 
@@ -111,7 +112,7 @@ Dockerfile, tests và module paths:
 ```text
 packages/
 ├── contracts/               # Agent/tool/warehouse/sandbox contracts và JSON schemas
-├── agent-sdk/                # Helpers để tạo plugin theo contract; không sở hữu orchestration
+├── agent-sdk/                # Stable ports/helpers cho team agent; không sở hữu orchestration
 ├── tool-sdk/                 # Helpers/schema cho MCP tool authoring
 └── testkit/                  # Fake Pi/database/warehouse và conformance fixtures offline
 apps/

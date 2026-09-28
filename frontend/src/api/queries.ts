@@ -1,6 +1,6 @@
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { createContext, useContext } from "react";
-import { ApiClient } from "./client";
+import { ApiClient, ApiError } from "./client";
 import { queryKeys } from "./keys";
 
 export const ApiContext = createContext<ApiClient>(new ApiClient(null));
@@ -94,5 +94,33 @@ export function useReport(id: string) {
     queryKey: queryKeys.report(id),
     queryFn: () => api.getReport(id),
     staleTime: Infinity,
+  });
+}
+
+/** A 404 is an answer ("no run for this task"), not a transient failure worth retrying. */
+function retryUnlessNotFound(failureCount: number, error: Error): boolean {
+  return !(error instanceof ApiError && error.status === 404) && failureCount < 3;
+}
+
+export function useTaskRun(taskId: string | null) {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.taskRun(taskId ?? ""),
+    queryFn: () => api.getTaskRun(taskId as string),
+    enabled: taskId !== null,
+    staleTime: Infinity,
+    retry: retryUnlessNotFound,
+  });
+}
+
+export function useRunView(runId: string | null) {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.runView(runId ?? ""),
+    queryFn: () => api.getRunView(runId as string),
+    enabled: runId !== null,
+    retry: retryUnlessNotFound,
+    refetchInterval: (query) =>
+      query.state.data && !query.state.data.run.terminal ? 3_000 : false,
   });
 }

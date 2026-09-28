@@ -1,9 +1,8 @@
 # HTTP và MCP API
 
 Base URL local mặc định: `http://localhost:3000`. Backend phục vụ API và bản build frontend trên
-cùng cổng. Endpoint `/v1/*` yêu cầu operator token; `/mcp` yêu cầu token riêng cho agent; UI API
-hiện dùng `X-User-Id` làm nhận diện người dùng trong demo. Đây chưa phải cơ chế xác thực người dùng
-cho môi trường public production.
+cùng cổng. Endpoint `/v1/*` yêu cầu operator token; `/mcp` yêu cầu token riêng cho agent. UI API
+dùng bearer web session khi `WEB_AUTH_MODE=session`; `X-User-Id` chỉ còn compatibility trong demo mode.
 
 ## Operator API (`/v1`)
 
@@ -91,25 +90,40 @@ Hỗ trợ `tools/list` và `tools/call`. `tools/list` chỉ trả tool pool c�
 
 ## Health check
 
-`GET /health` trả `{ "status": "ok" }` khi process API đã khởi động. Endpoint này không xác nhận
-PostgreSQL hoặc Docker sandbox đã sẵn sàng cho mọi workflow.
+`GET /live` (alias `GET /health`) trả `{ "status": "ok" }` khi process còn sống; không kiểm
+dependency. Dùng cho liveness probe.
+
+`GET /ready` trả `503` khi process đang start hoặc drain, khi PostgreSQL không trả lời, hoặc khi
+schema database chưa khớp image. Dùng cho readiness probe; chi tiết drain ở
+[operations](operations.md). `GET /metrics` trả text Prometheus; metric labels không chứa
+identity, prompt, query result hoặc secret.
+
+## Versioned API, MCP và A2A
+
+- `/api/v1/*`: registry/activation/plan/run/step/checkpoint/memory/evidence, cursor replay,
+  idempotency và legacy adapter. Contract: [web-api-v1](contracts/platform-api.md).
+- `/mcp`: resources/tools với auth, audience và size limit. Contract: [mcp-server](contracts/mcp-server.md).
+- `/.well-known/agent-card.json` và `/a2a`: gateway A2A tùy chọn với rate limit và tenant mapping.
+  Contract: [a2a-gateway](contracts/a2a-gateway.md).
+- Browser/API security negatives: [security-negatives](contracts/security-negatives.md).
 
 ## UI/workflow API (`/api`)
 
-Các endpoint này dùng header `X-User-Id` với ID đã tạo/chọn. Không dùng API token operator hoặc
-agent token trong frontend.
+Ở demo mode, các endpoint này dùng header `X-User-Id` với ID đã tạo/chọn. Ở session mode, gửi
+`Authorization: Bearer <web-session>`; server chỉ trả user thuộc session và không chấp nhận spoof
+`X-User-Id`. Không dùng API token operator hoặc agent token trong frontend.
 
 | Method | Path | Request/response chính |
 | --- | --- | --- |
 | `GET` | `/api/users` | Mảng `{ id, name }`, user tạo gần nhất đứng đầu. |
-| `POST` | `/api/users` | Body `{ "name": "Analyst" }`; trả user mới, status `201`. |
+| `POST` | `/api/users` | Demo mode: body `{ "name": "Analyst" }`, trả user mới `201`; session mode khóa provisioning và trả `403`. |
 | `GET` | `/api/agents` | Cần user header; mảng `{ name, description, healthy, busy, queue_len }` từ registry. |
 | `GET` | `/api/agents/{agent}/messages?before_seq=&limit=` | Lịch sử `{ summary, messages, pending }`; mặc định 50, tối đa 200. |
-| `POST` | `/api/agents/{agent}/messages` | Body `{ "content": "..." }`; tạo task async, trả `{ task_id, invocation_id }`, status `202`. |
+| `POST` | `/api/agents/{agent}/messages` | Body `{ "content": "..." }`; tạo task/run async, trả `{ task_id, invocation_id, run_id }`, status `202`. |
 | `GET` | `/api/tasks?status=running` | Tối đa 50 task gần nhất; status có thể là `running`, `completed`, `failed`, `cancelled`. |
 | `GET` | `/api/tasks/{taskId}` | `{ task, invocations }`, chỉ trong phạm vi user. |
 | `POST` | `/api/tasks/{taskId}/cancel` | Hủy task đang chạy; trả `{ task }`. Nếu đã kết thúc, `409`. |
-| `GET` | `/api/events?user_id={id}` | SSE stream theo user; query `user_id` phải tồn tại. Xem contract event bên dưới. |
+| `GET` | `/api/events?user_id={id}&after={cursor}` | SSE stream theo authenticated user; replay tối đa 1000 event từ cursor. |
 | `GET` | `/api/reports` | Danh sách 100 report gần nhất `{ id, title, created_at }`. |
 | `GET` | `/api/datasets/{id}?offset=&limit=` | Dataset và trang rows; mặc định 200, tối đa 1000. |
 | `GET` | `/api/charts/{id}` | Chart `{ id, title, dataset_id, spec }`. |
@@ -126,10 +140,9 @@ JSON có các trường sau:
 | `invocation.updated` | `{ "invocation": InvocationDTO }` |
 | `task.updated` | `{ "task": TaskDTO }` |
 
-Stream không có event ID, replay hoặc lưu bền vững; event chỉ tới subscriber đang nối với API
-process phát nó. Khi reconnect, frontend tải lại query; nó cũng poll chat/task/report định kỳ để
-bù event bị lỡ. Client tích hợp khác nên refetch trạng thái từ REST sau reconnect thay vì coi SSE là
-nguồn dữ liệu duy nhất.
+Mỗi event có `id` tăng dần theo user và được lưu trong PostgreSQL. Client có thể gửi `after={id}`
+hoặc header `Last-Event-ID` để replay tối đa 1000 event bị lỡ. Khi reconnect, frontend tiếp tục từ
+cursor này; REST vẫn là nguồn đọc trạng thái cuối thay vì coi SSE là nguồn duy nhất.
 
 Ví dụ tạo user và gửi yêu cầu:
 
@@ -144,14 +157,14 @@ curl -sS http://localhost:3000/api/agents/orchestrator/messages \
   -d '{"content":"So sánh doanh thu theo tháng và tạo báo cáo."}'
 ```
 
-`X-User-Id` phải trỏ đến user tồn tại. User API hiện là demo/local interface; cần lớp xác thực và
-authorization phù hợp trước khi mở public. Lỗi UI API thường theo dạng
+`X-User-Id` phải trỏ đến user tồn tại trong demo mode. Session mode yêu cầu token có subject đã
+provision trong `web_users`; token hết hạn hoặc sai chữ ký nhận `401`. Lỗi UI API thường theo dạng
 `{ "error": { "code": "...", "message": "..." } }`; các response thành công giữ snake_case theo
 contract hiện tại.
 
-Ngoại lệ hiện tại: `/api/users` không yêu cầu `X-User-Id`; `/api/events` nhận `user_id` qua query
-parameter vì `EventSource` của browser không hỗ trợ header tùy chỉnh. Các endpoint này không phải
-authentication boundary cho môi trường public.
+Trong session mode, `/api/users` chỉ trả user hiện tại và `POST /api/users` bị khóa; user được
+provision qua identity provider. `EventSource` dùng query `user_id` nhưng server vẫn yêu cầu bearer
+session và kiểm tra query trùng subject, nên query không phải credential.
 
 ## Phân quyền và đăng ký
 
