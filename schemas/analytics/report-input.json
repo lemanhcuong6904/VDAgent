@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://agent-platform.internal/schemas/analytics/report-input.json",
+  "title": "Report Generation Input",
+  "description": "Input schema for report behavior - assembles structured reports from specialist outputs",
+  "type": "object",
+  "required": ["prompt", "datasetId", "chartId"],
+  "properties": {
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000,
+      "description": "User request for report generation"
+    },
+    "datasetId": {
+      "type": "string",
+      "pattern": "^ds_(?:[a-zA-Z0-9]{12}|[a-f0-9]{24})$",
+      "description": "Dataset identifier referenced in report"
+    },
+    "chartId": {
+      "type": "string",
+      "pattern": "^ch_[a-zA-Z0-9]{12}$",
+      "description": "Chart identifier to include in report"
+    },
+    "compareContext": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "Context from comparison step"
+    },
+    "insightContext": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "Context from insight step"
+    },
+    "visualizeContext": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "Context from visualization step"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,20 +1,39 @@
 services:
   api:
-    build: .
+    build:
+      context: .
+      target: api
+    init: true
+    user: "1000:1000"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./docker/seccomp-bubblewrap.json
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
     env_file: .env
     environment:
+      NODE_ENV: production
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env}
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      WAREHOUSE_DATABASE_URL: ${WAREHOUSE_DATABASE_URL:?set WAREHOUSE_DATABASE_URL in .env}
+      WAREHOUSE_POSTGRES_ENABLED: ${WAREHOUSE_POSTGRES_ENABLED:?set WAREHOUSE_POSTGRES_ENABLED=true in .env}
+      WAREHOUSE_ALLOWED_TABLES: ${WAREHOUSE_ALLOWED_TABLES:?set WAREHOUSE_ALLOWED_TABLES in .env}
       MODEL_API_KEY: ${MODEL_API_KEY:-}
-      AGENT_PLUGIN_MODULES: ${AGENT_PLUGIN_MODULES:-src/agents/index.ts}
-      AGENT_TOOL_MODULES: ${AGENT_TOOL_MODULES:-src/tools/warehouse.ts}
+      AGENT_PLUGIN_MODULES: ${AGENT_PLUGIN_MODULES:-}
+      AGENT_TOOL_MODULES: ${AGENT_TOOL_MODULES:-dist/tools/warehouse.js}
       AGENT_EXTERNAL_MANIFESTS: ${AGENT_EXTERNAL_MANIFESTS:-}
-      PYTHONPATH: /app/sdk/python
+      AGENT_ISOLATION_MODE: ${AGENT_ISOLATION_MODE:-bwrap}
+      SANDBOX_PROVIDER: none
       PLATFORM_RUNNER_MODE: api
       AGENT_A2A_ALLOWED_EDGES: ${AGENT_A2A_ALLOWED_EDGES:-}
     depends_on:
       database:
         condition: service_healthy
+    # SHUTDOWN_TIMEOUT_MS (30s) must stay below this, or Docker SIGKILLs mid-drain.
+    stop_grace_period: 40s
     ports:
       - "127.0.0.1:3000:3000"
     healthcheck:
@@ -28,16 +47,33 @@ services:
           cpus: "2"
           memory: 1G
   worker:
-    build: .
-    command: pnpm worker
+    build:
+      context: .
+      target: worker
+    command: ["node", "dist/worker.js"]
+    init: true
+    user: "1000:1000"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./docker/seccomp-bubblewrap.json
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
     env_file: .env
     environment:
+      NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      WAREHOUSE_DATABASE_URL: ${WAREHOUSE_DATABASE_URL:?set WAREHOUSE_DATABASE_URL in .env}
+      WAREHOUSE_POSTGRES_ENABLED: ${WAREHOUSE_POSTGRES_ENABLED:?set WAREHOUSE_POSTGRES_ENABLED=true in .env}
+      WAREHOUSE_ALLOWED_TABLES: ${WAREHOUSE_ALLOWED_TABLES:?set WAREHOUSE_ALLOWED_TABLES in .env}
       MODEL_API_KEY: ${MODEL_API_KEY:-}
-      AGENT_PLUGIN_MODULES: ${AGENT_PLUGIN_MODULES:-src/agents/index.ts}
-      AGENT_TOOL_MODULES: ${AGENT_TOOL_MODULES:-src/tools/warehouse.ts}
+      AGENT_PLUGIN_MODULES: ${AGENT_PLUGIN_MODULES:-}
+      AGENT_TOOL_MODULES: ${AGENT_TOOL_MODULES:-dist/tools/warehouse.js}
       AGENT_EXTERNAL_MANIFESTS: ${AGENT_EXTERNAL_MANIFESTS:-}
-      PYTHONPATH: /app/sdk/python
+      AGENT_ISOLATION_MODE: ${AGENT_ISOLATION_MODE:-bwrap}
+      SANDBOX_PROVIDER: none
       PLATFORM_RUNNER_MODE: worker
       WORKER_ID: ${WORKER_ID:-}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
@@ -45,14 +81,17 @@ services:
     depends_on:
       database:
         condition: service_healthy
+      # The API applies migrations; waiting for it to be ready means the worker never
+      # races the schema. The worker still takes the migration lock itself as a backstop.
+      api:
+        condition: service_healthy
+    stop_grace_period: 40s
     restart: unless-stopped
     deploy:
       resources:
         limits:
           cpus: "2"
           memory: 1G
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.123.0
@@ -86,7 +125,7 @@ services:
       - "127.0.0.1:3001:3000"
 
   database:
-    image: postgres:17-alpine
+    image: postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-team6}

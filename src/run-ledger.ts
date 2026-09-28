@@ -45,6 +45,13 @@ export interface RunEvent {
   created_at: Date;
 }
 
+export class IdempotencyConflictError extends Error {
+  constructor() {
+    super("Idempotency key is already bound to a different run payload");
+    this.name = "IdempotencyConflictError";
+  }
+}
+
 export interface UsageRecordInput {
   runId?: string;
   userId: string;
@@ -65,11 +72,25 @@ export class RunLedger {
   constructor(private readonly pool: Pool) {}
 
   async recordUsage(input: UsageRecordInput): Promise<void> {
+    // Web tasks pass their invocation id as runId. Resolve it to the owning platform run so the
+    // FK holds (an unresolved id used to fail the insert, and callers swallow that error).
     await this.pool.query(
-      `INSERT INTO platform_usage_records
+      `WITH resolved AS (
+         SELECT COALESCE(
+           (SELECT id FROM platform_runs WHERE id = $1::text),
+           (SELECT task.platform_run_id FROM web_invocations invocation
+            JOIN web_tasks task ON task.id = invocation.task_id
+            WHERE invocation.id = $1::text)
+         ) AS run_id
+       )
+       INSERT INTO platform_usage_records
        (run_id, user_id, space_id, kind, provider, model, agent_id, tool_name,
         input_tokens, output_tokens, latency_ms, estimated_cost, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)`,
+       SELECT resolved.run_id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+         CASE WHEN $1::text IS NOT NULL AND resolved.run_id IS DISTINCT FROM $1::text
+           THEN $13::jsonb || jsonb_build_object('source_run_id', $1::text)
+           ELSE $13::jsonb END
+       FROM resolved`,
       [
         input.runId ?? null,
         input.userId,
@@ -108,6 +129,7 @@ export class RunLedger {
     if (!input.idempotencyKey || input.idempotencyKey.length > 256) {
       throw new Error("idempotencyKey must contain 1-256 characters");
     }
+    const encodedInput = encodeJson(input.input);
     const id = input.id ?? `run_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
     const result = await client.query<CreatedRun>(
       `INSERT INTO platform_runs
@@ -122,13 +144,31 @@ export class RunLedger {
         input.userId,
         input.workflowId,
         input.workflowVersion,
-        encodeJson(input.input),
+        encodedInput,
         input.idempotencyKey,
         input.deadlineAt ?? null,
       ],
     );
     const created = result.rows[0];
     if (!created) throw new Error("Run insert returned no row");
+    const existing = await client.query<{
+      workflow_id: string;
+      workflow_version: string;
+      input: unknown;
+    }>(
+      `SELECT workflow_id, workflow_version, input
+       FROM platform_runs WHERE id = $1 FOR UPDATE`,
+      [created.id],
+    );
+    const stored = existing.rows[0];
+    if (
+      !stored ||
+      stored.workflow_id !== input.workflowId ||
+      stored.workflow_version !== input.workflowVersion ||
+      !jsonbEqual(stored.input, input.input)
+    ) {
+      throw new IdempotencyConflictError();
+    }
     await client.query(
       `INSERT INTO platform_idempotency_keys
        (space_id, user_id, idempotency_key, run_id)
@@ -157,6 +197,7 @@ export class RunLedger {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      await this.expireUnclaimableRunsOnClient(client);
       const result = await client.query<ClaimedRun>(
         `SELECT * FROM platform_runs
          WHERE (
@@ -165,6 +206,7 @@ export class RunLedger {
          )
          AND cancel_requested = false
          AND (deadline_at IS NULL OR deadline_at > now())
+         AND attempt < max_attempts
          ORDER BY created_at
          FOR UPDATE SKIP LOCKED LIMIT 1`,
       );
@@ -222,6 +264,7 @@ export class RunLedger {
          SET lease_until = now() + ($4 * interval '1 millisecond'), updated_at = now()
          WHERE id = $1 AND worker_id = $2 AND fencing_token = $3
            AND cancel_requested = false
+           AND (deadline_at IS NULL OR deadline_at > now())
            AND status IN ('leased', 'running', 'waiting')
          RETURNING id`,
         [runId, workerId, fencingToken, leaseMs],
@@ -268,7 +311,6 @@ export class RunLedger {
     detail?: { output?: unknown; error?: string },
   ): Promise<boolean> {
     assertRunTransition(from, to);
-    const terminal = to === "completed" || to === "failed" || to === "cancelled";
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -277,12 +319,30 @@ export class RunLedger {
         space_id: string;
         user_id: string;
         attempt: number;
+        status: RunStatus;
+        error: string | null;
       }>(
-        `UPDATE platform_runs SET status = $5, output = COALESCE($6::jsonb, output),
-           error = COALESCE($7, error), updated_at = now(),
-           finished_at = CASE WHEN $8 THEN now() ELSE finished_at END
+        `UPDATE platform_runs SET status = CASE
+             WHEN cancel_requested THEN 'cancelled'
+             WHEN deadline_at IS NOT NULL AND deadline_at <= now() THEN 'failed'
+             WHEN $5 = 'retryable' AND attempt >= max_attempts THEN 'failed'
+             ELSE $5 END,
+           output = CASE WHEN cancel_requested OR (deadline_at IS NOT NULL AND deadline_at <= now()) THEN output
+                         ELSE COALESCE($6::jsonb, output) END,
+           error = CASE
+             WHEN cancel_requested THEN 'Run cancelled'
+             WHEN deadline_at IS NOT NULL AND deadline_at <= now() THEN 'Run deadline exceeded'
+             WHEN $5 = 'retryable' AND attempt >= max_attempts THEN 'Maximum attempts exceeded'
+             WHEN $5 = 'running' THEN NULL
+             ELSE COALESCE($7, error) END,
+           updated_at = now(),
+           finished_at = CASE
+             WHEN cancel_requested OR (deadline_at IS NOT NULL AND deadline_at <= now())
+               OR ($5 = 'retryable' AND attempt >= max_attempts)
+               OR $5 IN ('completed', 'failed', 'cancelled')
+             THEN now() ELSE finished_at END
          WHERE id = $1 AND worker_id = $2 AND fencing_token = $3 AND status = $4
-         RETURNING id, space_id, user_id, attempt`,
+         RETURNING id, space_id, user_id, attempt, status, error`,
         [
           runId,
           workerId,
@@ -291,7 +351,6 @@ export class RunLedger {
           to,
           detail?.output === undefined ? null : encodeJson(detail.output),
           detail?.error ?? null,
-          terminal,
         ],
       );
       const row = result.rows[0];
@@ -306,12 +365,15 @@ export class RunLedger {
         eventType: "run.status",
         payload: {
           from,
-          to,
+          to: row.status,
           attempt: row.attempt,
-          error: detail?.error,
+          error: row.error ?? undefined,
           has_output: detail?.output !== undefined,
         },
       });
+      if (row.status !== "leased" && row.status !== "running" && row.status !== "waiting") {
+        await client.query("DELETE FROM platform_worker_leases WHERE run_id = $1", [runId]);
+      }
       await client.query("COMMIT");
       return true;
     } catch (error) {
@@ -326,18 +388,32 @@ export class RunLedger {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const result = await client.query<{ id: string }>(
+      const current = await client.query<{ id: string; status: RunStatus; attempt: number }>(
+        `SELECT id, status, attempt FROM platform_runs
+         WHERE id = $1 AND space_id = $2 AND user_id = $3
+           AND status IN ('queued', 'retryable', 'leased', 'running', 'waiting')
+         FOR UPDATE`,
+        [runId, spaceId, userId],
+      );
+      const previous = current.rows[0];
+      if (!previous) {
+        await client.query("ROLLBACK");
+        return false;
+      }
+      const result = await client.query<{ id: string; status: RunStatus }>(
         `UPDATE platform_runs
          SET status = CASE WHEN status IN ('queued', 'retryable') THEN 'cancelled' ELSE status END,
              cancel_requested = true,
+             error = CASE WHEN status IN ('queued', 'retryable') THEN 'Run cancelled' ELSE error END,
              finished_at = CASE WHEN status IN ('queued', 'retryable') THEN now() ELSE finished_at END,
              updated_at = now()
          WHERE id = $1 AND space_id = $2 AND user_id = $3
            AND status IN ('queued', 'retryable', 'leased', 'running', 'waiting')
-         RETURNING id`,
+         RETURNING id, status`,
         [runId, spaceId, userId],
       );
-      if (!result.rowCount) {
+      const updated = result.rows[0];
+      if (!updated) {
         await client.query("ROLLBACK");
         return false;
       }
@@ -348,6 +424,21 @@ export class RunLedger {
         eventType: "run.cancel_requested",
         payload: { run_id: runId },
       });
+      if (updated.status === "cancelled") {
+        await this.appendEventOnClient(client, {
+          runId,
+          spaceId,
+          userId,
+          eventType: "run.status",
+          payload: {
+            from: previous.status,
+            to: "cancelled",
+            attempt: previous.attempt,
+            error: "Run cancelled",
+          },
+        });
+        await client.query("DELETE FROM platform_worker_leases WHERE run_id = $1", [runId]);
+      }
       await client.query("COMMIT");
       return true;
     } catch (error) {
@@ -420,12 +511,88 @@ export class RunLedger {
       client.release();
     }
   }
+
+  private async expireUnclaimableRunsOnClient(client: PoolClient): Promise<void> {
+    const expired = await client.query<{
+      id: string;
+      space_id: string;
+      user_id: string;
+      previous_status: RunStatus;
+      status: RunStatus;
+      attempt: number;
+      reason: string;
+    }>(
+      `WITH candidates AS (
+         SELECT id, status AS previous_status, space_id, user_id, attempt,
+                cancel_requested, deadline_at, max_attempts
+         FROM platform_runs
+         WHERE status IN ('queued', 'retryable', 'leased', 'running', 'waiting')
+           AND (
+             (deadline_at IS NOT NULL AND deadline_at <= now())
+             OR (attempt >= max_attempts AND (
+               status IN ('queued', 'retryable')
+               OR (status IN ('leased', 'running', 'waiting') AND lease_until < now())
+             ))
+             OR (cancel_requested AND (
+               status IN ('queued', 'retryable') OR lease_until IS NULL OR lease_until < now()
+             ))
+           )
+         FOR UPDATE SKIP LOCKED
+       ), transitioned AS (
+         UPDATE platform_runs AS run
+         SET status = CASE
+               WHEN candidate.cancel_requested THEN 'cancelled'
+               WHEN candidate.deadline_at IS NOT NULL AND candidate.deadline_at <= now() THEN 'failed'
+               ELSE 'failed' END,
+             error = CASE
+               WHEN candidate.cancel_requested THEN 'Run cancelled'
+               WHEN candidate.deadline_at IS NOT NULL AND candidate.deadline_at <= now()
+                 THEN 'Run deadline exceeded'
+               ELSE 'Maximum attempts exceeded' END,
+             finished_at = now(), updated_at = now()
+         FROM candidates AS candidate
+         WHERE run.id = candidate.id
+         RETURNING run.id, run.space_id, run.user_id, run.status, run.attempt,
+                   run.error, candidate.previous_status
+       )
+       SELECT id, space_id, user_id, previous_status, status, attempt, error AS reason
+       FROM transitioned`,
+    );
+    for (const row of expired.rows) {
+      await client.query("DELETE FROM platform_worker_leases WHERE run_id = $1", [row.id]);
+      await this.appendEventOnClient(client, {
+        runId: row.id,
+        spaceId: row.space_id,
+        userId: row.user_id,
+        eventType: "run.status",
+        payload: {
+          from: row.previous_status,
+          to: row.status,
+          attempt: row.attempt,
+          error: row.reason,
+        },
+      });
+    }
+  }
 }
 
 function encodeJson(value: unknown): string {
   const encoded = JSON.stringify(value ?? null);
   if (encoded === undefined) throw new Error("Run payload must be JSON serializable");
   return encoded;
+}
+
+function jsonbEqual(left: unknown, right: unknown): boolean {
+  return stableJson(left) === stableJson(right);
+}
+
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "undefined";
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  return `{${Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
+    .join(",")}}`;
 }
 
 function eventPayload(value: unknown, seq: number): Record<string, unknown> {

@@ -103,4 +103,32 @@ describe("durable run worker", () => {
     expect(result).toBe(true);
     expect(transitions).toContain("running->cancelled");
   });
+
+  it("backs off after empty claims instead of continuously polling the ledger", async () => {
+    const ledgerShape = {
+      claim: vi.fn(async () => undefined),
+      async heartbeat() {
+        return true;
+      },
+      async transition() {
+        return true;
+      },
+    };
+    const worker = new DurableRunWorker(
+      ledgerShape as never,
+      { execute: vi.fn() },
+      {
+        workerId: "worker-idle",
+        concurrency: 2,
+        pollMs: 40,
+      },
+    );
+
+    worker.start();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    await worker.stop();
+
+    expect(ledgerShape.claim).toHaveBeenCalled();
+    expect(ledgerShape.claim.mock.calls.length).toBeLessThan(20);
+  });
 });

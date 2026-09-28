@@ -1,7 +1,10 @@
 import os from "node:os";
 import { Pool } from "pg";
-import { migrateDatabase } from "./database.js";
+import { AlertScheduler, AlertStore } from "./alerts.js";
+import { migrateDatabase, migrationStatus } from "./database.js";
+import { Lifecycle } from "./lifecycle.js";
 import { OutboxPublisher } from "./outbox.js";
+import { createOutboxFanout } from "./outbox-consumers.js";
 import { loadPlatformServices } from "./platform-services.js";
 import { RunLedger } from "./run-ledger.js";
 import { DurableRunWorker } from "./run-worker.js";
@@ -14,7 +17,9 @@ const database = new Pool({ connectionString: databaseUrl, max: 20 });
 database.on("error", (error) => {
   process.stderr.write(`PostgreSQL pool error: ${error.message}\n`);
 });
-await migrateDatabase(database);
+await migrateDatabase(database, {
+  lockTimeoutMs: positiveInt(process.env.MIGRATION_LOCK_TIMEOUT_MS, 120_000),
+});
 
 const services = await loadPlatformServices(database);
 const ledger = new RunLedger(database);
@@ -35,40 +40,58 @@ const worker = new DurableRunWorker(
     concurrency: positiveInt(process.env.WORKER_CONCURRENCY, 4),
   },
 );
-const outbox = new OutboxPublisher(
-  database,
-  async (event) => {
-    process.stdout.write(
-      `${JSON.stringify({
-        message: "platform.outbox_published",
-        outbox_id: event.id,
-        run_id: event.run_id,
-        event_type: event.event_type,
-      })}\n`,
-    );
-  },
-  {
-    publisherId: `outbox-${workerName}`,
-    pollMs: positiveInt(process.env.OUTBOX_POLL_MS, 250),
-  },
-);
+const outboxFanout = createOutboxFanout();
+const outbox = new OutboxPublisher(database, outboxFanout.dispatch, {
+  publisherId: `outbox-${workerName}`,
+  pollMs: positiveInt(process.env.OUTBOX_POLL_MS, 250),
+});
 
-let stopping = false;
-const shutdown = async () => {
-  if (stopping) return;
-  stopping = true;
-  await outbox.stop();
-  await worker.stop();
-  await database.end();
-};
+// ALERT_EVAL_INTERVAL_MS=0 disables scheduled evaluation (e.g. when an external cron runs it).
+const alertIntervalMs = Number(process.env.ALERT_EVAL_INTERVAL_MS ?? 60_000);
+const alerts =
+  alertIntervalMs > 0
+    ? new AlertScheduler(new AlertStore(database), alertIntervalMs, (error) =>
+        process.stderr.write(
+          `${JSON.stringify({ message: "alerts.evaluation_failed", error: error instanceof Error ? error.message : "unknown" })}\n`,
+        ),
+      )
+    : undefined;
+
+const lifecycle = new Lifecycle({
+  ping: () => database.query("SELECT 1"),
+  migrations: () => migrationStatus(database),
+});
+// Worker drains before the outbox stops, so events from runs finishing in the grace
+// window are still published; the pool closes last (M13.1).
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
-    void shutdown().finally(() => process.exit(0));
+    void lifecycle
+      .shutdown(
+        [
+          {
+            name: "worker",
+            run: () => worker.drain(positiveInt(process.env.WORKER_DRAIN_GRACE_MS, 20_000)),
+          },
+          { name: "outbox", run: () => outbox.stop() },
+          { name: "alerts", run: async () => alerts?.stop() },
+          { name: "tracing", run: () => services.shutdownTracing() },
+          { name: "memory-retention", run: () => services.shutdownMemoryRetention() },
+          { name: "warehouse-database", run: () => services.shutdownWarehouse() },
+          { name: "database", run: () => database.end() },
+        ],
+        { drainDelayMs: 0, timeoutMs: positiveInt(process.env.SHUTDOWN_TIMEOUT_MS, 30_000) },
+      )
+      .then((result) => {
+        process.stdout.write(`${JSON.stringify({ message: "platform.shutdown", ...result })}\n`);
+        process.exit(result.ok ? 0 : 1);
+      });
   });
 }
 
 outbox.start();
 worker.start();
+alerts?.start();
+lifecycle.markReady();
 process.stdout.write(`Team 6 cAi worker started as ${workerName}\n`);
 await new Promise<void>(() => undefined);
 

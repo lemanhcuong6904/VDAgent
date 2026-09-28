@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Protocol, TextIO
 
-AGENT_RUNNER_PROTOCOL = "agent-runner.v1"
+AGENT_RUNNER_PROTOCOL = "agent-runner.v2"
 
 
 @dataclass(frozen=True)
@@ -61,24 +61,36 @@ class AgentScope:
 
 
 class _Rpc:
+    """Port calls over agent-runner.v2; every host capability is a granted tool."""
+
     def __init__(self, request_id: str, stdin: TextIO, stdout: TextIO):
         self.request_id = request_id
         self.stdin = stdin
         self.stdout = stdout
+        self.sequence = 0
 
-    def call(self, name: str, input_value: Any) -> Any:
+    def call(
+        self,
+        name: str,
+        input_value: Any,
+        idempotency_key: str | None = None,
+        port: str = "tools",
+    ) -> Any:
         call_id = uuid.uuid4().hex
-        _write(
-            self.stdout,
-            {
-                "protocol": AGENT_RUNNER_PROTOCOL,
-                "type": "tool_call",
-                "request_id": self.request_id,
-                "call_id": call_id,
-                "name": name,
-                "input": input_value,
-            },
-        )
+        self.sequence += 1
+        message: dict[str, Any] = {
+            "protocol": AGENT_RUNNER_PROTOCOL,
+            "type": "port_call",
+            "request_id": self.request_id,
+            "call_id": call_id,
+            "port": port,
+            "operation": name,
+            "input": input_value if input_value is not None else {},
+            "sequence": self.sequence,
+        }
+        if idempotency_key is not None:
+            message["idempotency_key"] = idempotency_key
+        _write(self.stdout, message)
         while True:
             line = self.stdin.readline()
             if not line:
@@ -89,13 +101,15 @@ class _Rpc:
             if message.get("type") == "cancel" and message.get("request_id") == self.request_id:
                 raise RuntimeError("Agent run cancelled")
             if (
-                message.get("type") == "tool_result"
+                message.get("type") == "port_result"
                 and message.get("request_id") == self.request_id
                 and message.get("call_id") == call_id
             ):
                 if message.get("ok"):
                     return message.get("output")
-                raise RuntimeError(str(message.get("error") or "Tool call failed"))
+                error = message.get("error")
+                detail = error.get("message") if isinstance(error, dict) else error
+                raise RuntimeError(str(detail or "Tool call failed"))
 
 
 class ToolClient:
@@ -104,6 +118,41 @@ class ToolClient:
 
     def call(self, name: str, input_value: Any) -> Any:
         return self._rpc.call(name, input_value)
+
+
+class ModelClient:
+    """Host-mediated model calls: the host holds credentials, picks the model and meters usage.
+
+    Requires `modelProfile` in the manifest; the host ignores any profile the agent sends.
+    """
+
+    TEXT_SCHEMA: Mapping[str, Any] = {"type": "string"}
+
+    def __init__(self, rpc: _Rpc):
+        self._rpc = rpc
+
+    def complete(self, prompt: str, output_schema: Mapping[str, Any] | None = None) -> Any:
+        key = uuid.uuid4().hex
+        result = self._rpc.call(
+            "complete",
+            {
+                "profile": "default",
+                "prompt": prompt,
+                "outputSchema": dict(output_schema or self.TEXT_SCHEMA),
+                "contextRefs": [],
+                "idempotencyKey": key,
+            },
+            idempotency_key=key,
+            port="model",
+        )
+        return result.get("output") if isinstance(result, dict) else result
+
+    def text(self, prompt: str) -> str:
+        return str(self.complete(prompt))
+
+    def json(self, prompt: str, output_schema: Mapping[str, Any]) -> Any:
+        """Return JSON validated by the host against `output_schema`."""
+        return self.complete(prompt, output_schema)
 
 
 class WarehouseClient:
@@ -193,6 +242,7 @@ class AgentContext:
     warehouse: WarehouseClient
     artifacts: ArtifactClient
     agents: AgentClient
+    model: ModelClient
 
 
 class Agent(Protocol):
@@ -212,27 +262,29 @@ def serve(agent: Agent, stdin: TextIO | None = None, stdout: TextIO | None = Non
             return
         try:
             request = _read(line)
-            if request.get("protocol") != AGENT_RUNNER_PROTOCOL or request.get("type") != "run":
-                raise RuntimeError("Expected an agent-runner.v1 run message")
+            if request.get("protocol") != AGENT_RUNNER_PROTOCOL or request.get("type") != "invoke":
+                raise RuntimeError("Expected an agent-runner.v2 invoke message")
             request_id = _required_string(request, "request_id")
             scope_value = request.get("scope")
             if not isinstance(scope_value, dict):
                 raise RuntimeError("Run scope is required")
             scope = AgentScope(
-                user_id=_required_string(scope_value, "userId"),
-                space_id=_required_string(scope_value, "spaceId"),
-                task_id=_optional_string(scope_value, "taskId"),
-                run_id=_optional_string(scope_value, "runId"),
-                parent_run_id=_optional_string(scope_value, "parentRunId"),
-                trace_id=_optional_string(scope_value, "traceId"),
+                user_id=_required_string(scope_value, "user_id"),
+                space_id=_required_string(scope_value, "space_id"),
+                task_id=_optional_string(scope_value, "task_id"),
+                run_id=_optional_string(scope_value, "run_id"),
+                parent_run_id=_optional_string(scope_value, "parent_run_id"),
+                trace_id=_optional_string(scope_value, "trace_id"),
             )
-            tools = ToolClient(_Rpc(request_id, input_stream, output_stream))
+            rpc = _Rpc(request_id, input_stream, output_stream)
+            tools = ToolClient(rpc)
             context = AgentContext(
                 scope=scope,
                 tools=tools,
                 warehouse=WarehouseClient(tools),
                 artifacts=ArtifactClient(tools),
                 agents=AgentClient(tools),
+                model=ModelClient(rpc),
             )
             result = agent.run(request.get("input"), context)
             if inspect.isawaitable(result):
@@ -257,7 +309,7 @@ def serve(agent: Agent, stdin: TextIO | None = None, stdout: TextIO | None = Non
                         "type": "result",
                         "request_id": request_id,
                         "ok": False,
-                        "error": str(error),
+                        "error": {"code": "agent_error", "message": str(error)[:4096], "retriable": False},
                     },
                 )
             else:

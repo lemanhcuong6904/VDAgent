@@ -10,8 +10,8 @@ Team 6 cAi hiện là **modular monolith có durable worker boundary** viết b�
 phục vụ HTTP và enqueue run; worker process claim run bằng PostgreSQL lease/fencing rồi chạy agent.
 Local mặc định dùng `embedded` runner để dễ khởi động, còn Compose dùng API và worker riêng. React
 được build thành static assets và phục vụ cùng API. PostgreSQL là một database dùng chung; Docker là
-execution sandbox. Pi Agent Core xử lý vòng lặp model/tool; external agent có thể chạy qua
-`agent-runner.v1` JSONL process bridge.
+execution sandbox. Pi Agent Core xử lý vòng lặp model/tool; external agent chạy qua
+`agent-runner.v2` JSONL process bridge.
 
 ```text
 Browser / API client / MCP client
@@ -98,9 +98,9 @@ như code tin cậy lúc startup; thay đổi module cần deploy/restart proces
 | `visualize` | Đọc kết quả Compare và Insight, chọn và persist chart từ dataset đã xác minh. | Đọc dataset, tạo chart. |
 | `report` | Viết và lưu report dựa trên kết quả Compare, Insight và Visualize. | Đọc dataset, lưu report. |
 
-Implementation theo agent nằm ở `src/agents/<id>/`. `src/agents/index.ts` định nghĩa roster mặc
-định; `src/agents/analytics.ts` giữ runtime workflow dùng chung. `defineAgent` ở
-`src/agents/factory.ts` là đường ngắn để thêm plugin dùng Pi mà vẫn theo contract của platform.
+Implementation là các file Python trong `agents/` (uv project, SDK `agent_platform`), chạy qua
+`agent-runner.v2`. Manifest sinh bởi `agents/gen_manifests.py` vào `agents/manifests/`; host nạp
+`DEFAULT_AGENT_MANIFESTS` khi `AGENT_EXTERNAL_MANIFESTS` trống. Model call đi qua host (`context.model`).
 
 ### AgentPool và MCP ToolPool
 
@@ -434,10 +434,30 @@ npm --prefix frontend test
 - `AgentRuntime`/`agent-sdk` tách contract agent khỏi implementation của API và PiRuntime.
 - `platform_runs` cùng worker lease, fencing, outbox và idempotency schema là nền tảng cho bước tách
   execution ra worker; `src/worker.ts` và Compose worker đã nối web task vào queue.
-- `agent-runner.v1`, `src/agent-runner.ts`, external manifest loader và `sdk/python` là đường tích hợp
+- `agent-runner.v2`, `src/agent-runner.ts`, external manifest loader và `sdk/python` là đường tích hợp
   Python process-isolated đầu tiên; host vẫn giữ tool authorization và scope. `agents.send`,
   `agents.wait`, `agents.result` đi cùng bridge này để Python team agent trao đổi qua durable child
   runs, không gọi backend trực tiếp.
+
+## Trạng thái contract stack mới
+
+`pnpm compat:matrix` (`docs/execution/compatibility-matrix.json`) cho biết lớp nào production import.
+
+Đã nối vào production:
+
+- `src/contracts/`: `agent.v1` manifest, `AgentModule` và ports, cùng generated types từ `schemas/`.
+- `src/ports/host-factory.ts` và `module-plugin.ts`: factory port dùng chung cho `AgentModule` và process agent v2.
+- `src/registry/agent-registry.ts`: activation gate (`enabled` mới phục vụ traffic).
+- `src/agent-runner.ts`: process protocol (`agent-runner.v2`) cho external manifest.
+- `/api/v1`, MCP server, A2A gateway; artifact, evidence và receipt storage; OTel, observatory; lifecycle
+  probes; `AlertScheduler` trong worker.
+
+- Port `tools`, `warehouse`, `artifacts`, `memory`, `collaboration` (`src/ports/host-*.ts`), event outbox
+  fan-out (`src/outbox-consumers.ts`) và shaping ngữ cảnh model (`src/session/runtime-context.ts`).
+
+Chưa được production import: port `sandbox`, `src/ports/mailbox.ts`, `src/checkpoint-manifest.ts`,
+`src/sandbox-policy.ts`, `src/registry/policy-engine.ts`, workflow planner/child-run và reference agents.
+Danh sách việc còn mở: [PROGRESS](../PROGRESS.md#việc-còn-mở).
 
 Các giới hạn còn lại, đặc biệt recovery/side-effect test, external OIDC provisioning, distributed
 rate limiting, backup/load evidence, process/container hardening và OpenTelemetry exporter, vẫn phải

@@ -1,0 +1,34 @@
+{
+  "apiVersion": "agent-plugin.v2",
+  "id": "example.python.langchain",
+  "version": "1.0.0",
+  "name": "LangChain analytics example",
+  "description": "Summarizes numeric columns of a warehouse table with a LangChain pipeline.",
+  "capabilities": ["example.langchain.summary"],
+  "tools": ["warehouse.list_tables", "warehouse.run_query"],
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "table": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1000
+      }
+    },
+    "additionalProperties": false
+  },
+  "command": "uv",
+  "args": [
+    "run",
+    "--no-sync",
+    "--project",
+    "agents",
+    "python",
+    "sdk/python/examples/langchain_analytics/agent.py"
+  ]
+}

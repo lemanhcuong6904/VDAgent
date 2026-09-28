@@ -43,6 +43,13 @@ export interface AgentContext {
   publish?: (userId: string, event: string, data: Record<string, unknown>) => void;
 }
 
+/** Delegation is a manifest grant: the caller must declare this tool and must not be delegatable. */
+export const DELEGATION_TOOL = "agents.delegate";
+
+export function canDelegate(descriptor: AgentPlugin["descriptor"]): boolean {
+  return descriptor.tools.includes(DELEGATION_TOOL) && descriptor.acceptsDelegation === false;
+}
+
 export interface AgentPlugin {
   descriptor: {
     apiVersion?: "agent-plugin.v1" | "agent-plugin.v2";

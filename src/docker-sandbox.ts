@@ -8,13 +8,41 @@ const SANDBOX_IMAGE = process.env.SANDBOX_IMAGE ?? "node:24-slim";
 const DOCKER_SOCKET = process.env.DOCKER_SOCKET ?? "/var/run/docker.sock";
 
 type DockerResponse = Record<string, unknown>;
+export interface DockerTransport {
+  request(
+    path: string,
+    body?: unknown,
+    method?: string,
+    signal?: AbortSignal,
+  ): Promise<DockerResponse>;
+  stream(path: string, body: unknown, signal: AbortSignal): Promise<Buffer>;
+}
+
+const socketTransport: DockerTransport = {
+  request: dockerRequest,
+  stream: dockerStream,
+};
+
 export class DockerSandboxProvider implements SandboxProvider {
+  constructor(private readonly transport: DockerTransport = socketTransport) {}
+
   execute(input: SandboxCommand, scope: ToolScope) {
-    return executeDocker(input.argv, input.cwd ?? "/workspace", input.timeoutMs ?? 30_000, scope);
+    return executeDocker(
+      input.argv,
+      input.cwd ?? "/workspace",
+      input.timeoutMs ?? 30_000,
+      scope,
+      this.transport,
+    );
   }
 }
 
-function dockerRequest(path: string, body?: unknown, method = "POST"): Promise<DockerResponse> {
+function dockerRequest(
+  path: string,
+  body?: unknown,
+  method = "POST",
+  signal?: AbortSignal,
+): Promise<DockerResponse> {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const req = request(
@@ -38,19 +66,30 @@ function dockerRequest(path: string, body?: unknown, method = "POST"): Promise<D
           chunks.push(chunk);
         });
         res.on("end", () => {
-          const text = Buffer.concat(chunks).toString("utf8");
-          const value = text ? (JSON.parse(text) as DockerResponse) : {};
-          if ((res.statusCode ?? 500) >= 400) {
-            reject(
-              new Error(
-                typeof value.message === "string" ? value.message : "Docker request failed",
-              ),
-            );
-          } else resolve(value);
+          try {
+            const text = Buffer.concat(chunks).toString("utf8");
+            const value = text ? (JSON.parse(text) as DockerResponse) : {};
+            if ((res.statusCode ?? 500) >= 400) {
+              reject(
+                new Error(
+                  typeof value.message === "string" ? value.message : "Docker request failed",
+                ),
+              );
+            } else resolve(value);
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          }
         });
       },
     );
     req.setTimeout(30_000, () => req.destroy(new Error("Docker request timed out")));
+    const abort = () =>
+      req.destroy(
+        signal?.reason instanceof Error ? signal.reason : new Error("Sandbox command cancelled"),
+      );
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    req.on("close", () => signal?.removeEventListener("abort", abort));
     req.on("error", reject);
     if (payload) req.write(payload);
     req.end();
@@ -110,13 +149,32 @@ function containerName(scope: ToolScope): string {
   return `team6-agent-${key}`;
 }
 
-async function ensureContainer(scope: ToolScope): Promise<string> {
+async function killContainer(transport: DockerTransport, name: string): Promise<void> {
+  const cleanupController = new AbortController();
+  const timer = setTimeout(
+    () => cleanupController.abort(new Error("Sandbox container cleanup timed out")),
+    1_000,
+  );
+  try {
+    await transport
+      .request(`/containers/${name}/kill?signal=KILL`, undefined, "POST", cleanupController.signal)
+      .catch(() => undefined);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function ensureContainer(
+  scope: ToolScope,
+  transport: DockerTransport,
+  signal: AbortSignal,
+): Promise<string> {
   const name = containerName(scope);
   try {
-    const existing = await dockerRequest(`/containers/${name}/json`, undefined, "GET");
+    const existing = await transport.request(`/containers/${name}/json`, undefined, "GET", signal);
     if (existing.State && typeof existing.State === "object" && "Running" in existing.State) {
       const state = existing.State as { Running: boolean };
-      if (!state.Running) await dockerRequest(`/containers/${name}/start`, {});
+      if (!state.Running) await transport.request(`/containers/${name}/start`, {}, "POST", signal);
     }
     return name;
   } catch (error) {
@@ -124,63 +182,105 @@ async function ensureContainer(scope: ToolScope): Promise<string> {
   }
 
   const volume = `${name}-workspace`;
-  await dockerRequest("/volumes/create", {
-    Name: volume,
-    Labels: { "team6.agent": scope.agentId },
-  });
-  try {
-    await dockerRequest(`/containers/create?name=${name}`, {
-      Image: SANDBOX_IMAGE,
-      Cmd: ["sh", "-c", "chown 1000:1000 /workspace && exec sleep infinity"],
+  await transport.request(
+    "/volumes/create",
+    {
+      Name: volume,
       Labels: { "team6.agent": scope.agentId },
-      WorkingDir: "/workspace",
-      HostConfig: {
-        NetworkMode: "none",
-        ReadonlyRootfs: true,
-        Memory: 536_870_912,
-        NanoCpus: 1_000_000_000,
-        PidsLimit: 128,
-        CapDrop: ["ALL"],
-        CapAdd: ["CHOWN"],
-        SecurityOpt: ["no-new-privileges:true"],
-        Tmpfs: { "/tmp": "rw,noexec,nosuid,size=64m" },
-        Binds: [`${volume}:/workspace`],
+    },
+    "POST",
+    signal,
+  );
+  try {
+    await transport.request(
+      `/containers/create?name=${name}`,
+      {
+        Image: SANDBOX_IMAGE,
+        Cmd: ["sh", "-c", "chown 1000:1000 /workspace && exec sleep infinity"],
+        Labels: { "team6.agent": scope.agentId },
+        WorkingDir: "/workspace",
+        HostConfig: {
+          NetworkMode: "none",
+          ReadonlyRootfs: true,
+          Memory: 536_870_912,
+          NanoCpus: 1_000_000_000,
+          PidsLimit: 128,
+          CapDrop: ["ALL"],
+          CapAdd: ["CHOWN"],
+          SecurityOpt: ["no-new-privileges:true"],
+          Tmpfs: { "/tmp": "rw,noexec,nosuid,size=64m" },
+          Binds: [`${volume}:/workspace`],
+        },
       },
-    });
+      "POST",
+      signal,
+    );
   } catch (error) {
     if (!(error instanceof Error) || !error.message.includes("Conflict")) throw error;
   }
-  await dockerRequest(`/containers/${name}/start`, {});
+  await transport.request(`/containers/${name}/start`, {}, "POST", signal);
   return name;
 }
 
-async function executeDocker(argv: string[], cwd: string, timeoutMs: number, scope: ToolScope) {
-  const name = await ensureContainer(scope);
-  scope.signal.throwIfAborted();
-  const created = await dockerRequest(`/containers/${name}/exec`, {
-    Cmd: argv,
-    WorkingDir: cwd,
-    User: "1000:1000",
-    AttachStdout: true,
-    AttachStderr: true,
-    Tty: false,
-  });
-  const execId = created.Id;
-  if (typeof execId !== "string") throw new Error("Docker did not return an exec ID");
+async function executeDocker(
+  argv: string[],
+  cwd: string,
+  timeoutMs: number,
+  scope: ToolScope,
+  transport: DockerTransport,
+) {
   const timeoutController = new AbortController();
   const timer = setTimeout(
     () => timeoutController.abort(new Error("Sandbox command timed out")),
     timeoutMs,
   );
   const signal = AbortSignal.any([scope.signal, timeoutController.signal]);
-  let output: Buffer;
+  const name = containerName(scope);
+  let execCreated = false;
+  let streamCompleted = false;
   try {
-    output = await dockerStream(`/exec/${execId}/start`, { Detach: false, Tty: false }, signal);
+    const container = await ensureContainer(scope, transport, signal);
+    signal.throwIfAborted();
+    const created = await transport.request(
+      `/containers/${container}/exec`,
+      {
+        Cmd: argv,
+        WorkingDir: cwd,
+        User: "1000:1000",
+        AttachStdout: true,
+        AttachStderr: true,
+        Tty: false,
+      },
+      "POST",
+      signal,
+    );
+    const execId = created.Id;
+    if (typeof execId !== "string") throw new Error("Docker did not return an exec ID");
+    execCreated = true;
+    signal.throwIfAborted();
+    const output = await transport.stream(
+      `/exec/${execId}/start`,
+      { Detach: false, Tty: false },
+      signal,
+    );
+    streamCompleted = true;
+    const inspected = await transport.request(`/exec/${execId}/json`, undefined, "GET", signal);
+    return { exitCode: inspected.ExitCode ?? null, output: decodeExecOutput(output) };
+  } catch (error) {
+    // Docker's exec start endpoint only closes the HTTP stream. It does not
+    // stop the command. Killing this agent's persistent container guarantees
+    // timeout/cancellation cannot leave the command or its descendants alive;
+    // the workspace volume survives and the container is restarted next use.
+    if (!streamCompleted && execCreated) {
+      await killContainer(transport, name);
+    }
+    if (signal.aborted) {
+      throw signal.reason instanceof Error ? signal.reason : new Error("Sandbox command cancelled");
+    }
+    throw error;
   } finally {
     clearTimeout(timer);
   }
-  const inspected = await dockerRequest(`/exec/${execId}/json`, undefined, "GET");
-  return { exitCode: inspected.ExitCode ?? null, output: decodeExecOutput(output) };
 }
 
 function decodeExecOutput(stream: Buffer): { stdout: string; stderr: string } {

@@ -12,15 +12,23 @@ export class PostgresWarehouseAdapter implements WarehouseAdapter {
   readonly id: string;
   readonly name: string;
   readonly capabilities = ["catalog", "query", "sample", "profile"] as const;
+  private readonly allowedRelations?: ReadonlySet<string>;
 
   constructor(
     private readonly pool: Pool,
     id = "postgres",
     name = "PostgreSQL warehouse",
+    options: { allowedRelations?: readonly string[] } = {},
   ) {
     assertIdentifier(id);
     this.id = id;
     this.name = name;
+    if (options.allowedRelations !== undefined) {
+      if (options.allowedRelations.length === 0) {
+        throw new Error("PostgreSQL warehouse allowlist must contain at least one relation");
+      }
+      this.allowedRelations = new Set(options.allowedRelations.map(normalizeRelation));
+    }
   }
 
   async listSchemas(signal: AbortSignal): Promise<string[]> {
@@ -29,7 +37,12 @@ export class PostgresWarehouseAdapter implements WarehouseAdapter {
       `SELECT schema_name FROM information_schema.schemata
        WHERE schema_name NOT IN ('pg_catalog', 'information_schema') ORDER BY schema_name`,
     );
-    return result.rows.map(({ schema_name }) => schema_name);
+    const schemas = new Set(
+      [...(this.allowedRelations ?? [])].map((relation) => relation.split(".")[0]),
+    );
+    return result.rows
+      .map(({ schema_name }) => schema_name)
+      .filter((schema) => !this.allowedRelations || schemas.has(schema));
   }
 
   async listTables(signal: AbortSignal): Promise<Array<{ name: string; rowCount: number }>> {
@@ -39,14 +52,17 @@ export class PostgresWarehouseAdapter implements WarehouseAdapter {
        WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('pg_catalog', 'information_schema')
        ORDER BY table_schema, table_name`,
     );
-    return result.rows.map(({ table_schema, table_name }) => ({
-      name: table_schema === "public" ? table_name : `${table_schema}.${table_name}`,
-      rowCount: 0,
-    }));
+    return result.rows
+      .filter(({ table_schema, table_name }) => this.isAllowed(table_schema, table_name))
+      .map(({ table_schema, table_name }) => ({
+        name: table_schema === "public" ? table_name : `${table_schema}.${table_name}`,
+        rowCount: 0,
+      }));
   }
 
   async describeTable(name: string, signal: AbortSignal): Promise<WarehouseTable> {
     const { schema, relation } = splitRelation(name);
+    this.assertAllowed(schema, relation);
     signal.throwIfAborted();
     const columns = await this.columns(schema, relation);
     const sample = await this.query({ table: name, limit: 20 }, signal);
@@ -63,6 +79,7 @@ export class PostgresWarehouseAdapter implements WarehouseAdapter {
 
   async profile(table: string, signal: AbortSignal): Promise<Record<string, unknown>> {
     const { schema, relation } = splitRelation(table);
+    this.assertAllowed(schema, relation);
     signal.throwIfAborted();
     const result = await this.pool.query<{ count: string }>(
       `SELECT count(*)::text AS count FROM ${quote(schema)}.${quote(relation)}`,
@@ -78,6 +95,7 @@ export class PostgresWarehouseAdapter implements WarehouseAdapter {
     rows: Record<string, string | number | boolean | null>[];
   }> {
     const { schema, relation } = splitRelation(input.table);
+    this.assertAllowed(schema, relation);
     const columns = await this.columns(schema, relation);
     const selected = input.columns?.length
       ? columns.filter(({ name }) => input.columns?.includes(name))
@@ -113,6 +131,16 @@ export class PostgresWarehouseAdapter implements WarehouseAdapter {
       type: data_type,
     }));
   }
+
+  private isAllowed(schema: string, relation: string): boolean {
+    return !this.allowedRelations || this.allowedRelations.has(`${schema}.${relation}`);
+  }
+
+  private assertAllowed(schema: string, relation: string): void {
+    if (!this.isAllowed(schema, relation)) {
+      throw new Error(`PostgreSQL warehouse relation '${schema}.${relation}' is not allowlisted`);
+    }
+  }
 }
 
 function splitRelation(value: string): { schema: string; relation: string } {
@@ -126,6 +154,11 @@ function splitRelation(value: string): { schema: string; relation: string } {
 function assertIdentifier(value: string): string {
   if (!IDENTIFIER.test(value)) throw new Error(`Invalid warehouse identifier '${value}'`);
   return value;
+}
+
+function normalizeRelation(value: string): string {
+  const { schema, relation } = splitRelation(value);
+  return `${schema}.${relation}`;
 }
 
 function quote(value: string): string {

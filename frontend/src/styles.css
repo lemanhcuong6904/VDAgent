@@ -1087,3 +1087,88 @@ pre {
     padding: 0 12px;
   }
 }
+
+/* ---------- run panel (M12.3) ---------- */
+
+.run-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.run-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.run-header .btn {
+  margin-left: auto;
+}
+.run-graph,
+.run-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.run-status,
+.run-approval,
+.run-evidence {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 1px 5px;
+  background: var(--accent-soft);
+  color: var(--muted);
+}
+.run-status-completed,
+.run-approval-approved,
+.run-evidence-verified {
+  color: var(--ok);
+}
+.run-status-failed,
+.run-approval-rejected,
+.run-evidence-unavailable {
+  color: var(--err);
+  background: var(--err-soft);
+}
+.run-status-running,
+.run-status-waiting,
+.run-status-leased,
+.run-status-retryable,
+.run-approval-pending {
+  color: var(--warn);
+}
+.run-outcome {
+  font-size: 12px;
+  margin-top: 6px;
+}
+.run-outcome-ok,
+.run-verified {
+  color: var(--ok);
+}
+.run-outcome-warn {
+  color: var(--warn);
+}
+.run-outcome-error,
+.run-unverified {
+  color: var(--err);
+}
+.run-verified,
+.run-unverified {
+  font-size: 11px;
+}
+.run-cost {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 6px;
+}
+.run-cost th,
+.run-cost td {
+  text-align: left;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border);
+}
