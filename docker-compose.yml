@@ -1,0 +1,145 @@
+services:
+  api:
+    build:
+      context: .
+      target: api
+    init: true
+    user: "1000:1000"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./docker/seccomp-bubblewrap.json
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      WAREHOUSE_DATABASE_URL: ${WAREHOUSE_DATABASE_URL:?set WAREHOUSE_DATABASE_URL in .env}
+      WAREHOUSE_POSTGRES_ENABLED: ${WAREHOUSE_POSTGRES_ENABLED:?set WAREHOUSE_POSTGRES_ENABLED=true in .env}
+      WAREHOUSE_ALLOWED_TABLES: ${WAREHOUSE_ALLOWED_TABLES:?set WAREHOUSE_ALLOWED_TABLES in .env}
+      MODEL_API_KEY: ${MODEL_API_KEY:-}
+      AGENT_PLUGIN_MODULES: ${AGENT_PLUGIN_MODULES:-}
+      AGENT_TOOL_MODULES: ${AGENT_TOOL_MODULES:-dist/tools/warehouse.js}
+      AGENT_EXTERNAL_MANIFESTS: ${AGENT_EXTERNAL_MANIFESTS:-}
+      AGENT_ISOLATION_MODE: ${AGENT_ISOLATION_MODE:-bwrap}
+      SANDBOX_PROVIDER: none
+      PLATFORM_RUNNER_MODE: api
+      AGENT_A2A_ALLOWED_EDGES: ${AGENT_A2A_ALLOWED_EDGES:-}
+    depends_on:
+      database:
+        condition: service_healthy
+    # SHUTDOWN_TIMEOUT_MS (30s) must stay below this, or Docker SIGKILLs mid-drain.
+    stop_grace_period: 40s
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+  worker:
+    build:
+      context: .
+      target: worker
+    command: ["node", "dist/worker.js"]
+    init: true
+    user: "1000:1000"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./docker/seccomp-bubblewrap.json
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      WAREHOUSE_DATABASE_URL: ${WAREHOUSE_DATABASE_URL:?set WAREHOUSE_DATABASE_URL in .env}
+      WAREHOUSE_POSTGRES_ENABLED: ${WAREHOUSE_POSTGRES_ENABLED:?set WAREHOUSE_POSTGRES_ENABLED=true in .env}
+      WAREHOUSE_ALLOWED_TABLES: ${WAREHOUSE_ALLOWED_TABLES:?set WAREHOUSE_ALLOWED_TABLES in .env}
+      MODEL_API_KEY: ${MODEL_API_KEY:-}
+      AGENT_PLUGIN_MODULES: ${AGENT_PLUGIN_MODULES:-}
+      AGENT_TOOL_MODULES: ${AGENT_TOOL_MODULES:-dist/tools/warehouse.js}
+      AGENT_EXTERNAL_MANIFESTS: ${AGENT_EXTERNAL_MANIFESTS:-}
+      AGENT_ISOLATION_MODE: ${AGENT_ISOLATION_MODE:-bwrap}
+      SANDBOX_PROVIDER: none
+      PLATFORM_RUNNER_MODE: worker
+      WORKER_ID: ${WORKER_ID:-}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      AGENT_A2A_ALLOWED_EDGES: ${AGENT_A2A_ALLOWED_EDGES:-}
+    depends_on:
+      database:
+        condition: service_healthy
+      # The API applies migrations; waiting for it to be ready means the worker never
+      # races the schema. The worker still takes the migration lock itself as a backstop.
+      api:
+        condition: service_healthy
+    stop_grace_period: 40s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.123.0
+    profiles: ["observability"]
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./docker/otel-collector-config.yml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    profiles: ["observability"]
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=7d"]
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    profiles: ["observability"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3001:3000"
+
+  database:
+    image: postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-team6}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-team6}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:
+  prometheus-data:
+  grafana-data:

@@ -1,0 +1,16 @@
+{
+  "policyVersion": "license-drift.v1",
+  "knownExpressions": [
+    "MIT",
+    "Apache-2.0",
+    "MIT OR Apache-2.0",
+    "BSD-3-Clause",
+    "Unlicense",
+    "ISC",
+    "BSD-2-Clause",
+    "MPL-2.0",
+    "0BSD"
+  ],
+  "owner": "Build/release/platform",
+  "limitations": "Records existing dependency license expressions, including MPL-2.0 for lightningcss. It is not legal approval or permission to redistribute; review distribution obligations at M13. New/unknown expressions fail."
+}

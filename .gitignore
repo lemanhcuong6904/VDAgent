@@ -1,5 +1,12 @@
 .env
-.venv/
+node_modules/
+.turbo/
+dist/
+coverage/
+*.tsbuildinfo
 __pycache__/
 *.py[cod]
+.rehearsal/
+.venv/
+*.egg-info/
 docs/Task Tracker*.xlsx
