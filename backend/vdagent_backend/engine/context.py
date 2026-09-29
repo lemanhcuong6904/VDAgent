@@ -1,8 +1,8 @@
 """The in-process `InvocationContext` (plugins spec §5.3) and the events it posts to its run.
 
 `TurnContext` never touches the DB or the engine's state: each method posts one event on the run's
-inbox and awaits the event's future. The run task (the stack lock holder, I1) checks the contract
-(R2–R5), persists and publishes, then resolves the future, or sets `ContractViolation` on it and
+inbox and awaits the event's future. The run task (the stack lock holder, I1) checks the contract,
+persists and publishes, then resolves the future, or sets `ContractViolation` on it and
 fails the turn. Cancelling the plugin's task therefore never interrupts a DB write.
 """
 
@@ -69,7 +69,7 @@ class TurnContext:
         self.history = history
         self.peers = peers
         self.mcp = mcp
-        self.memory = memory  # direct DB access: not a transcript event, outside R2–R5
+        self.memory = memory  # direct DB access: not a transcript event, not contract-checked
         self.max_steps = max_steps
         self.inbox: asyncio.Queue[Event] = asyncio.Queue()
         self._closed = False

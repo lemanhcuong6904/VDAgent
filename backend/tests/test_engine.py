@@ -258,7 +258,7 @@ async def test_cross_task_wait_for_cycle_is_rejected(harness: Harness) -> None:
     assert [i["status"] for i in await harness.invocations(t2) if i["caller"] == "compare"] == ["rejected"]
 
 
-# --------------------------------------------------------------------------- contract (R2–R5)
+# --------------------------------------------------------------------------- contract checks
 
 
 async def _pending_tool_result(s: Session) -> None:
@@ -298,20 +298,30 @@ async def _call_non_send_to_agent(s: Session) -> None:
 @pytest.mark.parametrize(
     ("scenario", "detail"),
     [
-        (_step_while_unresolved, "emit_assistant: tool calls ['q1'] of the previous step have no result yet (R2)"),
+        (_step_while_unresolved, "emit_assistant: tool calls ['q1'] of the previous step have no result yet"),
         (
             lambda s: s.assistant(calls=[("x", "t", {}), ("x", "t", {})]),
-            "emit_assistant: tool-call ids must be non-empty and unique, got ['x', 'x'] (R2)",
+            "emit_assistant: tool-call ids must be non-empty and unique, got ['x', 'x']",
         ),
-        (lambda s: s.assistant(calls=[("", "t", {})]), "emit_assistant: tool-call ids must be non-empty and unique, got [''] (R2)"),
-        (lambda s: s.tool("nope", "x"), "emit_tool_result('nope'): not an unresolved tool call of the latest assistant step (R3)"),
-        (_double_result, "emit_tool_result('q1'): not an unresolved tool call of the latest assistant step (R3)"),
-        (lambda s: s.call("nope", "compare", "x"), "call_agent('nope'): not a tool call of the latest assistant step (R4)"),
-        (_call_non_send_to_agent, "call_agent('q1'): tool call is 'run_query', not send_to_agent (R4)"),
-        (_call_twice, "_c1'): already called once (R4)"),
-        (_pending_tool_result, "_c1'): its call_agent is still waiting for the reply (R4)"),
+        (lambda s: s.assistant(calls=[("", "t", {})]), "emit_assistant: tool-call ids must be non-empty and unique, got ['']"),
+        (lambda s: s.tool("nope", "x"), "emit_tool_result('nope'): not an unresolved tool call of the latest assistant step"),
+        (_double_result, "emit_tool_result('q1'): not an unresolved tool call of the latest assistant step"),
+        (lambda s: s.call("nope", "compare", "x"), "call_agent('nope'): not a tool call of the latest assistant step"),
+        (_call_non_send_to_agent, "call_agent('q1'): tool call is 'run_query', not send_to_agent"),
+        (_call_twice, "_c1'): already called once"),
+        (_pending_tool_result, "_c1'): its call_agent is still waiting for the reply"),
     ],
-    ids=["R2-unresolved", "R2-duplicate-ids", "R2-empty-id", "R3-unknown", "R3-twice", "R4-unknown", "R4-not-send", "R4-twice", "R4-pending"],
+    ids=[
+        "step-while-unresolved",
+        "duplicate-ids",
+        "empty-id",
+        "result-unknown-id",
+        "result-twice",
+        "call-unknown-id",
+        "call-not-send-to-agent",
+        "call-twice",
+        "result-while-call-pending",
+    ],
 )
 async def test_contract_violations_raise_at_the_call_and_fail_the_turn_even_if_swallowed(
     harness: Harness, scenario: Callable[[Session], Awaitable[None]], detail: str
@@ -339,8 +349,8 @@ async def test_contract_violations_raise_at_the_call_and_fail_the_turn_even_if_s
 @pytest.mark.parametrize(
     ("scenario", "error"),
     [
-        (lambda s: asyncio.sleep(0), "contract violation: invoke returned without a final assistant step (one without tool calls) (R5)"),
-        (lambda s: s.assistant(calls=[("q1", "run_query", {})]), "contract violation: invoke returned with unresolved tool calls ['q1'] (R5)"),
+        (lambda s: asyncio.sleep(0), "contract violation: invoke returned without a final assistant step (one without tool calls)"),
+        (lambda s: s.assistant(calls=[("q1", "run_query", {})]), "contract violation: invoke returned with unresolved tool calls ['q1']"),
     ],
     ids=["no-step", "unresolved"],
 )
@@ -378,7 +388,7 @@ async def test_a_step_with_resolved_tool_calls_is_not_a_final_answer(harness: Ha
     task_id = await harness.post("data", "go")
     await harness.wait_task(task_id, "failed")
     (row,) = await harness.invocations(task_id)
-    assert row["error"] == "contract violation: invoke returned without a final assistant step (one without tool calls) (R5)"
+    assert row["error"] == "contract violation: invoke returned without a final assistant step (one without tool calls)"
 
 
 async def test_ctx_is_closed_once_the_turn_ends(harness: Harness) -> None:
@@ -460,7 +470,7 @@ async def test_root_failure_fails_task(harness: Harness) -> None:
     (row,) = await harness.invocations(task_id)
     assert (row["status"], row["error"]) == (
         "failed",
-        "contract violation: call_agent('nope'): not a tool call of the latest assistant step (R4)",
+        "contract violation: call_agent('nope'): not a tool call of the latest assistant step",
     )
 
 

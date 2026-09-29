@@ -6,7 +6,7 @@ Concurrency model (single process, single event loop):
   invocations (§4.2). Only the holder's asyncio task writes that stack's messages (I1).
 - One asyncio task per running invocation (the *run task*) drives its turn: it starts the plugin's
   `agent.invoke(ctx)` as a separate task and handles the events `ctx` posts on the turn's inbox
-  (`engine/context.py`): contract checks R2–R5, persistence, SSE, agent calls. A child's reply
+  (`engine/context.py`): contract checks, persistence, SSE, agent calls. A child's reply
   resolves the future its parent's `call_agent` awaits, set by whichever task finishes the child.
 - The per-user `WaitGraph` gets edge `caller → target` synchronously with the call checks, so the
   graph stays acyclic (I3).
@@ -92,7 +92,7 @@ class Run:
     finished: bool = False  # left the turn; child results are discarded from here on
     done: asyncio.Event = field(default_factory=asyncio.Event)
 
-    # contract state (R2–R5) for the latest assistant step
+    # contract-check state for the latest assistant step
     tool_calls: dict[str, str] = field(default_factory=dict)  # tool_call id → tool name
     unresolved: set[str] = field(default_factory=set)
     called: set[str] = field(default_factory=set)
@@ -465,11 +465,11 @@ class Engine:
     async def _on_emit(self, run: Run, event: Emit) -> None:
         if run.unresolved:
             raise ContractViolation(
-                f"emit_assistant: tool calls {sorted(run.unresolved)} of the previous step have no result yet (R2)"
+                f"emit_assistant: tool calls {sorted(run.unresolved)} of the previous step have no result yet"
             )
         ids = [tc.id for tc in event.tool_calls]
         if any(not i for i in ids) or len(set(ids)) != len(ids):
-            raise ContractViolation(f"emit_assistant: tool-call ids must be non-empty and unique, got {ids} (R2)")
+            raise ContractViolation(f"emit_assistant: tool-call ids must be non-empty and unique, got {ids}")
         run.tool_calls = {tc.id: tc.name for tc in event.tool_calls}
         run.unresolved = set(ids)
         run.called = set()
@@ -483,9 +483,9 @@ class Engine:
         what = f"emit_tool_result({tcid!r})"
         reply = run.replies.get(tcid)
         if reply is not None and not reply.done():
-            raise ContractViolation(f"{what}: its call_agent is still waiting for the reply (R4)")
+            raise ContractViolation(f"{what}: its call_agent is still waiting for the reply")
         if tcid not in run.unresolved:
-            raise ContractViolation(f"{what}: not an unresolved tool call of the latest assistant step (R3)")
+            raise ContractViolation(f"{what}: not an unresolved tool call of the latest assistant step")
         run.unresolved.discard(tcid)
         await self._append(run, role="tool", content=event.content, tool_call_id=tcid)
 
@@ -494,13 +494,13 @@ class Engine:
         what = f"call_agent({tcid!r})"
         name = run.tool_calls.get(tcid)
         if name is None:
-            raise ContractViolation(f"{what}: not a tool call of the latest assistant step (R4)")
+            raise ContractViolation(f"{what}: not a tool call of the latest assistant step")
         if name != SEND_TO_AGENT:
-            raise ContractViolation(f"{what}: tool call is {name!r}, not {SEND_TO_AGENT} (R4)")
+            raise ContractViolation(f"{what}: tool call is {name!r}, not {SEND_TO_AGENT}")
         if tcid not in run.unresolved:
-            raise ContractViolation(f"{what}: tool call already has a result (R4)")
+            raise ContractViolation(f"{what}: tool call already has a result")
         if tcid in run.called:
-            raise ContractViolation(f"{what}: already called once (R4)")
+            raise ContractViolation(f"{what}: already called once")
         run.called.add(tcid)
         run.replies[tcid] = event.future
 
@@ -558,7 +558,7 @@ class Engine:
         return None
 
     def _on_ended(self, run: Run, task: asyncio.Task[None]) -> str:
-        """`invoke` finished: map its exception, or enforce R5 and return the final answer."""
+        """`invoke` finished: map its exception, or check that it ended with an answer and return it."""
         run.check_cancel()
         if task.cancelled():
             raise _TurnFailed("INTERNAL: invoke was cancelled")
@@ -566,9 +566,9 @@ class Engine:
         if error is not None:
             raise self._failure(run, error)
         if run.unresolved:
-            raise ContractViolation(f"invoke returned with unresolved tool calls {sorted(run.unresolved)} (R5)")
+            raise ContractViolation(f"invoke returned with unresolved tool calls {sorted(run.unresolved)}")
         if run.last_assistant is None or run.last_assistant[1]:
-            raise ContractViolation("invoke returned without a final assistant step (one without tool calls) (R5)")
+            raise ContractViolation("invoke returned without a final assistant step (one without tool calls)")
         return run.last_assistant[0]
 
     @staticmethod
