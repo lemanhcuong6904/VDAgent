@@ -179,3 +179,84 @@ def build_peer_group(subject: Unit, pool: list[Unit], *, snapshot_id: str,
         },
         attempts=attempts, excluded_peers=excluded, excluded_summary=summary,
     )
+
+
+class UpstreamPeerSetError(ValueError):
+    """Data's peer_set breaks an invariant Compare can check; the whole package is rejected."""
+
+
+PEER_TIERS = ("strict", "expanded", "excluded")
+
+
+def read_peer_set(subject: Unit, units: Mapping[str, Unit], peer_set: Mapping[str, object], *,
+                  snapshot_id: str, scope: Mapping[str, object], area_pct: Decimal = Decimal(10),
+                  min_peers: int = 5, must_match: list[str] | None = None,
+                  area_override: Decimal | None = None, max_peers: int | None = None) -> PeerOutcome:
+    """Spec v5.3 §1.5: Data applied the peer rule (and widened the floor band if needed).
+
+    Every strict/expanded row is a peer. Compare only checks invariants (known unit, not the
+    subject, same project / launch batch / unit type), narrows on an explicit user request
+    and orders by similarity. It never removes a peer silently and never widens.
+    """
+    rows = peer_set.get("rows")
+    if not isinstance(rows, list) or any(not isinstance(row, Mapping) for row in rows):
+        raise UpstreamPeerSetError("peer_set.rows phải là danh sách dòng.")
+    match = list(dict.fromkeys(must_match or []))
+    if not set(match) <= {"balcony_orientation", "view_type", "zone_id"}:
+        raise ValueError("INVALID_INPUT: mustMatch contains an unsupported attribute")
+    peers: list[tuple[Unit, str]] = []
+    excluded: list[dict] = []
+    for row in rows:
+        key, tier = row.get("unit_key"), row.get("match_tier")
+        if tier not in PEER_TIERS:
+            raise UpstreamPeerSetError(f"peer_set có match_tier không hợp lệ: {tier!r}.")
+        unit = units.get(str(key))
+        if unit is None:
+            raise UpstreamPeerSetError(f"peer_set có unit_key {key} không có trong gói dữ liệu.")
+        if tier == "excluded":
+            excluded.append({"entityId": unit.unit_id, "entityCode": unit.unit_code,
+                             "reason": str(row.get("exclusion_reason") or "excluded_by_data")})
+            continue
+        if unit.unit_id == subject.unit_id:
+            raise UpstreamPeerSetError("peer_set chứa chính căn đối tượng.")
+        broken = [label for ok, label in (
+            (unit.project_id == subject.project_id, "dự án"),
+            (unit.launch_batch_id == subject.launch_batch_id, "đợt mở bán"),
+            (unit.unit_type == subject.unit_type, "loại căn"),
+        ) if not ok]
+        if broken:
+            raise UpstreamPeerSetError(f"peer_set có căn {unit.unit_code} khác {', '.join(broken)} với đối tượng.")
+        peers.append((unit, tier))
+    narrowed = [
+        (unit, tier) for unit, tier in peers
+        if all(unit.attribute(dim) == subject.attribute(dim) for dim in match)
+        and (area_override is None or abs(unit.area_m2 - subject.area_m2) <= subject.area_m2 * area_override / 100)
+    ]
+    scored = sorted((_score(subject, unit, area_pct) for unit, _ in narrowed),
+                    key=lambda row: (-row["similarityScore"], row["entityId"]))
+    if max_peers is not None:
+        scored = scored[:max_peers]
+    count = len(scored)
+    constrained = bool(peer_set.get("isPeerSampleConstrained")) or any(tier == "expanded" for _, tier in narrowed)
+    bands = sorted({unit.floor_band for unit, _ in narrowed} | {subject.floor_band}, key=FLOOR_BANDS.index)
+    criteria = _criteria(subject, snapshot_id, scope, area_override or area_pct, match, bands)
+    criteria["hard"]["status"] = "any"  # the team rule has no status criterion; DOM uses units for sale
+    summary: dict[str, int] = {}
+    for row in excluded:
+        summary[row["reason"]] = summary.get(row["reason"], 0) + 1
+    level = 1 if constrained else 0
+    return PeerOutcome(
+        status="VALID" if count >= min_peers else "PARTIAL",
+        reason_code=None if count >= min_peers else "INSUFFICIENT_EVIDENCE",
+        peers=scored if count >= min_peers else [],
+        peer_count=count, qualified_ids=frozenset(row["entityId"] for row in scored),
+        criteria=criteria,
+        relaxation={
+            "level": level, "relaxedDimensions": ["floor_band"] if constrained else [],
+            "isPeerSampleConstrained": constrained, "source": "data",
+            **({"reason": "Data đã mở sang nhóm tầng liền kề (match_tier = expanded)"} if constrained else {}),
+        },
+        attempts=[{"level": level, "peerCount": count,
+                   "criteriaSummary": f"nhóm do Data chọn ({peer_set.get('packageId') or 'peer_set'})"}],
+        excluded_peers=excluded[:20], excluded_summary=summary,
+    )

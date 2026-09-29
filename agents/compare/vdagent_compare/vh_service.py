@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -17,8 +18,10 @@ from .vh_math import (
     DIRECTIONS, GROUP_ONLY, SOURCES, UNITS, benchmark, compare_value,
     confidence, magnitude, number, rounded, threshold,
 )
-from .vh_peers import FLOOR_BANDS, ORIENTATION_GROUP, build_peer_group
+from .vh_peers import FLOOR_BANDS, ORIENTATION_GROUP, UpstreamPeerSetError, build_peer_group, read_peer_set
 from .vh_sufficiency import applies_to, assess
+
+log = logging.getLogger(__name__)
 
 HASH_EXCLUDE = {
     "artifact_id", "run_id", "task_id", "version", "input_artifact_refs",
@@ -265,11 +268,27 @@ class CompareService:
             if max_peers is not None and max_peers < 1:
                 raise ValueError("INVALID_INPUT: maxPeers must be >= 1")
             pool, permission_count = package.candidate_pool(subject, scope)
-            outcome = build_peer_group(
-                subject, pool, snapshot_id=package.snapshot_id, scope=scope, area_pct=area_pct,
-                min_peers=min_n, relax=bool(raw.get("relaxationLadderEnabled", True)), must_match=must_match,
-                max_peers=max_peers,
-            )
+            peer_set = raw.get("peerSet")
+            if peer_set is not None:  # spec v5.3: Data chose the group; Compare does not re-filter
+                if not isinstance(peer_set, dict):
+                    raise ValueError("INVALID_INPUT: peerSet must be an object")
+                rule_area = Decimal(str(package.approved_config.get("peer_area_tolerance_pct", "10")))
+                outcome = read_peer_set(
+                    subject, {u.unit_id: u for u in package.units}, peer_set, snapshot_id=package.snapshot_id,
+                    scope=scope, area_pct=rule_area, min_peers=min_n, must_match=must_match,
+                    area_override=area_pct if override.get("areaBandPct") is not None else None,
+                    max_peers=max_peers,
+                )
+                permission_count = int(peer_set.get("permissionFilteredCount") or 0)
+                self._cross_check(subject, pool, package, scope, rule_area, min_n, must_match, outcome)
+            else:
+                outcome = build_peer_group(
+                    subject, pool, snapshot_id=package.snapshot_id, scope=scope, area_pct=area_pct,
+                    min_peers=min_n, relax=bool(raw.get("relaxationLadderEnabled", True)), must_match=must_match,
+                    max_peers=max_peers,
+                )
+        except UpstreamPeerSetError as exc:
+            return self._invalid(package, raw, "peer_group", "UPSTREAM_NOT_VALID", str(exc))
         except (ValueError, TypeError, KeyError, InvalidOperation) as exc:
             return self._invalid(package, raw, "peer_group", "INVALID_INPUT", str(exc))
         causal = CAUSAL_LIMIT
@@ -285,6 +304,8 @@ class CompareService:
             overrides.append(f"diện tích ±{number(area_pct)}%")
         if overrides:
             limits.append("Nhóm so sánh đã thu hẹp theo yêu cầu: " + ", ".join(overrides) + ".")
+            if raw.get("peerSet") is not None:
+                limits.append("Thu hẹp trong nhóm Data đã chọn; Compare không mở thêm nhóm tầng.")
         limits.append(causal)
         peer_ids = [row["entityId"] for row in outcome.peers]
         lookup = {unit.unit_id: unit for unit in package.units}
@@ -318,7 +339,9 @@ class CompareService:
         ] + [causal]
         status = "PARTIAL" if outcome.status != "VALID" or dropped or not_applicable else "VALID"
         insufficient = sufficiency["level"] == "INSUFFICIENT"
-        pd = self._env(package, raw, "peer_definition", outcome.status, limits)
+        peer_set = raw.get("peerSet") or {}
+        upstream = [str(peer_set["packageId"])] if peer_set.get("packageId") else []
+        pd = self._env(package, raw, "peer_definition", outcome.status, limits, refs=upstream)
         if outcome.reason_code:
             pd["reason_code"] = outcome.reason_code
         pd.update({
@@ -337,7 +360,8 @@ class CompareService:
             "confidence": confidence(outcome.peer_count, min_n, outcome.relaxation["isPeerSampleConstrained"]),
         })
         pd = _seal(pd)
-        cmp = self._env(package, raw, "comparison", status, cmp_limits, _source_tables(rows), [pd["artifact_id"]])
+        cmp = self._env(package, raw, "comparison", status, cmp_limits, _source_tables(rows),
+                        [*upstream, pd["artifact_id"]])
         cmp["evidence_refs"] = [row["computationId"] for row in rows]
         reason_code = outcome.reason_code or (
             "INSUFFICIENT_EVIDENCE" if insufficient and not rows else
@@ -395,11 +419,23 @@ class CompareService:
                     "entityId": unit_id, "entityCode": lookup[unit_id].unit_code,
                     "role": "subject" if i == 0 else "peer",
                     **({"similarityScore": outcome.peers[i - 1]["similarityScore"]} if i else {}),
-                    "values": {metric: number(lookup[unit_id].metrics.get(metric)) for metric in applicable},
+                    "values": {metric: number(lookup[unit_id].metrics.get(metric))
+                               if applies_to(metric, lookup[unit_id]) else None for metric in applicable},
                 }
                 for i, unit_id in enumerate([subject.unit_id, *peer_ids])
             ]
         return {"peer_definition": pd, "comparison": _seal(cmp)}
+    @staticmethod
+    def _cross_check(subject, pool, package, scope, area_pct, min_n, must_match, outcome) -> None:
+        """Eval-only shadow run of Compare's own rule; a mismatch is logged, never applied (spec §1.5)."""
+        own = build_peer_group(subject, pool, snapshot_id=package.snapshot_id, scope=scope, area_pct=area_pct,
+                               min_peers=min_n, relax=True, must_match=must_match)
+        only_data = sorted(outcome.qualified_ids - own.qualified_ids)
+        only_compare = sorted(own.qualified_ids - outcome.qualified_ids)
+        if only_data or only_compare:
+            log.warning("PEER_RULE_DRIFT subject=%s only_in_peer_set=%s only_in_compare_rule=%s",
+                        subject.unit_id, only_data, only_compare)
+
     def _base(self, package, raw, mode, status="VALID", limits=None):
         result = self._env(package, raw, "comparison", status, limits or [CAUSAL_LIMIT])
         result["schema_version"] = "comparison@1.1.0"
