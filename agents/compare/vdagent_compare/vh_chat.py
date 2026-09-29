@@ -6,6 +6,7 @@ import re
 import unicodedata
 from typing import Any
 from .vh_service import CompareService, LABELS
+from .vh_sufficiency import LEVEL_LABELS
 
 UNIT = re.compile(r"\b[A-Z][A-Z0-9]*-\d+(?:\.\d+)?\b", re.I)
 ZONE = re.compile(r"\bZN-[A-Z0-9-]+\b", re.I)
@@ -164,6 +165,9 @@ def render(result: dict[str, Any]) -> str:
         lines.append(choice["question"] + " " + ", ".join(
             option.get("entityCode") or option["entityId"] for option in choice["options"]
         ))
+    sufficiency = cmp.get("dataSufficiency")
+    if sufficiency:
+        lines.append(f"Mức dữ liệu: **{LEVEL_LABELS[sufficiency['level']]}**. {sufficiency['summary']}")
     if mode == "peer_group" and result["peer_definition"]:
         peer = result["peer_definition"]
         if cmp.get("reason_code") == "INSUFFICIENT_EVIDENCE":
@@ -176,6 +180,9 @@ def render(result: dict[str, Any]) -> str:
                 lines.append("Số căn từng bậc: " + "; ".join(
                     f"bậc {step['level']}: {step['peerCount']} căn" for step in attempts
                 ) + ".")
+            if cmp.get("suggestedNextSteps"):
+                lines.append("Có thể hỏi cách khác:\n" + "\n".join(
+                    "- " + step["label"] for step in cmp["suggestedNextSteps"]))
         else:
             lines.append(
                 f"**Nhóm tương đồng:** {peer['peerCount']} căn; "

@@ -159,8 +159,10 @@ def test_hero_full_table_matches_golden_content_hash():
     })
     assert result["peer_definition"]["content_hash"] == (
         "eec7bc95823c250767cbfb093dd06df88212d28398d78535ed6cd253a25345cc")
+    # v5.3 added `dataSufficiency` (spec §2.4); without that field the hash is still the v5.2
+    # golden dd9ccf894e9f1064f2b3ad1bcd0e4f24272f5003cc8aa3528e8eabdde8d98bdf.
     assert result["comparison"]["content_hash"] == (
-        "dd9ccf894e9f1064f2b3ad1bcd0e4f24272f5003cc8aa3528e8eabdde8d98bdf")
+        "7f7603cf643217c1548cc83e8fd7395cdd3ea3fd75d5a5b948a9ed99d0ebcca1")
 
 
 def test_chat_does_not_silently_choose_wrong_mode_or_ignore_entities():

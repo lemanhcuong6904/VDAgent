@@ -18,6 +18,7 @@ from .vh_math import (
     confidence, magnitude, number, rounded, threshold,
 )
 from .vh_peers import FLOOR_BANDS, ORIENTATION_GROUP, build_peer_group
+from .vh_sufficiency import applies_to, assess
 
 HASH_EXCLUDE = {
     "artifact_id", "run_id", "task_id", "version", "input_artifact_refs",
@@ -116,6 +117,28 @@ def _source_tables(metrics: list[dict]) -> list[str]:
         if table not in out:
             out.append(table)
     return out
+
+
+def _next_steps(subject: Unit, group: list[Unit]) -> list[dict]:
+    """Level 3 (spec §2.4): other ways to answer, best first. Compare never runs them itself."""
+    for_sale = [u for u in group if u.status == "available"]
+    nearest = min(for_sale, key=lambda u: (abs(u.area_m2 - subject.area_m2), u.unit_id), default=None)
+    steps = []
+    if nearest:
+        steps.append({
+            "operation": "compare_head_to_head",
+            "target": {"entityType": "unit", "entityId": nearest.unit_id, "entityCode": nearest.unit_code},
+            "label": f"So trực diện {subject.unit_code} với căn gần giống nhất {nearest.unit_code}",
+        })
+    steps.append({
+        "operation": "compare_ranking", "metrics": ["dom"], "unitTypeFilter": subject.unit_type,
+        "label": f"Xếp hạng {subject.unit_code} theo DOM trong các căn {subject.unit_type} của dự án",
+    })
+    steps.append({
+        "operation": "compare_cohort", "cohortDimension": "floor_band", "unitTypeFilter": subject.unit_type,
+        "label": f"Xem các căn {subject.unit_type} theo nhóm tầng",
+    })
+    return steps
 
 
 class CompareService:
@@ -267,24 +290,34 @@ class CompareService:
         lookup = {unit.unit_id: unit for unit in package.units}
         rows = []
         dropped = []
+        constrained = outcome.relaxation["isPeerSampleConstrained"]
+        peer_units = [lookup[unit_id] for unit_id in peer_ids]
+        # Below min_n the peers are not published, but the level still describes the real group.
+        group = peer_units or sorted((lookup[i] for i in outcome.qualified_ids), key=lambda u: u.unit_id)
+        sufficiency = assess(subject, group, applicable, constrained=constrained, min_peers=min_n)
+        use = {row["metric"]: row for row in sufficiency["perMetric"]}
         # Không đủ nhóm (< min_n sau khi mở tầng) → không phát hành kết luận: không tính chỉ số nào.
         # (Trước đây vòng này vẫn chạy và ghi "Bỏ metric … do chỉ có 4 peer" — sai nghĩa, dữ liệu không thiếu.)
         for metric in (applicable if outcome.status == "VALID" else []):
             subject_value = subject.metrics.get(metric)
-            peers = [lookup[unit_id].metrics.get(metric) for unit_id in peer_ids]
-            values = [value for value in peers if value is not None]
+            values = [u.metrics[metric] for u in peer_units
+                      if applies_to(metric, u) and u.metrics.get(metric) is not None]
             bm = benchmark(values, min_n) if subject_value is not None else None
             if bm is None:
                 observed = len([u for u in package.units if u.unit_id in outcome.qualified_ids and u.metrics.get(metric) is not None])
-                dropped.append((metric, observed))
+                dropped.append(f"Bỏ metric {metric} do chỉ có {observed} peer có dữ liệu (<{min_n}).")
+                continue
+            if use[metric]["use"] == "dropped":  # ≥ min_n values but under half the group (spec §2.4)
+                row = use[metric]
+                dropped.append(f"Bỏ metric {metric} do chỉ {row['n']}/{row['applicable']} peer có dữ liệu "
+                               f"({_format(row['coveragePct'])}% < 50%).")
                 continue
             rows.append(_metric_row(metric, subject_value, values, bm, package, min_n))
-        cmp_limits = limits[:-1] + [
-            f"Bỏ metric {metric} do chỉ có {n} peer có dữ liệu (<{min_n})." for metric, n in dropped
-        ] + [
+        cmp_limits = limits[:-1] + dropped + [
             f"Bỏ chỉ số {metric}: chỉ có nghĩa ở cấp nhóm, không áp dụng cho một căn." for metric in not_applicable
         ] + [causal]
         status = "PARTIAL" if outcome.status != "VALID" or dropped or not_applicable else "VALID"
+        insufficient = sufficiency["level"] == "INSUFFICIENT"
         pd = self._env(package, raw, "peer_definition", outcome.status, limits)
         if outcome.reason_code:
             pd["reason_code"] = outcome.reason_code
@@ -306,7 +339,9 @@ class CompareService:
         pd = _seal(pd)
         cmp = self._env(package, raw, "comparison", status, cmp_limits, _source_tables(rows), [pd["artifact_id"]])
         cmp["evidence_refs"] = [row["computationId"] for row in rows]
-        reason_code = outcome.reason_code or ("METRIC_NOT_APPLICABLE" if not_applicable else None)
+        reason_code = outcome.reason_code or (
+            "INSUFFICIENT_EVIDENCE" if insufficient and not rows else
+            "METRIC_NOT_APPLICABLE" if not_applicable else None)
         if reason_code:
             cmp["reason_code"] = reason_code
         notable = [row for row in rows if row["materiality"] == "notable"]
@@ -346,6 +381,9 @@ class CompareService:
                 ([] if raw.get("metricsRequested") else ["metrics=" + ",".join(DEFAULT_METRICS)])
             ),
         })
+        cmp["dataSufficiency"] = sufficiency
+        if insufficient:
+            cmp["suggestedNextSteps"] = _next_steps(subject, group)
         if perf:
             cmp["ranking"] = {
                 "basis": perf["metric"], "rankInPeerGroup": perf["rankInGroup"],
@@ -656,12 +694,13 @@ class CompareService:
             result.update(reason_code="INSUFFICIENT_EVIDENCE")
             return {"peer_definition": None, "comparison": _seal(result)}
         options = raw.get("rankingOptions") or {}
-        order = options.get("order", "attention")
+        # Orchestrator contract v1.0.0 names: attention_first | best_first ("attention" = v5.2 alias).
+        order = {"attention": "attention_first"}.get(options.get("order"), options.get("order", "attention_first"))
         try:
             top_n = int(options.get("topN", 20))
         except (ValueError, TypeError):
             top_n = 0
-        if order not in {"attention", "best_first"} or not 1 <= top_n <= 100:
+        if order not in {"attention_first", "best_first"} or not 1 <= top_n <= 100:
             return self._invalid(package, raw, "ranking", "INVALID_INPUT", "rankingOptions không hợp lệ.")
         direction = DIRECTIONS[metric]
         reverse_best = direction == "higher_is_better"
