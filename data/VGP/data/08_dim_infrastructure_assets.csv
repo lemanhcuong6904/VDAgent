@@ -1,0 +1,5 @@
+﻿infra_key,infra_id,infra_name,infra_type,lifecycle_stage,construction_progress_pct,original_completion_year,revised_completion_year
+3101,INF-METRO-01,Tuyen Metro so 1 Ben Thanh - Suoi Tien,URBAN_METRO,COMMERCIAL_OPERATION,100.0,2021.0,2024.0
+3102,INF-VANHDAI3-TD,Vanh dai 3 TP.HCM (doan qua TP. Thu Duc),RING_ROAD,UNDER_CONSTRUCTION,82.5,2025.0,2026.0
+3103,INF-METRO-07,Tuyen Metro so 7 (Tan Kien - Vinhomes Grand Park),URBAN_METRO,PLANNING_APPROVED,,,
+3104,INF-CT-LONGTHANH,Cao toc TP.HCM - Long Thanh - Dau Giay (mo rong),EXPRESSWAY,UNDER_CONSTRUCTION,70.0,2026.0,2026.0
