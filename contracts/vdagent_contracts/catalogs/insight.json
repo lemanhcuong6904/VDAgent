@@ -1,0 +1,148 @@
+{
+  "agent": "insight",
+  "contract_version": "1.0.0",
+  "catalog_version": "2.0.0",
+  "operations": [
+    {
+      "operation": "explain_slow_moving",
+      "description": "Giải thích vì sao căn/nhóm căn bán chậm (quá hạn) bằng bằng chứng; chỉ cho hiện tượng bán chậm",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "objective": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "tasks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "T1",
+                "T2",
+                "T3",
+                "T5",
+                "T6",
+                "T7"
+              ]
+            }
+          },
+          "max_key_insights": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "phenomenon": {
+            "type": "string",
+            "enum": [
+              "slow_moving"
+            ]
+          }
+        },
+        "required": [
+          "objective",
+          "tasks"
+        ],
+        "additionalProperties": false
+      },
+      "input_fields": {},
+      "requires": [
+        "unit_set",
+        "metric_table"
+      ],
+      "uses_if_present": [
+        "unit_context"
+      ],
+      "produces": [
+        "insight"
+      ],
+      "outputs": [
+        "CHAT_ANSWER"
+      ],
+      "serves": [
+        "EXPLAIN"
+      ],
+      "deadline_s": 90,
+      "error_codes": {
+        "INPUT_SCHEMA_INVALID": "FATAL",
+        "REQUIRED_ARTIFACT_MISSING": "SPEC_ISSUE",
+        "SNAPSHOT_MISMATCH": "FATAL",
+        "SCOPE_VIOLATION": "NO_ACCESS",
+        "INSIGHT_INVALID": "WRONG_RESULT",
+        "LLM_QUOTA_EXHAUSTED": "QUOTA_EXHAUSTED",
+        "INTERNAL_ERROR": "FATAL"
+      },
+      "retries_transient_internally": true
+    },
+    {
+      "operation": "describe_patterns",
+      "description": "Mô tả nhóm thuộc tính (tầng, hướng, view, loại căn, đợt, kênh) có DOM/tỷ lệ quá hạn khác biệt",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "objective": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "tasks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "T1",
+                "T2",
+                "T3",
+                "T5",
+                "T6",
+                "T7"
+              ]
+            }
+          },
+          "max_key_insights": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "objective",
+          "tasks"
+        ],
+        "additionalProperties": false
+      },
+      "input_fields": {},
+      "requires": [
+        "unit_set",
+        "metric_table"
+      ],
+      "uses_if_present": [
+        "unit_context"
+      ],
+      "produces": [
+        "insight"
+      ],
+      "outputs": [
+        "CHAT_ANSWER"
+      ],
+      "serves": [],
+      "deadline_s": 90,
+      "error_codes": {
+        "INPUT_SCHEMA_INVALID": "FATAL",
+        "REQUIRED_ARTIFACT_MISSING": "SPEC_ISSUE",
+        "SNAPSHOT_MISMATCH": "FATAL",
+        "SCOPE_VIOLATION": "NO_ACCESS",
+        "INSIGHT_INVALID": "WRONG_RESULT",
+        "LLM_QUOTA_EXHAUSTED": "QUOTA_EXHAUSTED",
+        "INTERNAL_ERROR": "FATAL"
+      },
+      "retries_transient_internally": true
+    }
+  ],
+  "vocabulary": {
+    "metrics": [],
+    "dimensions": [],
+    "filters": [],
+    "attributes": []
+  },
+  "fixture": false
+}

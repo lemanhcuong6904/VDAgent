@@ -22,7 +22,9 @@ WORKDIR /app
 # Third-party dependencies first (cached until uv.lock / member pyproject files change).
 COPY pyproject.toml uv.lock .python-version ./
 COPY sdk/pyproject.toml sdk/pyproject.toml
+COPY contracts/pyproject.toml contracts/pyproject.toml
 COPY backend/pyproject.toml backend/pyproject.toml
+COPY agents/_shared/pyproject.toml agents/_shared/pyproject.toml
 COPY agents/_template/pyproject.toml agents/_template/pyproject.toml
 COPY agents/orchestrator/pyproject.toml agents/orchestrator/pyproject.toml
 COPY agents/data/pyproject.toml agents/data/pyproject.toml
@@ -33,6 +35,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-workspace
 
 COPY sdk/ sdk/
+COPY contracts/ contracts/
 COPY backend/ backend/
 COPY agents/ agents/
 COPY data/ data/

@@ -93,4 +93,4 @@ class McpServer:
 def create_mcp(
     cfg: Config, db: AsyncEngine, tokens: TokenRegistry, *, sql_timeout_s: float = SQL_TIMEOUT_S
 ) -> McpServer:
-    return McpServer(McpTools(db, cfg.warehouse_db, sql_timeout_s=sql_timeout_s), tokens)
+    return McpServer(McpTools(db, cfg.warehouse_db, sql_timeout_s=sql_timeout_s, re_warehouse_db=cfg.re_warehouse_db), tokens)

@@ -5,7 +5,9 @@ description = "vdagent PoC: multi-agent analytics assistant (uv workspace root)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "vdagent-sdk",
+  "vdagent-contracts",
   "vdagent-backend",
+  "vdagent-agentkit",
   "vdagent-agent-template",
   "vdagent-orchestrator",
   "vdagent-data",
@@ -20,7 +22,9 @@ package = false
 [tool.uv.workspace]
 members = [
   "sdk",
+  "contracts",
   "backend",
+  "agents/_shared",
   "agents/_template",
   "agents/orchestrator",
   "agents/data",
@@ -31,7 +35,9 @@ members = [
 
 [tool.uv.sources]
 vdagent-sdk = { workspace = true }
+vdagent-contracts = { workspace = true }
 vdagent-backend = { workspace = true }
+vdagent-agentkit = { workspace = true }
 vdagent-agent-template = { workspace = true }
 vdagent-orchestrator = { workspace = true }
 vdagent-data = { workspace = true }
@@ -45,7 +51,7 @@ dev = ["pytest>=8", "pytest-asyncio>=0.24", "httpx>=0.27"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-testpaths = ["backend/tests", "agents"]
+testpaths = ["backend/tests", "contracts", "agents"]
 
 [tool.basedpyright]
 venvPath = "."
@@ -53,7 +59,9 @@ venv = ".venv"
 typeCheckingMode = "standard"
 extraPaths = [
   "sdk",
+  "contracts",
   "backend",
+  "agents/_shared",
   "agents/_template",
   "agents/orchestrator",
   "agents/data",

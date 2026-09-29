@@ -42,12 +42,16 @@ SALES = [
     ("East", 2025, 45.5),
 ]
 # §6.1 permission matrix, stated independently of the implementation.
+_EVERYONE = {
+    "describe_dataset", "get_dataset_rows", "artifact_put", "artifact_get", "artifact_list", "get_user_context",
+}
 EXPECTED_TOOLS = {
-    "orchestrator": {"describe_dataset", "get_dataset_rows"},
-    "data": {"list_tables", "describe_table", "run_query", "describe_dataset", "get_dataset_rows", "query_datasets"},
-    "compare": {"describe_dataset", "get_dataset_rows", "query_datasets"},
-    "insight": {"describe_dataset", "get_dataset_rows", "query_datasets"},
-    "report": {"describe_dataset", "get_dataset_rows", "create_chart", "save_report"},
+    "orchestrator": _EVERYONE,
+    "data": _EVERYONE
+    | {"list_tables", "describe_table", "run_query", "query_datasets", "re_list_tables", "re_describe_table", "re_run_query"},
+    "compare": _EVERYONE | {"query_datasets"},
+    "insight": _EVERYONE | {"query_datasets"},
+    "report": _EVERYONE | {"create_chart", "save_report"},
 }
 
 

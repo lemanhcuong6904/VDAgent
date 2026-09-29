@@ -1,5 +1,6 @@
 backend_db: ./var/backend.db
 warehouse_db: ./var/warehouse.db
+re_warehouse_db: ./var/re_warehouse.db             # real-estate DW mock (data/seed_re_warehouse.py)
 mcp_public_url: http://localhost:8000/mcp       # URL plugins' MCP clients use (this Backend's own /mcp)
 frontend_dist: ./frontend/dist                  # served at / if present
 max_depth: 4

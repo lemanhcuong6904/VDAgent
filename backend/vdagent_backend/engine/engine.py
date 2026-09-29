@@ -396,7 +396,7 @@ class Engine:
         run.check_cancel()
 
         await self._append(run, role="user", sender=run.caller, content=run.inbound_text)
-        token = run.token = self.tokens.issue(run.user_id, run.agent, run.id)
+        token = run.token = self.tokens.issue(run.user_id, run.agent, run.id, run.task_id)
         summary = await repo.get_summary(self.db, run.user_id, run.agent)
         history = await repo.stack_history(self.db, run.user_id, run.agent)
         run.check_cancel()

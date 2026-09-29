@@ -15,15 +15,16 @@ class McpIdentity:
     user_id: str
     agent: str
     invocation_id: str
+    task_id: str = ""  # the user question (= run) this invocation serves (D5: run_id := task_id)
 
 
 class TokenRegistry:
     def __init__(self) -> None:
         self._tokens: dict[str, McpIdentity] = {}
 
-    def issue(self, user_id: str, agent: str, invocation_id: str) -> str:
+    def issue(self, user_id: str, agent: str, invocation_id: str, task_id: str = "") -> str:
         token = secrets.token_urlsafe(32)
-        self._tokens[token] = McpIdentity(user_id, agent, invocation_id)
+        self._tokens[token] = McpIdentity(user_id, agent, invocation_id, task_id)
         return token
 
     def resolve(self, token: str) -> McpIdentity | None:

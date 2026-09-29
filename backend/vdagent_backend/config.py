@@ -42,6 +42,7 @@ class Config:
     max_depth: int = 4
     max_steps: int = 12
     plugins: list[PluginSpec] = field(default_factory=list)
+    re_warehouse_db: str = "./var/re_warehouse.db"  # real-estate DW mock (D7)
 
 
 _SCALARS: dict[str, type] = {
@@ -51,6 +52,7 @@ _SCALARS: dict[str, type] = {
     "frontend_dist": str,
     "max_depth": int,
     "max_steps": int,
+    "re_warehouse_db": str,
 }
 
 _PLUGIN_KEYS = frozenset({"module", "opts", "enabled"})

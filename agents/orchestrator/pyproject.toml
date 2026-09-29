@@ -1,7 +1,7 @@
 [project]
 name = "vdagent-orchestrator"
 version = "0.1.0"
-description = "vdagent orchestrator agent plugin (LiteLLM tool loop)"
+description = "vdagent orchestrator agent plugin (Orchestrator v4: plan, dispatch in waves, replan, close)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "vdagent-sdk",

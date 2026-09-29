@@ -113,3 +113,49 @@ END;
 CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
   INSERT INTO memories_fts(memories_fts, rowid, text) VALUES ('delete', old.id, old.text);
 END;
+
+-- Artifact Store (D5, system prompt §6.2): immutable envelopes. A correction is a new version of the same
+-- artifact_id; the previous version's status becomes SUPERSEDED (the only update allowed).
+CREATE TABLE IF NOT EXISTS artifacts (
+  artifact_id             TEXT NOT NULL,          -- 'art_…'
+  version                 INTEGER NOT NULL CHECK (version >= 1),
+  run_id                  TEXT NOT NULL,
+  task_id                 TEXT NOT NULL,
+  user_id                 TEXT NOT NULL REFERENCES users(id),
+  artifact_type           TEXT NOT NULL,
+  schema_version          TEXT NOT NULL,
+  status                  TEXT NOT NULL CHECK (status IN ('DRAFT','VALID','PARTIAL','INVALID','SUPERSEDED')),
+  producer_json           TEXT NOT NULL,
+  content_hash            TEXT NOT NULL,
+  snapshot_refs_json      TEXT NOT NULL,
+  semantic_config_version TEXT,
+  source_refs_json        TEXT NOT NULL,
+  input_refs_json         TEXT NOT NULL,
+  evidence_refs_json      TEXT NOT NULL,
+  limitations_json        TEXT NOT NULL,
+  reason_code             TEXT,
+  reason                  TEXT,
+  payload_json            TEXT NOT NULL,          -- canonical JSON, Decimal as string
+  created_at              TEXT NOT NULL,
+  PRIMARY KEY (artifact_id, version)
+);
+CREATE INDEX IF NOT EXISTS ix_artifacts_run ON artifacts(user_id, run_id, artifact_type);
+CREATE TRIGGER IF NOT EXISTS artifacts_immutable_update BEFORE UPDATE ON artifacts
+WHEN NOT (NEW.status = 'SUPERSEDED' AND OLD.status <> 'SUPERSEDED'
+          AND NEW.payload_json IS OLD.payload_json AND NEW.content_hash IS OLD.content_hash
+          AND NEW.artifact_id IS OLD.artifact_id AND NEW.version IS OLD.version)
+BEGIN
+  SELECT RAISE(ABORT, 'artifacts are immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS artifacts_immutable_delete BEFORE DELETE ON artifacts
+BEGIN
+  SELECT RAISE(ABORT, 'artifacts are immutable');
+END;
+
+-- Authorized scope per user (D8): a whole project (zone_id NULL) or one zone of it.
+CREATE TABLE IF NOT EXISTS user_scopes (
+  user_id    TEXT NOT NULL REFERENCES users(id),
+  project_id TEXT NOT NULL,
+  zone_id    TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_user_scopes ON user_scopes(user_id, project_id, IFNULL(zone_id, ''));

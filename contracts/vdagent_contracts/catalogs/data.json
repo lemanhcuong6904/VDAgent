@@ -1,0 +1,692 @@
+{
+  "agent": "data",
+  "contract_version": "1.0.0",
+  "catalog_version": "1.3.0",
+  "operations": [
+    {
+      "operation": "fetch_units",
+      "description": "Lấy danh sách căn theo phạm vi và bộ lọc, kèm chẩn đoán và nguyên nhân (unit_set)",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "objective": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "scope": {
+            "type": "object",
+            "properties": {
+              "mentions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "kind_hint": {
+                      "type": "string",
+                      "enum": [
+                        "PROJECT",
+                        "ZONE",
+                        "UNIT",
+                        "UNKNOWN"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "kind_hint"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "scope_all": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "mentions",
+              "scope_all"
+            ],
+            "additionalProperties": false
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "available",
+                "released",
+                "slow_moving",
+                "sold"
+              ]
+            }
+          },
+          "extra_needs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 300
+            }
+          },
+          "acceptance": {
+            "type": "object",
+            "properties": {
+              "grain": {
+                "type": "string"
+              },
+              "min_rows": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          },
+          "attributes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "area_m2",
+                "asking_price_vnd",
+                "balcony_orientation",
+                "floor_band",
+                "inventory_status",
+                "launch_batch",
+                "net_price_per_m2",
+                "unit_code",
+                "unit_type",
+                "unsold_days_dom",
+                "view_primary_type",
+                "zone"
+              ]
+            }
+          }
+        },
+        "required": [
+          "objective",
+          "scope"
+        ],
+        "additionalProperties": false
+      },
+      "input_fields": {},
+      "requires": [],
+      "uses_if_present": [],
+      "produces": [
+        "unit_set",
+        "dq_report"
+      ],
+      "outputs": [
+        "CHAT_ANSWER"
+      ],
+      "serves": [
+        "LOOKUP"
+      ],
+      "deadline_s": 90,
+      "error_codes": {
+        "AMBIGUOUS_REQUEST": "NEED_INPUT",
+        "ENTITY_NOT_FOUND": "SPEC_ISSUE",
+        "SPEC_MISMATCH": "SPEC_ISSUE",
+        "OUT_OF_SCOPE": "NO_ACCESS",
+        "SIGNATURE_INVALID": "NO_ACCESS",
+        "DATA_UNAVAILABLE": "NO_DATA",
+        "DQ_BLOCKING": "DATA_QUALITY",
+        "BUDGET_EXCEEDED": "SPEC_ISSUE",
+        "LLM_UNAVAILABLE": "TRANSIENT",
+        "LLM_QUOTA_EXHAUSTED": "QUOTA_EXHAUSTED",
+        "INTERNAL_ERROR": "FATAL"
+      },
+      "retries_transient_internally": true
+    },
+    {
+      "operation": "aggregate_metrics",
+      "description": "Tính metric theo nhóm (tử số, mẫu số, n, formula_id) trong phạm vi (metric_table)",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "objective": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "scope": {
+            "type": "object",
+            "properties": {
+              "mentions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "kind_hint": {
+                      "type": "string",
+                      "enum": [
+                        "PROJECT",
+                        "ZONE",
+                        "UNIT",
+                        "UNKNOWN"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "kind_hint"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "scope_all": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "mentions",
+              "scope_all"
+            ],
+            "additionalProperties": false
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "available",
+                "released",
+                "slow_moving",
+                "sold"
+              ]
+            }
+          },
+          "extra_needs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 300
+            }
+          },
+          "acceptance": {
+            "type": "object",
+            "properties": {
+              "grain": {
+                "type": "string"
+              },
+              "min_rows": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "absorption_rate",
+                "avg_dom_unsold",
+                "avg_net_price_per_m2",
+                "slow_moving_count",
+                "slow_moving_rate",
+                "unit_count"
+              ]
+            },
+            "minItems": 1
+          },
+          "group_by": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "balcony_orientation",
+                "channel",
+                "floor_band",
+                "launch_batch",
+                "market",
+                "project",
+                "unit_type",
+                "view_primary_type",
+                "zone"
+              ]
+            }
+          }
+        },
+        "required": [
+          "objective",
+          "scope",
+          "metrics"
+        ],
+        "additionalProperties": false
+      },
+      "input_fields": {},
+      "requires": [],
+      "uses_if_present": [],
+      "produces": [
+        "metric_table",
+        "dq_report"
+      ],
+      "outputs": [
+        "CHAT_ANSWER"
+      ],
+      "serves": [
+        "LOOKUP"
+      ],
+      "deadline_s": 90,
+      "error_codes": {
+        "AMBIGUOUS_REQUEST": "NEED_INPUT",
+        "ENTITY_NOT_FOUND": "SPEC_ISSUE",
+        "SPEC_MISMATCH": "SPEC_ISSUE",
+        "OUT_OF_SCOPE": "NO_ACCESS",
+        "SIGNATURE_INVALID": "NO_ACCESS",
+        "DATA_UNAVAILABLE": "NO_DATA",
+        "DQ_BLOCKING": "DATA_QUALITY",
+        "BUDGET_EXCEEDED": "SPEC_ISSUE",
+        "LLM_UNAVAILABLE": "TRANSIENT",
+        "LLM_QUOTA_EXHAUSTED": "QUOTA_EXHAUSTED",
+        "INTERNAL_ERROR": "FATAL"
+      },
+      "retries_transient_internally": true
+    },
+    {
+      "operation": "fetch_peer_candidates",
+      "description": "Lấy tập căn ứng viên tương đồng cho một căn mục tiêu (peer_candidates)",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "objective": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "scope": {
+            "type": "object",
+            "properties": {
+              "mentions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "kind_hint": {
+                      "type": "string",
+                      "enum": [
+                        "PROJECT",
+                        "ZONE",
+                        "UNIT",
+                        "UNKNOWN"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "kind_hint"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "scope_all": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "mentions",
+              "scope_all"
+            ],
+            "additionalProperties": false
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "available",
+                "released",
+                "slow_moving",
+                "sold"
+              ]
+            }
+          },
+          "extra_needs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 300
+            }
+          },
+          "acceptance": {
+            "type": "object",
+            "properties": {
+              "grain": {
+                "type": "string"
+              },
+              "min_rows": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          },
+          "target_unit": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "kind_hint": {
+                "type": "string",
+                "enum": [
+                  "PROJECT",
+                  "ZONE",
+                  "UNIT",
+                  "UNKNOWN"
+                ]
+              }
+            },
+            "required": [
+              "text",
+              "kind_hint"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "objective",
+          "scope",
+          "target_unit"
+        ],
+        "additionalProperties": false
+      },
+      "input_fields": {},
+      "requires": [],
+      "uses_if_present": [],
+      "produces": [
+        "peer_candidates",
+        "dq_report"
+      ],
+      "outputs": [],
+      "serves": [],
+      "deadline_s": 90,
+      "error_codes": {
+        "AMBIGUOUS_REQUEST": "NEED_INPUT",
+        "ENTITY_NOT_FOUND": "SPEC_ISSUE",
+        "SPEC_MISMATCH": "SPEC_ISSUE",
+        "OUT_OF_SCOPE": "NO_ACCESS",
+        "SIGNATURE_INVALID": "NO_ACCESS",
+        "DATA_UNAVAILABLE": "NO_DATA",
+        "DQ_BLOCKING": "DATA_QUALITY",
+        "BUDGET_EXCEEDED": "SPEC_ISSUE",
+        "LLM_UNAVAILABLE": "TRANSIENT",
+        "LLM_QUOTA_EXHAUSTED": "QUOTA_EXHAUSTED",
+        "INTERNAL_ERROR": "FATAL"
+      },
+      "retries_transient_internally": true
+    },
+    {
+      "operation": "fetch_unit_context",
+      "description": "Lấy lịch sử giá, phễu, thứ cấp, vĩ mô, hạ tầng cho một tập căn (unit_context)",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "objective": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "scope": {
+            "type": "object",
+            "properties": {
+              "mentions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "kind_hint": {
+                      "type": "string",
+                      "enum": [
+                        "PROJECT",
+                        "ZONE",
+                        "UNIT",
+                        "UNKNOWN"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "kind_hint"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "scope_all": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "mentions",
+              "scope_all"
+            ],
+            "additionalProperties": false
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "available",
+                "released",
+                "slow_moving",
+                "sold"
+              ]
+            }
+          },
+          "extra_needs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 300
+            }
+          },
+          "acceptance": {
+            "type": "object",
+            "properties": {
+              "grain": {
+                "type": "string"
+              },
+              "min_rows": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          },
+          "unit_set_package_id": {
+            "type": "string"
+          },
+          "contexts": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "price_history",
+                "funnel",
+                "secondary_comps",
+                "macro",
+                "infrastructure"
+              ]
+            }
+          }
+        },
+        "required": [
+          "objective",
+          "scope",
+          "unit_set_package_id",
+          "contexts"
+        ],
+        "additionalProperties": false
+      },
+      "input_fields": {
+        "unit_set": "unit_set_package_id"
+      },
+      "requires": [
+        "unit_set"
+      ],
+      "uses_if_present": [],
+      "produces": [
+        "unit_context",
+        "dq_report"
+      ],
+      "outputs": [],
+      "serves": [],
+      "deadline_s": 90,
+      "error_codes": {
+        "AMBIGUOUS_REQUEST": "NEED_INPUT",
+        "ENTITY_NOT_FOUND": "SPEC_ISSUE",
+        "SPEC_MISMATCH": "SPEC_ISSUE",
+        "OUT_OF_SCOPE": "NO_ACCESS",
+        "SIGNATURE_INVALID": "NO_ACCESS",
+        "DATA_UNAVAILABLE": "NO_DATA",
+        "DQ_BLOCKING": "DATA_QUALITY",
+        "BUDGET_EXCEEDED": "SPEC_ISSUE",
+        "LLM_UNAVAILABLE": "TRANSIENT",
+        "LLM_QUOTA_EXHAUSTED": "QUOTA_EXHAUSTED",
+        "INTERNAL_ERROR": "FATAL"
+      },
+      "retries_transient_internally": true
+    }
+  ],
+  "vocabulary": {
+    "metrics": [
+      {
+        "name": "absorption_rate",
+        "description": "Tỷ lệ hấp thụ: căn đã bán / căn đã mở bán"
+      },
+      {
+        "name": "avg_dom_unsold",
+        "description": "DOM trung bình của căn còn trống (ngày)"
+      },
+      {
+        "name": "slow_moving_count",
+        "description": "Số căn bán chậm (quá ngưỡng)"
+      },
+      {
+        "name": "slow_moving_rate",
+        "description": "Tỷ lệ căn bán chậm trên căn còn trống"
+      },
+      {
+        "name": "avg_net_price_per_m2",
+        "description": "Đơn giá ròng trung bình (VND/m²)"
+      },
+      {
+        "name": "unit_count",
+        "description": "Số căn"
+      }
+    ],
+    "dimensions": [
+      {
+        "name": "project",
+        "description": "Dự án"
+      },
+      {
+        "name": "zone",
+        "description": "Phân khu / tòa"
+      },
+      {
+        "name": "market",
+        "description": "Thị trường / khu vực"
+      },
+      {
+        "name": "floor_band",
+        "description": "Nhóm tầng LOW/MID/HIGH/TOP"
+      },
+      {
+        "name": "balcony_orientation",
+        "description": "Hướng ban công"
+      },
+      {
+        "name": "view_primary_type",
+        "description": "Loại view chính"
+      },
+      {
+        "name": "unit_type",
+        "description": "Loại căn (1PN/2PN/3PN)"
+      },
+      {
+        "name": "launch_batch",
+        "description": "Đợt mở bán"
+      },
+      {
+        "name": "channel",
+        "description": "Kênh / sàn phân phối"
+      }
+    ],
+    "filters": [
+      {
+        "name": "released",
+        "description": "Căn đã mở bán"
+      },
+      {
+        "name": "available",
+        "description": "Căn còn trống"
+      },
+      {
+        "name": "sold",
+        "description": "Căn đã bán"
+      },
+      {
+        "name": "slow_moving",
+        "description": "Căn bán chậm: còn trống và DOM vượt ngưỡng quá hạn"
+      }
+    ],
+    "attributes": [
+      {
+        "name": "unit_code",
+        "description": "Mã căn"
+      },
+      {
+        "name": "zone",
+        "description": "Phân khu"
+      },
+      {
+        "name": "unit_type",
+        "description": "Loại căn"
+      },
+      {
+        "name": "area_m2",
+        "description": "Diện tích (m²)"
+      },
+      {
+        "name": "floor_band",
+        "description": "Nhóm tầng"
+      },
+      {
+        "name": "balcony_orientation",
+        "description": "Hướng ban công"
+      },
+      {
+        "name": "view_primary_type",
+        "description": "View chính"
+      },
+      {
+        "name": "launch_batch",
+        "description": "Đợt mở bán"
+      },
+      {
+        "name": "inventory_status",
+        "description": "Trạng thái tồn kho"
+      },
+      {
+        "name": "unsold_days_dom",
+        "description": "DOM (ngày)"
+      },
+      {
+        "name": "asking_price_vnd",
+        "description": "Giá chào (VND)"
+      },
+      {
+        "name": "net_price_per_m2",
+        "description": "Đơn giá ròng (VND/m²)"
+      }
+    ]
+  },
+  "fixture": false
+}
