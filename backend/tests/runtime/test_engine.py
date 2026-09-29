@@ -10,7 +10,7 @@ from collections.abc import Awaitable, Callable
 import pytest
 
 from conftest import ALICE, NOW, Harness, Session, wait_for
-from vdagent_backend.engine import Engine, TaskFinishedError
+from vdagent_backend.runtime import Engine, TaskFinishedError
 from vdagent_sdk import AgentTimeoutError, ContractViolation, InvocationContext
 
 
@@ -583,7 +583,7 @@ async def test_startup_recovery_fails_inflight_work_and_patches_stacks(harness: 
     assert await harness.stack("data") == []  # the queued child never wrote to its stack
 
 
-async def test_engine_restart_recovers_via_start(harness: Harness) -> None:
+async def test_engine_restart_recovers_via_recover(harness: Harness) -> None:
     """A second engine on the same DB (a BE restart) fails what the first left running."""
     gate = asyncio.Event()
 
@@ -596,7 +596,7 @@ async def test_engine_restart_recovers_via_start(harness: Harness) -> None:
     await harness.engine.stop()
 
     engine2 = Engine(harness.cfg, harness.db, harness.bus, harness.tokens, harness.registry)
-    await engine2.start()
+    await engine2.recover()
     row = await harness.tasks.get_task(task_id)
     assert row["status"] == "failed"
     gate.set()

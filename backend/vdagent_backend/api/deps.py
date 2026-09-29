@@ -12,7 +12,7 @@ from vdagent_backend.api.errors import ApiError
 from vdagent_backend.artifacts import ArtifactService
 from vdagent_backend.config import Config
 from vdagent_backend.conversations import Users
-from vdagent_backend.engine import Engine
+from vdagent_backend.runtime import Engine
 from vdagent_backend.core import EventBus
 
 

@@ -1,9 +1,9 @@
-"""The in-process `InvocationContext` (plugins spec §5.3) and the events it posts to its run.
+"""The in-process `InvocationContext` handed to `agent.invoke(ctx)`, and the events it posts to its run.
 
 `TurnContext` never touches the DB or the engine's state: each method posts one event on the run's
-inbox and awaits the event's future. The run task (the stack lock holder, I1) checks the contract,
-persists and publishes, then resolves the future, or sets `ContractViolation` on it and
-fails the turn. Cancelling the plugin's task therefore never interrupts a DB write.
+inbox and awaits the event's future. The run task (the stack lock holder) checks the contract,
+persists and publishes, then resolves the future, or sets `ContractViolation` on it and fails the
+turn. Cancelling the plugin's task therefore never interrupts a DB write.
 """
 
 from __future__ import annotations

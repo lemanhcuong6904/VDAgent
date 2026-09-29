@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from vdagent_backend.api.deps import Svc, UserId
 from vdagent_backend.api.errors import ApiError, not_found
 from vdagent_backend.conversations import TASK_STATUSES, Messages, Tasks, Users, invocation_dto, message_dto, task_dto, user_dto
-from vdagent_backend.engine import TaskFinishedError, TaskNotFoundError, UnknownAgentError
+from vdagent_backend.runtime import TaskFinishedError, TaskNotFoundError, UnknownAgentError
 
 router = APIRouter(prefix="/api")
 

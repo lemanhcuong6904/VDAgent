@@ -25,7 +25,7 @@ from vdagent_backend.app import create_app
 from vdagent_backend.config import Config, PluginSpec
 from vdagent_backend.conversations import Messages, Tasks
 from vdagent_backend.core import EventBus, TokenRegistry
-from vdagent_backend.engine import Engine
+from vdagent_backend.runtime import Engine
 from vdagent_backend.persistence import create_database, migrate, sqlite_url
 from vdagent_backend.plugins import AgentRegistry, RegisteredAgent
 from vdagent_sdk import InvocationContext, Message, PluginAPI, ToolCall
@@ -298,7 +298,7 @@ async def harness(tmp_path: Path, fake_agents: dict[str, FakeAgent], cfg_overrid
     bus, tokens = EventBus(), TokenRegistry()
     registry = registry_of(fake_agents)
     engine = Engine(cfg, db, bus, tokens, registry)
-    await engine.start()
+    await engine.recover()
     yield Harness(cfg, db, bus, tokens, registry, engine, fake_agents)
     await engine.stop()
     await db.dispose()

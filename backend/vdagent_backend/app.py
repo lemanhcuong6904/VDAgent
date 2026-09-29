@@ -30,7 +30,7 @@ from vdagent_backend.api.errors import error_response, install_error_handlers
 from vdagent_backend.artifacts import ArtifactService
 from vdagent_backend.config import Config, PluginSpec, load_config
 from vdagent_backend.persistence import create_database, migrate, sqlite_url
-from vdagent_backend.engine import Engine
+from vdagent_backend.runtime import Engine
 from vdagent_backend.core import EventBus
 from vdagent_backend.mcp.server import create_mcp
 from vdagent_backend.mcp.tools import TOOL_NAMES
@@ -57,7 +57,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         engine = Engine(cfg, db, bus, tokens, registry)
         app.state.services = Services(cfg=cfg, db=db, bus=bus, engine=engine, artifacts=artifacts)
         try:
-            await engine.start()
+            await engine.recover()
             async with mcp.lifespan(registry):
                 yield
         finally:
