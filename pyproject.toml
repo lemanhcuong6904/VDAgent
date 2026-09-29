@@ -1,0 +1,63 @@
+[project]
+name = "vdagent"
+version = "0.1.0"
+description = "vdagent PoC: multi-agent analytics assistant (uv workspace root)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "vdagent-sdk",
+  "vdagent-backend",
+  "vdagent-agent-template",
+  "vdagent-orchestrator",
+  "vdagent-data",
+  "vdagent-compare",
+  "vdagent-insight",
+  "vdagent-report",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = [
+  "sdk",
+  "backend",
+  "agents/_template",
+  "agents/orchestrator",
+  "agents/data",
+  "agents/compare",
+  "agents/insight",
+  "agents/report",
+]
+
+[tool.uv.sources]
+vdagent-sdk = { workspace = true }
+vdagent-backend = { workspace = true }
+vdagent-agent-template = { workspace = true }
+vdagent-orchestrator = { workspace = true }
+vdagent-data = { workspace = true }
+vdagent-compare = { workspace = true }
+vdagent-insight = { workspace = true }
+vdagent-report = { workspace = true }
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "httpx>=0.27"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["backend/tests", "agents"]
+
+[tool.basedpyright]
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+extraPaths = [
+  "sdk",
+  "backend",
+  "agents/_template",
+  "agents/orchestrator",
+  "agents/data",
+  "agents/compare",
+  "agents/insight",
+  "agents/report",
+]

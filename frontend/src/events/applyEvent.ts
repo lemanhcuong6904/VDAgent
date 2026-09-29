@@ -1,13 +1,13 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { type MessagesCache, queryKeys } from "../api/keys";
+import { queryKeys, type MessagesCache } from "../api/keys";
 import type {
   AgentDTO,
   AgentStatusData,
   InvocationDTO,
   MessageDTO,
   ServerEvent,
-  TaskDetailDTO,
   TaskDTO,
+  TaskDetailDTO,
 } from "../api/types";
 
 /** `GET /api/tasks` returns at most this many tasks; the cached list is kept to the same bound. */
@@ -45,9 +45,6 @@ export function applyEvent(queryClient: QueryClient, ev: ServerEvent): void {
       queryClient.setQueryData<TaskDetailDTO>(queryKeys.task(task.id), (old) =>
         old ? { ...old, task } : undefined,
       );
-      if (task.status !== "running") {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.reports });
-      }
       return;
     }
     case "agent.status": {
@@ -98,11 +95,7 @@ function updatePending(cache: MessagesCache, inv: InvocationDTO): MessagesCache 
   };
 }
 
-function upsertById<T extends { id: string }>(
-  list: T[],
-  item: T,
-  insert: "append" | "prepend",
-): T[] {
+function upsertById<T extends { id: string }>(list: T[], item: T, insert: "append" | "prepend"): T[] {
   const index = list.findIndex((x) => x.id === item.id);
   if (index === -1) return insert === "append" ? [...list, item] : [item, ...list];
   const next = list.slice();
@@ -110,12 +103,6 @@ function upsertById<T extends { id: string }>(
   return next;
 }
 
-/** Health broadcasts may omit per-user fields; only patch what the event carries. */
 function patchAgent(agent: AgentDTO, status: AgentStatusData): AgentDTO {
-  return {
-    ...agent,
-    healthy: status.healthy ?? agent.healthy,
-    busy: status.busy ?? agent.busy,
-    queue_len: status.queue_len ?? agent.queue_len,
-  };
+  return { ...agent, busy: status.busy, queue_len: status.queue_len };
 }

@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vdagent: agent plugins and what they are free to be</title>
+<style>
+:root{--bg:#121212;--txt:#ececec;--mut:#9a9a9a;--line:#e6e6e6;--fixed:#5b8def;--open:#2fc4a8;--mem:#ffcf5a}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1180px;margin:0 auto;padding:24px 20px 48px}
+h1{font-size:24px;margin:0}
+h2{font-size:18px;margin:34px 0 4px}
+code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;color:#d8d8d8}
+.sub{color:var(--mut);margin:4px 0 14px}
+.panel{background:#161616;border:1px solid #2b2b2b;border-radius:14px;padding:8px}
+svg{width:100%;height:auto;display:block}
+svg text{fill:var(--txt);font-family:"Comic Neue","Chalkboard SE","Segoe Print",ui-sans-serif,system-ui,sans-serif}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important;font-size:12.5px}
+.t{font-size:16px;font-weight:700}.c{text-anchor:middle}.s{font-size:12.5px;fill:var(--mut)}
+.box{fill:#141414;stroke:var(--line);stroke-width:1.8}
+.lane-fixed{fill:#131b2b;stroke:var(--fixed);stroke-width:1.6;stroke-dasharray:7 5}
+.lane-open{fill:#0f211d;stroke:var(--open);stroke-width:1.6;stroke-dasharray:7 5}
+.tag{font-size:12px;font-weight:700;letter-spacing:.08em}
+.tag-fixed{fill:#9dbcff}.tag-open{fill:#6fe0c8}
+.wire{fill:none;stroke:#cfcfcf;stroke-width:2}
+.lbl{font-size:12px;fill:#cfcfcf}
+.node{transition:opacity .2s}
+.dim .node:not(.on){opacity:.22}
+.emit{fill:#141414;stroke:var(--line);stroke-width:1.8}
+.inner{fill:#0f211d;stroke:var(--open);stroke-width:1.8;stroke-dasharray:6 4}
+.store{fill:#2a2412;stroke:var(--mem);stroke-width:1.8}
+.w-in{stroke:var(--open);stroke-dasharray:6 4}
+.w-mem{stroke:var(--mem);stroke-dasharray:3 4}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0}
+.bar button{background:#1f1f1f;color:var(--txt);border:1px solid #444;border-radius:999px;padding:4px 13px;font:inherit;font-size:14px;cursor:pointer}
+.bar button[aria-pressed=true]{border-color:#9dbcff;color:#cfe0ff;background:#172238}
+.code{margin-top:10px;background:#0d0d0d;border:1px solid #2b2b2b;border-radius:10px;overflow:hidden}
+.code .head{padding:7px 12px;border-bottom:1px solid #2b2b2b;font-weight:600;font-size:14px}
+.code .note{padding:8px 12px 0;color:#cfcfcf;font-size:13.5px}
+pre{margin:0;padding:10px 12px 12px;overflow:auto;font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;color:#dcdcdc;tab-size:4}
+.legend{display:flex;flex-wrap:wrap;gap:18px;color:var(--mut);font-size:13px;margin:8px 0 12px}
+.legend i{display:inline-block;width:22px;height:13px;border-radius:4px;vertical-align:-2px;margin-right:6px}
+.lg-emit{border:1.8px solid var(--line)}.lg-in{border:1.8px dashed var(--open);background:#0f211d}.lg-mem{border:1.8px solid var(--mem);background:#2a2412}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media (max-width:980px){.cards{grid-template-columns:1fr}}
+.card{background:#161616;border:1px solid #2b2b2b;border-radius:14px;padding:12px;display:flex;flex-direction:column}
+.card h3{margin:0;font-size:16px}
+.card .fw{color:var(--mut);font-size:13px;margin:0 0 6px}
+.card p{margin:8px 2px 10px;font-size:13.5px;color:#d6d6d6}
+.card pre{background:#0d0d0d;border:1px solid #2b2b2b;border-radius:10px;font-size:11.5px}
+/* syntax highlighting */
+.k{color:#c792ea}.str{color:#c3e88d}.cm{color:#7f848e;font-style:italic}.fn{color:#82aaff}
+.num{color:#f78c6c}.dec{color:#ffcb6b}.ty{color:#ffcb6b}.key{color:#82aaff}.const{color:#f78c6c}
+</style>
+</head>
+<body>
+<main>
+<h1>Agents are plugins: the Backend fixes the contract, the agent owns the brain</h1>
+<p class="sub">The Backend loads the agent plugins listed in its config and runs each agent through one call, <code>invoke(ctx)</code>. Everything behind that call belongs to the agent team.</p>
+
+<h2>1 · The plugin system</h2>
+<div class="bar" id="steps" role="group" aria-label="Plugin system steps">
+  <button data-step="config" aria-pressed="true">① config</button>
+  <button data-step="load" aria-pressed="false">② load</button>
+  <button data-step="register" aria-pressed="false">③ register</button>
+  <button data-step="contract" aria-pressed="false">④ contract</button>
+  <button data-step="turn" aria-pressed="false">⑤ run a turn</button>
+</div>
+<div class="panel">
+<svg id="plugin-svg" class="dim" viewBox="0 0 1120 340" role="img" aria-label="Plugin system: config, loader, registry, engine and ctx in the Backend; setup() and the agent in the plugin">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#cfcfcf"/></marker>
+  </defs>
+  <rect class="lane-fixed" x="10" y="10" width="1100" height="170" rx="16"/>
+  <text class="tag tag-fixed" x="28" y="34">BACKEND · FIXED CONTRACT</text>
+  <rect class="lane-open" x="10" y="200" width="1100" height="130" rx="16"/>
+  <text class="tag tag-open" x="28" y="224">PLUGIN · FREE</text>
+
+  <g class="node" data-step="config"><rect class="box" x="30" y="56" width="190" height="96" rx="12"/>
+    <text class="t c" x="125" y="84">config.yaml</text>
+    <text class="mono c" x="125" y="110">plugins:</text><text class="mono c" x="125" y="130">- module: …</text></g>
+  <g class="node" data-step="load"><rect class="box" x="260" y="56" width="210" height="96" rx="12"/>
+    <text class="t c" x="365" y="84">plugin loader</text>
+    <text class="mono c" x="365" y="110">import module</text><text class="mono c" x="365" y="130">setup(api, opts)</text></g>
+  <g class="node" data-step="register"><rect class="box" x="510" y="56" width="170" height="96" rx="12"/>
+    <text class="t c" x="595" y="84">agent registry</text>
+    <text class="s c" x="595" y="110">name → agent</text><text class="s c" x="595" y="130">fixed after startup</text></g>
+  <g class="node" data-step="turn"><rect class="box" x="720" y="56" width="170" height="96" rx="12"/>
+    <text class="t c" x="805" y="84">engine</text>
+    <text class="s c" x="805" y="110">one turn per message</text><text class="mono c" x="805" y="130">invoke(ctx)</text></g>
+  <g class="node" data-step="contract turn"><rect class="box" x="930" y="46" width="164" height="116" rx="12"/>
+    <text class="t c" x="1012" y="70">ctx</text>
+    <text class="mono c" x="1012" y="92">emit_assistant</text><text class="mono c" x="1012" y="110">emit_tool_result</text>
+    <text class="mono c" x="1012" y="128">call_agent</text><text class="mono c" x="1012" y="146">memory</text></g>
+
+  <g class="node" data-step="load register"><rect class="box" x="260" y="246" width="210" height="70" rx="12"/>
+    <text class="mono c" x="365" y="274">setup(api, opts)</text><text class="mono c" x="365" y="296">api.register_agent(…)</text></g>
+  <g class="node" data-step="contract turn"><rect class="box" x="720" y="246" width="374" height="70" rx="12"/>
+    <text class="mono c" x="907" y="272">Agent: invoke(ctx) · compact(…)</text>
+    <text class="s c" x="907" y="296">any framework: LiteLLM · LangChain · LangGraph · …</text></g>
+
+  <path class="wire" d="M220,104 H258" marker-end="url(#ah)"/>
+  <path class="wire" d="M340,152 V244" marker-end="url(#ah)"/><text class="lbl" x="296" y="200">calls</text>
+  <path class="wire" d="M420,244 C420,190 560,200 580,154" marker-end="url(#ah)"/><text class="lbl" x="470" y="196">register_agent</text>
+  <path class="wire" d="M680,104 H718" marker-end="url(#ah)"/>
+  <path class="wire" d="M805,152 V244" marker-end="url(#ah)"/><text class="lbl" x="814" y="200">invoke(ctx)</text>
+  <path class="wire" d="M1012,244 V164" marker-end="url(#ah)"/><text class="lbl" x="1020" y="200">reports via ctx</text>
+</svg>
+</div>
+<div class="code" aria-live="polite">
+  <div class="head" id="code-head"></div>
+  <div class="note" id="code-note"></div>
+  <pre id="code-body"></pre>
+</div>
+
+<h2>2 · The agents: one interface, three designs</h2>
+<div class="legend">
+  <span><i class="lg-emit"></i>reported through <code>ctx</code> (the Backend records it)</span>
+  <span><i class="lg-in"></i>internal to the agent (the Backend never sees it)</span>
+  <span><i class="lg-mem"></i><code>ctx.memory</code> (the Backend stores it, the agent decides what goes in)</span>
+</div>
+<div class="cards">
+  <section class="card">
+    <h3>orchestrator · data · compare</h3>
+    <div class="fw">LiteLLM tool loop · the control group</div>
+    <svg viewBox="0 0 340 250" role="img" aria-label="ReAct loop: model and tools alternate until an answer">
+      <rect class="emit" x="115" y="14" width="110" height="38" rx="10"/><text class="mono c" x="170" y="38">ctx.history</text>
+      <rect class="emit" x="40" y="96" width="110" height="46" rx="10"/><text class="t c" x="95" y="124">model</text>
+      <rect class="emit" x="200" y="96" width="110" height="46" rx="10"/><text class="t c" x="255" y="124">tools</text>
+      <rect class="emit" x="40" y="190" width="110" height="42" rx="10"/><text class="t c" x="95" y="216">answer</text>
+      <path class="wire" d="M150,52 L108,94" marker-end="url(#ah)"/>
+      <path class="wire" d="M150,110 H198" marker-end="url(#ah)"/>
+      <path class="wire" d="M200,130 H152" marker-end="url(#ah)"/>
+      <path class="wire" d="M95,142 V188" marker-end="url(#ah)"/>
+      <text class="s" x="104" y="170">no tool calls</text>
+    </svg>
+    <p>The shape a Backend-owned ReAct loop would give every agent: a prompt and tools around one loop. Every step reaches the Backend.</p>
+    <pre data-lang="python">for step in range(ctx.max_steps):
+    reply = await llm.complete(messages, tools)
+    await ctx.emit_assistant(reply.content, reply.tool_calls)
+    if not reply.tool_calls:
+        return                       # the last step is the answer
+    for call in reply.tool_calls:    # MCP tool or another agent
+        await ctx.emit_tool_result(call.id, await run(call))</pre>
+  </section>
+
+  <section class="card">
+    <h3>insight</h3>
+    <div class="fw">LangChain agent + middleware · long-term memory</div>
+    <svg viewBox="0 0 340 250" role="img" aria-label="insight: recall from memory, loop, answer, then extract and save findings">
+      <rect class="store" x="236" y="14" width="94" height="222" rx="12"/><text class="t c" x="283" y="110">memory</text>
+      <text class="s c" x="283" y="130">keyword +</text><text class="s c" x="283" y="146">vector search</text>
+      <rect class="inner" x="14" y="14" width="200" height="40" rx="10"/><text class="c" x="114" y="39" style="font-size:13.5px">recall: embed → search</text>
+      <rect class="emit" x="14" y="80" width="90" height="42" rx="10"/><text class="t c" x="59" y="106">model</text>
+      <rect class="emit" x="124" y="80" width="90" height="42" rx="10"/><text class="t c" x="169" y="106">tools</text>
+      <rect class="emit" x="14" y="144" width="200" height="36" rx="10"/><text class="t c" x="114" y="167">answer</text>
+      <rect class="inner" x="14" y="198" width="200" height="40" rx="10"/><text class="c" x="114" y="223" style="font-size:13.5px">extract ≤3 · skip dups</text>
+      <path class="wire w-mem" d="M234,34 H216" marker-end="url(#ah)"/>
+      <path class="wire w-in" d="M59,54 V78" marker-end="url(#ah)"/>
+      <path class="wire" d="M104,94 H122" marker-end="url(#ah)"/><path class="wire" d="M124,110 H106" marker-end="url(#ah)"/>
+      <path class="wire" d="M59,122 V142" marker-end="url(#ah)"/>
+      <path class="wire w-in" d="M114,180 V196" marker-end="url(#ah)"/>
+      <path class="wire w-mem" d="M216,218 H234" marker-end="url(#ah)"/>
+    </svg>
+    <p>Before the loop it finds this user's earlier findings closest to the request and puts them in the system prompt. After the answer it decides what is worth remembering and skips what it already knows.</p>
+    <pre data-lang="python">class Memory(AgentMiddleware):
+    async def abefore_agent(self, state, runtime):
+        v = await embeddings.aembed_query(request)
+        notes = await ctx.memory.search(request, 5, embedding=v)
+        self.recall = render(notes)          # added to every system prompt
+
+    async def aafter_agent(self, state, runtime):
+        for finding in await extract(request, answer):   # at most 3
+            v = await embeddings.aembed_query(finding)
+            nearest = await ctx.memory.search(finding, 1, embedding=v)
+            if not nearest or nearest[0].score >= 0.1:   # not already known
+                await ctx.memory.save(finding, "finding", v)
+
+create_agent(model, tools, middleware=[Memory(ctx), CtxBridge(ctx)])</pre>
+  </section>
+
+  <section class="card">
+    <h3>report</h3>
+    <div class="fw">LangGraph state graph · Jev quality gate</div>
+    <svg viewBox="0 0 340 250" role="img" aria-label="report: agent and tools, then Jev assesses the draft; pass finalizes, reject revises once">
+      <rect class="emit" x="14" y="14" width="100" height="42" rx="10"/><text class="t c" x="64" y="40">agent</text>
+      <rect class="emit" x="226" y="14" width="100" height="42" rx="10"/><text class="t c" x="276" y="40">tools</text>
+      <rect class="inner" x="14" y="104" width="150" height="54" rx="10"/><text class="t c" x="89" y="128">assess</text><text class="s c" x="89" y="147">Jev: P(acceptable)</text>
+      <rect class="inner" x="214" y="104" width="112" height="54" rx="10"/><text class="t c" x="270" y="128">revise</text><text class="s c" x="270" y="147">once</text>
+      <rect class="emit" x="14" y="198" width="150" height="40" rx="10"/><text class="t c" x="89" y="223">finalize</text>
+      <path class="wire" d="M114,28 H224" marker-end="url(#ah)"/><path class="wire" d="M226,44 H116" marker-end="url(#ah)"/>
+      <path class="wire w-in" d="M64,56 V102" marker-end="url(#ah)"/><text class="s" x="72" y="84">draft</text>
+      <path class="wire" d="M89,158 V196" marker-end="url(#ah)"/><text class="s" x="98" y="182">≥ 0.5</text>
+      <path class="wire w-in" d="M164,131 H212" marker-end="url(#ah)"/><text class="s" x="168" y="124">&lt; 0.5</text>
+      <path class="wire w-in" d="M270,104 C270,78 140,86 112,58" marker-end="url(#ah)"/>
+    </svg>
+    <p>A text reply is only a draft. Jev, a decisions model that returns typed probabilities instead of text, judges it. A weak draft goes back once with a review for its main problem. The Backend only sees the approved answer.</p>
+    <pre data-lang="python">g = StateGraph(TurnState)
+g.add_edge(START, "agent")
+g.add_conditional_edges("agent", after_agent, ["tools", "assess"])
+g.add_edge("tools", "agent")
+g.add_conditional_edges("assess", after_assess, ["revise", "finalize"])
+g.add_edge("revise", "agent")
+g.add_edge("finalize", END)
+
+# assess: Jev answers typed questions about the draft
+verdict = await jev.decide(state={"request": request, "answer": draft},
+                           questions={"acceptable": "yes/no", "problem": "choice"})
+# → {"acceptable": 0.86, "problem": "none"}</pre>
+  </section>
+</div>
+</main>
+
+<script>
+const STEPS = {
+  config: {
+    head: "config.yaml: the Backend's list of plugins",
+    note: "Plugins load in list order. Each entry can carry free-form opts for the plugin, or enabled: false to switch it off.",
+    lang: "yaml",
+    code: `plugins:
+  - module: vdagent_orchestrator
+  - module: vdagent_data
+  - module: vdagent_compare
+  - module: vdagent_insight
+  - module: vdagent_report
+    opts: {}          # optional, handed to setup()
+    enabled: true     # optional toggle`,
+  },
+  load: {
+    head: "Backend startup: import each plugin, call its setup()",
+    note: "A plugin that fails to load (import error, missing setting) is logged and skipped; the Backend starts with the others.",
+    lang: "python",
+    code: `for spec in config.plugins:
+    module = importlib.import_module(spec.module)
+    try:
+        await module.setup(api, spec.opts)   # the plugin registers its agents
+    except Exception as e:
+        log.error("plugin %s failed: %s", spec.module, e)
+
+registry = api.registered_agents()           # name → agent, fixed from now on`,
+  },
+  register: {
+    head: "Plugin side: setup() builds the agent any way it likes and registers it",
+    note: "The plugin reads its own settings (model, keys) and chooses its framework. The Backend only gets a name, a description and an object with invoke().",
+    lang: "python",
+    code: `def setup(api: PluginAPI, opts: Mapping[str, Any]) -> None:
+    agent = build_agent(read_env())          # LiteLLM, LangChain, LangGraph, …
+    api.register_agent(
+        name="insight",
+        description="Explains trends, anomalies and drivers.",
+        agent=agent,
+    )`,
+  },
+  contract: {
+    head: "The whole contract: what a plugin implements and what it gets per turn",
+    note: "Plugins depend only on this small interface. The Backend checks the reporting rules as the agent reports (e.g. every tool call gets exactly one result).",
+    lang: "python",
+    code: `class Agent(Protocol):
+    async def invoke(self, ctx: InvocationContext) -> None: ...
+    async def compact(self, previous_summary: str, messages: list[Message]) -> str: ...
+
+class InvocationContext(Protocol):
+    history: list[Message]      # the conversation so far; last = the new message
+    summary: str                # summary of this user's older tasks
+    peers: list[Peer]           # other agents it may call
+    mcp: McpEndpoint            # the Backend's tool server, with a per-turn token
+    max_steps: int              # budget of assistant steps
+    memory: Memory              # this user's notes for this agent: save / search / recent / delete
+
+    async def emit_assistant(self, content: str, tool_calls: Sequence[ToolCall] = ()) -> None: ...
+    async def emit_tool_result(self, tool_call_id: str, content: str) -> None: ...
+    async def call_agent(self, tool_call_id: str, target: str, message: str) -> str: ...`,
+  },
+  turn: {
+    head: "Engine: one message → one turn",
+    note: "The engine builds a fresh ctx for the turn and awaits the agent. It records whatever the agent reports and routes calls to other agents.",
+    lang: "python",
+    code: `ctx = TurnContext(
+    history=stack_history(user, agent),
+    summary=summary(user, agent),
+    peers=[p for p in registry if p.name != agent],
+    mcp=McpEndpoint(url=mcp_url, token=issue_token(user, agent)),
+    memory=ScopedMemory(db, user, agent),
+    max_steps=12,
+)
+await registry[agent].invoke(ctx)     # returns when the last step is the answer`,
+  },
+};
+
+// Minimal highlighter (Python / YAML): tokenize, then escape each token.
+const PY_KEYWORDS = new Set("and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield".split(" "));
+const PY_CONSTS = new Set(["None", "True", "False", "self"]);
+const RULES = {
+  python: [
+    ["cm", /#[^\n]*/y],
+    ["str", /[rbf]?("""[\s\S]*?"""|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')/y],
+    ["dec", /@\w+/y],
+    ["num", /\b\d+(?:\.\d+)?\b/y],
+    ["word", /[A-Za-z_]\w*/y],
+  ],
+  yaml: [
+    ["cm", /#[^\n]*/y],
+    ["key", /[A-Za-z_][\w-]*(?=:)/y],
+    ["const", /\b(?:true|false|null)\b/y],
+    ["str", /"[^"\n]*"|'[^'\n]*'/y],
+  ],
+};
+const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+
+function highlight(src, lang) {
+  const rules = RULES[lang] || [];
+  let out = "", i = 0, prev = "";
+  while (i < src.length) {
+    let hit = null;
+    for (const [cls, re] of rules) {
+      re.lastIndex = i;
+      const m = re.exec(src);
+      if (m && m[0]) { hit = [cls, m[0]]; break; }
+    }
+    if (!hit) { out += esc(src[i]); i++; continue; }
+    let [cls, text] = hit;
+    if (cls === "word") {
+      const rest = src.slice(i + text.length);
+      if (PY_KEYWORDS.has(text)) cls = "k";
+      else if (PY_CONSTS.has(text)) cls = "const";
+      else if (prev === "def" || prev === "class" || /^\s*\(/.test(rest)) cls = /^[A-Z]/.test(text) ? "ty" : "fn";
+      else if (/^[A-Z]/.test(text)) cls = "ty";
+      else cls = "";
+      prev = text;
+    }
+    out += cls ? `<span class="${cls}">${esc(text)}</span>` : esc(text);
+    i += text.length;
+  }
+  return out;
+}
+
+document.querySelectorAll("pre[data-lang]").forEach(pre => {
+  pre.innerHTML = highlight(pre.textContent, pre.dataset.lang);
+});
+
+const buttons = document.querySelectorAll("#steps button");
+const nodes = document.querySelectorAll("#plugin-svg .node");
+function show(step) {
+  const s = STEPS[step];
+  document.getElementById("code-head").textContent = s.head;
+  document.getElementById("code-note").textContent = s.note;
+  document.getElementById("code-body").innerHTML = highlight(s.code, s.lang);
+  buttons.forEach(b => b.setAttribute("aria-pressed", String(b.dataset.step === step)));
+  nodes.forEach(n => n.classList.toggle("on", n.dataset.step.split(" ").includes(step)));
+}
+buttons.forEach(b => b.addEventListener("click", () => show(b.dataset.step)));
+show("config");
+</script>
+</body>
+</html>

@@ -1,4 +1,3 @@
-import { browserAuthHeaders } from "./auth";
 import type {
   AgentDTO,
   CancelTaskResponseDTO,
@@ -9,10 +8,8 @@ import type {
   PostMessageResponseDTO,
   ReportDTO,
   ReportSummaryDTO,
-  RunViewDTO,
-  TaskDetailDTO,
   TaskDTO,
-  TaskRunLinkDTO,
+  TaskDetailDTO,
   TaskStatus,
   UserDTO,
 } from "./types";
@@ -55,7 +52,7 @@ function withQuery(path: string, query?: Query): string {
 
 const seg = encodeURIComponent;
 
-/** Typed wrapper over the BE REST API; uses a signed session or the local demo identity. */
+/** Typed wrapper over the BE REST API; adds `X-User-Id` when a user is selected. */
 export class ApiClient {
   readonly userId: string | null;
 
@@ -64,10 +61,8 @@ export class ApiClient {
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const headers: Record<string, string> = {
-      Accept: "application/json",
-      ...browserAuthHeaders(this.userId),
-    };
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (this.userId) headers["X-User-Id"] = this.userId;
     if (body !== undefined) headers["Content-Type"] = "application/json";
 
     let res: Response;
@@ -82,7 +77,7 @@ export class ApiClient {
     }
 
     const text = await res.text();
-    let parsed: unknown;
+    let parsed: unknown = undefined;
     if (text) {
       try {
         parsed = JSON.parse(text);
@@ -95,11 +90,7 @@ export class ApiClient {
       if (isErrorEnvelope(parsed)) {
         throw new ApiError(res.status, parsed.error.code, parsed.error.message);
       }
-      throw new ApiError(
-        res.status,
-        `http_${res.status}`,
-        text || res.statusText || "request failed",
-      );
+      throw new ApiError(res.status, `http_${res.status}`, text || res.statusText || "request failed");
     }
     if (text && parsed === undefined) {
       throw new ApiError(res.status, "invalid_response", "response is not valid JSON");
@@ -156,18 +147,5 @@ export class ApiClient {
 
   getReport(id: string): Promise<ReportDTO> {
     return this.request("GET", `/api/reports/${seg(id)}`);
-  }
-
-  /** Resolves a legacy task to its durable run; 404 `run_missing` for pre-ledger tasks. */
-  getTaskRun(taskId: string): Promise<TaskRunLinkDTO> {
-    return this.request("GET", `/api/v1/legacy/tasks/${seg(taskId)}/run`);
-  }
-
-  getRunView(runId: string): Promise<RunViewDTO> {
-    return this.request("GET", `/api/v1/runs/${seg(runId)}/view`);
-  }
-
-  cancelRun(runId: string): Promise<{ run_id: string; cancel_requested: boolean }> {
-    return this.request("POST", `/api/v1/runs/${seg(runId)}/cancel`);
   }
 }

@@ -1,150 +1,160 @@
-# Team 6 cAi
+# vdagent
 
-Multi-agent platform với evidence ledger, fail-closed tool grants và durable execution.
+A proof-of-concept multi-agent analytics assistant. A user asks questions about a retail sales
+warehouse; five LLM agents (orchestrator, data, compare, insight, report) collaborate by messaging
+each other through the Backend, which also serves the React UI and an MCP tool server. The agents
+are **plugins**: the Backend imports the modules listed in `backend/config.yaml` at startup, calls
+their `setup(api, opts)` (like Neovim / lazy.nvim), and runs their turns in its own process.
 
-## Tổng quan
+- Design: [`docs/superpowers/specs/2026-09-24-vdagent-design.md`](docs/superpowers/specs/2026-09-24-vdagent-design.md)
+- Agent template design: [`docs/superpowers/specs/2026-09-24-agent-template-design.md`](docs/superpowers/specs/2026-09-24-agent-template-design.md)
+- Agents as plugins: [`docs/superpowers/specs/2026-09-26-agent-plugins-design.md`](docs/superpowers/specs/2026-09-26-agent-plugins-design.md)
+- Agents beyond a ReAct loop: [`docs/superpowers/specs/2026-09-28-agent-freedom-design.md`](docs/superpowers/specs/2026-09-28-agent-freedom-design.md)
+- Building an agent plugin: [`agents/_template/README.md`](agents/_template/README.md)
 
-Host TypeScript (API, worker, PostgreSQL) chạy các agent Python qua protocol `agent-runner.v2`:
+## Prerequisites
 
-- **Fail-closed tool grants**: agent chỉ gọi được tool khai trong manifest và được tool pool cho phép.
-- **Model qua host**: agent gọi `context.model`; key nằm ở server, usage ghi vào `platform_usage_records`.
-- **Durable execution**: PostgreSQL lưu task, invocation, message và event; worker lease/retry.
-- **Process isolation**: mỗi agent là process riêng, env đã xoá secret, giao tiếp JSONL stdin/stdout.
-- **Framework tuỳ ý**: agent là Python thuần; có ví dụ LangChain và A2A trong `sdk/python/examples/`.
+- [uv](https://docs.astral.sh/uv/) (Python 3.12 is picked up from `.python-version`), GNU make, Node 22 for the frontend.
+- First time only:
 
-## Agents
+  ```
+  uv sync
+  for a in orchestrator data compare insight report; do cp -n agents/$a/.env.example agents/$a/.env; done
+  ```
 
-Roster mặc định gồm sáu agent Python trong `agents/`, nạp từ `agents/manifests/*.json`:
+  Then fill in `OPENAI_API_KEY`, `OPENAI_BASE_URL` and `LLM_MODEL` in each `agents/<name>/.env`
+  (see [Environment variables](#environment-variables)).
 
-| Agent | Vai trò |
-| --- | --- |
-| `orchestrator` | Hiểu yêu cầu, lập kế hoạch theo capability, delegate và tổng hợp câu trả lời |
-| `data` | Khám phá warehouse, truy vấn dữ liệu và lưu dataset |
-| `compare` | So sánh kỳ hoặc nhóm dữ liệu đã truy xuất |
-| `insight` | Phân tích xu hướng, nêu evidence và đánh dấu giả thuyết |
-| `visualize` | Chọn trường và tạo chart dựa trên kết quả Compare/Insight |
-| `report` | Viết report từ kết quả Compare, Insight và Visualize |
+## Plugins
 
-Luồng report: `orchestrator → data → compare → insight → visualize → report`. Team khác copy một file
-trong `agents/` làm mẫu; xem [agent authoring](docs/agent-authoring.md).
+`backend/config.yaml` lists the agent plugins, loaded in order when the Backend starts:
 
-## Yêu cầu
-
-- Node.js 22 trở lên và Corepack; [uv](https://docs.astral.sh/uv/) cho Python agent (`uv sync --project agents`).
-- Docker Engine/Desktop cùng Docker Compose; Docker daemon chỉ bắt buộc khi bật sandbox Docker riêng.
-- API key cho model đã cấu hình. Mặc định dùng provider/model trong `.env.example`.
-
-## Chạy local bằng Docker
-
-Tại thư mục gốc repository:
-
-```sh
-corepack pnpm install --frozen-lockfile
-npm --prefix frontend ci
-cp .env.example .env
+```yaml
+plugins:
+  - module: vdagent_orchestrator
+  - module: vdagent_data
+    opts: {}          # optional, free-form: handed to the plugin's setup() as a dict
+  - module: vdagent_report
+    enabled: false    # optional toggle
 ```
 
-Trong `.env`, thay `API_TOKEN` và `POSTGRES_PASSWORD` bằng giá trị local riêng; cập nhật cùng mật
-khẩu trong `DATABASE_URL`. Điền `MODEL_API_KEY` cho provider/model đang dùng. Không commit `.env`
-hoặc đưa secret thật vào issue, log hay tài liệu. Nếu cần kết nối MCP trực tiếp, thay các
-`AGENT_TOKEN_*` placeholder bằng token riêng tương ứng; các token này không dùng trong browser.
+- A plugin is an importable Python package in the Backend's environment (here: a uv workspace
+  member under `agents/`) whose top-level module exports `setup(api, opts)`. `setup` registers one
+  or more agents (`api.register_agent(name=…, description=…, agent=…)`) and optional shutdown hooks.
+- Plugins depend only on `vdagent_sdk` (`sdk/`), which defines the interface the Backend expects:
+  `Agent` (`invoke(ctx)`, `compact(...)`), `InvocationContext`, `PluginAPI`, and the turn rules
+  R1–R11 in its docstring. How an agent thinks (framework, model, tool loop, MCP client, memory) is
+  up to the plugin; see [Agents are different programs](#agents-are-different-programs).
+- **A plugin that fails to load** (import error, missing setting, bad registration) is logged as
+  `plugin <module> failed: …` and skipped; the Backend starts with the others. Its agent is absent
+  from the UI and from every other agent's peer list.
+- Plugins share the Backend's process and event loop: a plugin must not block the loop (R10) and
+  must not write `os.environ` (R11).
+- To add one: copy `agents/_template` (see its README), add the folder to the workspace in the
+  root `pyproject.toml`, `uv sync`, and list its module under `plugins:`.
 
-Có thể khai báo thêm model profile bằng `MODEL_PROFILES_JSON` (mảng JSON không chứa secret). Agent
-chọn profile qua manifest; credential vẫn chỉ nằm ở server-side environment hoặc secret manager.
+## Agents are different programs
 
-Khởi động PostgreSQL, API và frontend đã build:
+The Backend runs every agent through the same `invoke(ctx)`; what happens inside is the agent
+team's choice. Three agents are plain ReAct loops, two are not:
 
-```sh
-docker compose up --build -d
+| Agent | Built with | Beyond a ReAct loop | What the Backend sees |
+|---|---|---|---|
+| orchestrator, data, compare | LiteLLM tool loop | nothing | assistant steps, tool results |
+| insight | LangChain `create_agent` + middleware | recalls earlier findings by vector search, extracts and saves new ones, skips near-duplicates ([README](agents/insight/README.md)) | the same, plus `ctx.memory` rows |
+| report | LangGraph `StateGraph` | every draft is judged by Jev, a decisions model (not a chat model); one revision edge driven by its typed verdict ([README](agents/report/README.md)) | only the final, assessed answer |
+
+Agent memory lives in `backend.db` (`memories`, keyword search via FTS5, vector search via
+sqlite-vec), scoped to one user and one agent. The Backend stores and ranks notes; the agent
+computes the embeddings and decides what to save and recall (`ctx.memory`, SDK rule R1).
+
+## Environment variables
+
+Each component reads its own `.env` file. Every `.env` is gitignored and excluded from Docker
+images; commit changes to the `.env.example` next to it instead.
+
+| File | Needed? | Create it with |
+|---|---|---|
+| `agents/<name>/.env`, one per agent plugin | **Yes**, for each of the five agents | `cp agents/<name>/.env.example agents/<name>/.env`, then fill in the LLM settings |
+| `backend/.env` | No: the Backend runs on `backend/config.yaml` alone | `cp backend/.env.example backend/.env`, then uncomment what you need |
+
+### Agent plugins (`agents/<name>/.env`)
+
+| Variable | Required | Default | Meaning |
+|---|---|---|---|
+| `OPENAI_API_KEY` | yes | — | API key for the model endpoint. |
+| `OPENAI_BASE_URL` | yes | — | Base URL of an OpenAI-compatible endpoint, e.g. `https://…/v1`. |
+| `LLM_MODEL` | yes | — | Model name served by that endpoint. It **must support tool calling**. |
+| `LLM_TIMEOUT_S` | no | `120` | Timeout per LLM call, in seconds (must be > 0). |
+| `EMBED_MODEL` | no (insight only) | `openai/text-embedding-3-small` | Embedding model for insight's memory, on the same endpoint. |
+| `JUDGE_MODEL` | no (report only) | `typesafe/jev-1.13` | Jev model for report's quality gate, called with `OPENAI_API_KEY`. |
+| `JEV_DECISIONS_URL` | no (report only) | `https://openrouter.ai/api/alpha/decisions` | Decisions endpoint serving Jev. |
+
+The five agents need the same required variables. They may share one model or each use their own.
+
+- **Who reads it:** each plugin reads its own file in `setup()` with `dotenv_values()`; nothing is
+  loaded into the Backend's `os.environ`, so plugins cannot see or overwrite each other's keys.
+- **Precedence:** the plugin's `.env` wins over the Backend's process environment, so a key
+  exported in your shell cannot shadow the one in the plugin's file.
+- **Missing required variable:** that plugin fails to load (`plugin vdagent_<name> failed:
+  missing required environment variable …`); the Backend still starts.
+
+### Backend (`backend/.env`, optional)
+
+Each variable overrides the matching key of `backend/config.yaml`. The process environment wins
+over the file.
+
+| Variable | Default (`config.yaml`) | Meaning |
+|---|---|---|
+| `VDAGENT_MCP_PUBLIC_URL` | `http://localhost:8000/mcp` | MCP URL handed to agent plugins (their MCP clients connect to this Backend). |
+| `VDAGENT_BACKEND_DB` | `./var/backend.db` | Backend SQLite file (relative to where the backend is started). |
+| `VDAGENT_WAREHOUSE_DB` | `./var/warehouse.db` | Warehouse SQLite file. |
+| `VDAGENT_FRONTEND_DIST` | `./frontend/dist` | Built frontend, served at `/` if it exists. |
+| `VDAGENT_MAX_DEPTH` | `4` | Maximum agent-call depth. |
+| `VDAGENT_MAX_STEPS` | `12` | Assistant steps per turn (`ctx.max_steps`). |
+| `VDAGENT_CONFIG` | `backend/config.yaml` | Which YAML to load. Set it in the shell: it has no effect inside `backend/.env`, which is looked up next to the chosen config file. |
+
+`HOST` (for `make backend HOST=0.0.0.0`) is a make variable, not an environment setting: it is the
+interface the HTTP server (UI, API, MCP) binds to.
+
+## Makefile usage
+
+| Target | Does |
+|---|---|
+| `make` / `make help` | Lists the targets. |
+| `make backend` | Starts the backend (API, SSE, MCP, built UI) on http://localhost:8000 with the agent plugins listed in `backend/config.yaml`. `HOST=0.0.0.0` serves HTTP to other machines. |
+| `make reset-db` | Deletes `var/backend.db` and `var/warehouse.db` and reseeds them (demo users Alice and Bob, the deterministic warehouse). |
+
+A typical local session:
+
+```
+make reset-db              # first run, or to start again from clean data
+make backend               # logs one "plugin vdagent_<name> loaded: <name>" line per agent
+cd frontend && npm install && npm run dev   # another terminal → http://localhost:5173
 ```
 
-Mở giao diện tại <http://localhost:3000>. Kiểm tra API bằng:
+Changing a plugin's code or `.env` takes effect when the backend restarts.
 
-```sh
-curl -fsS http://localhost:3000/health
-docker compose ps
-docker compose logs -f api
+Stop the backend before `make reset-db`: it deletes the SQLite files, and a running backend would
+keep writing to the deleted ones. The database paths can be overridden
+(`make reset-db BACKEND_DB=/tmp/b.db WAREHOUSE_DB=/tmp/w.db`); start the backend with the matching
+`VDAGENT_BACKEND_DB` / `VDAGENT_WAREHOUSE_DB` to use them.
+
+## Docker
+
+```
+docker compose up --build
 ```
 
-Bật stack quan sát tùy chọn bằng `docker compose --profile observability up -d`; xem
-[operations guide](docs/operations.md) để biết readiness, outbox, backup và session auth.
+Then open http://localhost:8000. The backend service is configured by
+`backend/config.compose.yaml` and runs the five agent plugins in-process. Each plugin's
+`agents/<name>/.env` is mounted read-only into the container (the image never contains `.env`
+files), so all five must exist before `docker compose up`.
 
-Production Compose mặc định không mount Docker socket và đặt `SANDBOX_PROVIDER=none`, vì socket trao
-quyền quản trị Docker trên host. Nếu deployment riêng cần sandbox Docker, hãy dùng supervisor tin cậy,
-mount socket có chủ ý và đặt `DOCKER_GID`; API vẫn không được mount socket. PostgreSQL dùng named volume
-`postgres-data`; lệnh `docker compose down` giữ dữ liệu. Chỉ dùng `docker compose down -v` khi chủ ý
-xóa toàn bộ database local.
+## Tests
 
-### Frontend hot reload
-
-Giữ API và database trong Docker, sau đó chạy Vite trên host:
-
-```sh
-docker compose up -d database api
-npm --prefix frontend run dev -- --host 127.0.0.1
 ```
-
-Mở <http://localhost:5173>. Vite proxy các request `/api` và SSE tới API ở cổng 3000.
-
-## API và bảo mật
-
-- `GET /health`: health check.
-- `/api/*`: workflow UI gồm users, agents, messages, tasks, events (SSE), datasets, charts và reports.
-- `/v1/*`: operator API; gửi `Authorization: Bearer <API_TOKEN>` để liệt kê agent/tool hoặc chạy agent.
-- `POST /mcp`: MCP Streamable HTTP; gửi `X-Agent-Id` và token riêng của agent.
-
-Frontend local dùng `X-User-Id` trong demo mode. Public deployment phải bật `WEB_AUTH_MODE=session`,
-gắn identity provider/OIDC gateway với `web_users`, và cấu hình secret trong secret manager. Không
-đưa operator token, agent token hay provider key vào browser.
-
-Tham khảo contract, request/response, lỗi và ví dụ gọi tại [HTTP/MCP API](docs/api.md).
-
-## Agent, tool, memory và sandbox
-
-**Agent**: viết bằng Python với SDK `agent_platform` (`sdk/python/`), không cần biết TypeScript hay
-PostgreSQL. Để trống `AGENT_EXTERNAL_MANIFESTS` thì host nạp roster mặc định; đặt danh sách manifest
-(phân tách bằng dấu phẩy) để thay hoặc thêm agent. Module TypeScript `agent.v1` vẫn nạp được qua
-`AGENT_PLUGIN_MODULES` (mặc định rỗng).
-
-**Tool grants**: quyền tool phải khớp manifest agent với allowlist/authorization của tool pool. Fail-closed:
-denied khi không grant. MCP tools đăng ký qua `AGENT_TOOL_MODULES`.
-
-**Memory**: PostgreSQL-backed, scope theo `(space, user, agent)`. Mỗi agent chỉ truy vấn memory của chính nó.
-
-**Sandbox**: Production Compose tắt Docker sandbox mặc định để không cấp quyền host qua Docker socket.
-Deployment riêng có thể bật Docker containers với workspace persistent tách theo `(space, user, agent)`
-qua `SANDBOX_PROVIDER=docker` và supervisor tin cậy. Image: `SANDBOX_IMAGE`.
-
-Xem chi tiết: [agent authoring](docs/agent-authoring.md), [architecture](docs/architecture.md), [tools](docs/tools.md).
-
-## Kiểm tra và phát triển
-
-```sh
-corepack pnpm check
-corepack pnpm lint
-corepack pnpm test
-corepack pnpm exec tsx scripts/live-python-roster.mts   # model thật từ .env, trần $0.30
-corepack pnpm frontend:build
-npm --prefix frontend test
+uv run pytest                      # backend + every plugin
+uv run pytest agents/data          # one plugin
+cd frontend && npm test            # frontend
 ```
-
-Frontend và backend dùng cùng API contract. Unit tests mặc định deterministic/offline. PostgreSQL
-integration tests, gồm end-to-end workflow test trong `test/analytics-e2e.test.ts`, chỉ chạy khi đặt
-`TEST_DATABASE_URL` trỏ tới database test riêng; nếu không, các suite đó được skip. Khi đổi schema
-PostgreSQL, thêm migration mới dưới `db/migrations/`.
-
-## Cấu trúc repository
-
-```text
-agents/           Python agents mặc định (uv project) và manifests
-sdk/python/       Python SDK agent_platform và ví dụ
-src/tools/        MCP tool và orchestration tool
-src/              API, Pi runtime, registry, memory, sandbox, warehouse
-frontend/         React + Vite client
-db/migrations/    PostgreSQL migrations
-test/             Backend, integration và E2E workflow tests
-docs/             API, architecture, agent/tool guide và folder ownership
-```
-
-Đọc [docs index](docs/README.md) để tìm hướng dẫn theo công việc. [Folder ownership](docs/folder-ownership.md)
-mô tả ranh giới giữa các nhóm để giảm xung đột khi phát triển song song.
