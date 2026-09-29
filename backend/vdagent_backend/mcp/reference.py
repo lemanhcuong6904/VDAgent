@@ -99,6 +99,11 @@ def _cell(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
 
+def _plain(text: str) -> str:
+    """Tool and schema descriptions are plain text for models; keep `<id>` from reading as HTML."""
+    return text.replace("<", "&lt;").replace(">", "&gt;")
+
+
 def _matrix() -> str:
     agents = _agents()
     lines = [
@@ -124,7 +129,7 @@ def _type(spec: dict[str, Any]) -> str:
 
 
 def _details(spec: dict[str, Any]) -> str:
-    parts = [spec["description"]] if spec.get("description") else []
+    parts = [_plain(spec["description"])] if spec.get("description") else []
     if "enum" in spec:
         parts.append("One of " + ", ".join(f"`{v}`" for v in spec["enum"]) + ".")
     if "minimum" in spec and "maximum" in spec:
@@ -162,7 +167,7 @@ def _tool_section(tool: Any) -> str:
         [
             f"### `{tool.name}`",
             f"**Available to:** {agents}.",
-            tool.description,
+            _plain(tool.description),
             _arguments(tool.input_schema),
             _returns(tool.name),
         ]
