@@ -9,7 +9,12 @@ max_depth: 4
 max_steps: 12
 plugins:
   - module: vdagent_orchestrator
+    mcp_tools: [describe_dataset, get_dataset_rows]
   - module: vdagent_data
+    mcp_tools: [list_tables, describe_table, run_query, query_datasets, describe_dataset, get_dataset_rows]
   - module: vdagent_compare
+    mcp_tools: [query_datasets, describe_dataset, get_dataset_rows]
   - module: vdagent_insight
+    mcp_tools: [query_datasets, describe_dataset, get_dataset_rows]
   - module: vdagent_report
+    mcp_tools: [create_chart, save_report, describe_dataset, get_dataset_rows]
