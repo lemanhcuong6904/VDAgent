@@ -1,0 +1,48 @@
+{
+  "apiVersion": "agent-plugin.v2",
+  "id": "compare",
+  "version": "1.0.0",
+  "name": "Compare",
+  "description": "Compares periods and segments from supplied warehouse datasets.",
+  "capabilities": [
+    "dataset.compare",
+    "analytics"
+  ],
+  "requiredCapabilities": [],
+  "acceptsDelegation": true,
+  "tools": [
+    "warehouse.describe_dataset",
+    "warehouse.get_dataset_rows"
+  ],
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "prompt": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4000
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "additionalProperties": false
+  },
+  "guardrails": [
+    "Use only evidence available in the scoped tools and supplied prompt.",
+    "Never expose secrets or claim an artifact that was not persisted."
+  ],
+  "outputSchema": {
+    "type": "string"
+  },
+  "modelProfile": "default",
+  "command": "uv",
+  "args": [
+    "run",
+    "--no-sync",
+    "--project",
+    "agents",
+    "python",
+    "agents/compare.py"
+  ]
+}
