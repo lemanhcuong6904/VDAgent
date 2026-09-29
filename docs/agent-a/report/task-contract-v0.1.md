@@ -1,5 +1,12 @@
 VDAgent · Orchestrator → Report Task Contract · v0.1
 
+> **Cảnh báo (30/09/2026):** đây là draft cũ, dựa trên kiến trúc TypeScript + semantic layer phía
+> Data — semantic layer đó đã bị xóa trong refactor sang Python/MCP. Một số trường như
+> `semantic_config_version`, `snapshot_refs` có thể không còn áp dụng với code hiện tại. Xem
+> [design.md](design.md) để biết kiến trúc Report Agent hiện hành (LangGraph + Jev judge, nhận
+> input qua message tự do trong `ctx.history`, không nhận `ReportStepSpec` có cấu trúc). Cần
+> Orchestrator/Data team xác nhận lại contract này trước khi dùng.
+
 #### VDAgent
 
 # ORCHESTRATOR → REPORT AGENT

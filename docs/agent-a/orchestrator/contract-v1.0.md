@@ -1,5 +1,12 @@
 # VDAgent — Contract giao tiếp Orchestrator ↔ Agent v1.0
 
+> **Cảnh báo — tài liệu mô tả giao thức cũ, không khớp code hiện tại.** File này mô tả giao thức
+> message-based cũ (9 loại message qua tool `agents.delegate`, kiến trúc TypeScript). Code thật ở
+> `agents/orchestrator/vdagent_orchestrator/` (Python) dùng cơ chế khác: `send_to_agent`, điều phối
+> theo wave (D3), gói tin `StepSpec@1`/`AgentReport` (`contracts/vdagent_contracts/`). Xem
+> [design.md](design.md) để biết kiến trúc hiện hành. Nội dung bên dưới chỉ còn giá trị tham khảo
+> lịch sử, chưa được viết lại theo code mới.
+
 Orchestrator_Agent_Contract_v1.0.0.schema.json (JSON Schema draft 2020-12, 34 ví dụ đã kiểm).
 
 Orchestrator và 5 agent giao tiếp bằng một contract v1.0.0: header chung 10 trường, 9 loại message, 3 loại phản hồi. Phần riêng của từng agent chỉ nằm ở body.spec (phiếu giao việc) và body.ext (báo cáo), ghi ở tab của agent đó. 18 điểm các đặc tả còn lệch, kèm phương án contract đã chọn, nằm ở tab "Đối chiếu & cần chốt"; file JSON Schema đi kèm kiểm được mọi message trong tài liệu.
