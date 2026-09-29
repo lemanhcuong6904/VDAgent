@@ -1,0 +1,54 @@
+{
+  "registry_version": "3.1.1",
+  "purpose": "Hop dong ID (Surrogate Key contract) cho Central Data Warehouse VDAgent - hop nhat 5 Project Data Packs vao 16 bang khong trung khoa chinh, khong vi pham khoa ngoai.",
+  "authority": [
+    "DATA_Warehouse_Plan_30-09.md (SS2.2, SS5.3)",
+    "Master Plan POC.md (SS2.2 - dai Surrogate Key)",
+    "data-warehouse-schema.md v3.1.0 (16 bang)"
+  ],
+  "binding_rules": [
+    "project_id la khoa tu nhien rang buoc (UK dim_project_profile). project_key la khoa thay the co dinh theo bang duoi.",
+    "Moi thanh vien CHI duoc sinh khoa trong dai cua minh; tuyet doi khong tai su dung khoa ngoai dai.",
+    "Mot du an = mot project_key duy nhat. Cac phase/toa thap con nam duoi project_key do bang zone_key, KHONG tao them project_key.",
+    "unit_code = <prefix> + so thu tu zero-pad theo unit_code_width (vi du OCP-U00001).",
+    "Snapshot block ap dung bat bien cho ca 5 pack; moi phep tinh DOM can cu snapshot_date."
+  ],
+  "snapshot": {
+    "snapshot_id": "SNAP-20260630-01",
+    "dataset_id": "vdagent_dw_re",
+    "dataset_version": "3.1.0",
+    "semantic_version": "3.1.0",
+    "snapshot_date": "2026-06-30",
+    "snapshot_date_key": 20260630,
+    "timezone": "Asia/Ho_Chi_Minh",
+    "currency": "VND",
+    "price_basis": "ASKING_EXCL_VAT_EXCL_MAINT",
+    "area_basis": "NET_INTERNAL_M2",
+    "source_system": "ENTERPRISE_DW_RE"
+  },
+  "projects": [
+    { "project_key": 100, "project_id": "PRJ-VHOP", "project_name": "Vinhomes Ocean Park", "owner": "Luu Xuan Dung", "unit_key_min": 100001, "unit_key_max": 199999, "unit_code_prefix": "OCP-U", "unit_code_width": 5, "unit_code_example": "OCP-U00001", "zone_key_min": 101, "zone_key_max": 199, "task": "N7" },
+    { "project_key": 200, "project_id": "PRJ-VHSC", "project_name": "Vinhomes Smart City", "owner": "Nguyen Quang Huy", "unit_key_min": 200001, "unit_key_max": 299999, "unit_code_prefix": "SMC-U", "unit_code_width": 5, "unit_code_example": "SMC-U00001", "zone_key_min": 201, "zone_key_max": 299, "task": "N4" },
+    { "project_key": 300, "project_id": "PRJ-VGP", "project_name": "Vinhomes Grand Park", "owner": "Ha Duy Anh", "unit_key_min": 300001, "unit_key_max": 399999, "unit_code_prefix": "VGP-U", "unit_code_width": 5, "unit_code_example": "VGP-U00001", "zone_key_min": 301, "zone_key_max": 399, "task": "N3" },
+    { "project_key": 400, "project_id": "PRJ-MAS-CP", "project_name": "Masteri Centre Point", "owner": "Nguyen Tuan Anh", "unit_key_min": 400001, "unit_key_max": 499999, "unit_code_prefix": "MAS-U", "unit_code_width": 5, "unit_code_example": "MAS-U00001", "zone_key_min": 401, "zone_key_max": 499, "task": "N6" },
+    { "project_key": 500, "project_id": "PRJ-RISK-PHU-MY-BRVT", "project_name": "Du an Rui ro Phap ly - Phu My (BRVT)", "owner": "Nguyen Mai Huy", "unit_key_min": 500001, "unit_key_max": 599999, "unit_code_prefix": "TST-U", "unit_code_width": 5, "unit_code_example": "TST-U00001", "zone_key_min": 501, "zone_key_max": 599, "task": "N5" }
+  ],
+  "conformed_dims": {
+    "channel_key": { "strategy": "per_project_band", "target_table": "dim_sales_channel", "bands": { "100": [1001,1099], "200": [2001,2099], "300": [3001,3099], "400": [4001,4099], "500": [5001,5099] } },
+    "infra_key": { "strategy": "per_project_band", "target_table": "dim_infrastructure_assets", "bands": { "100": [1101,1199], "200": [2101,2199], "300": [3101,3199], "400": [4101,4199], "500": [5101,5199] } }
+  },
+  "validation": {
+    "project_keys": [100, 200, 300, 400, 500],
+    "unit_key_contiguous_range": "100001-599999",
+    "unit_key_overlap": false, "zone_key_overlap": false,
+    "channel_key_overlap": false, "infra_key_overlap": false,
+    "prefixes": ["OCP-U", "SMC-U", "VGP-U", "MAS-U", "TST-U"]
+  },
+  "notes": [
+    "Ocean Park hien dang tach 2 project row: PRJ-VHOP (project_key=1) va PRJ-VHOP-BEVERLY (project_key=2). Theo hop dong nay ca hai gop ve MOT du an PRJ-VHOP/100; The Beverly (zone_key=105) tro thanh zone duoi project_key=100. Repoint la cua N7.",
+    "zone_key cac toa Ocean Park hien da nam trong dai 101-199 (101-109) -> giu nguyen zone_key, chi doi project_key ve 100.",
+    "channel_key (201-204) va infra_key (301-305) cua Ocean Park hien de dai du an khac -> N7 re-key ve 1001-100x / 1101-110x.",
+    "source_system='ENTERPRISE_DW_RE' bo sung tu export/snapshot_manifest.csv (nguon chuan) ngoai draft SS5.3.",
+    "project_name chi mang tinh tham chieu; khoa rang buoc la project_id."
+  ]
+}
