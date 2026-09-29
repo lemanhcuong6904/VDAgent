@@ -1,6 +1,6 @@
 # vdagent Backend — Restructure Design Spec
 
-Status: approved design, not implemented · Date: 2026-09-29
+Status: implemented (see §12) · Date: 2026-09-29
 Scope: `backend/` (package `vdagent_backend`, its tests, config files), plus the few files outside
 it that name backend internals (`data/seed_users.py`, docs listed in §8.3).
 
@@ -460,3 +460,16 @@ branch (GIT_RULE.md):
 | `0002` data move on large dev databases | Batched copy inside one migration transaction; datasets are capped at 10 000 rows each |
 | Alembic stamp on a half-created database | Adoption requires the `users` table; otherwise the database is treated as fresh |
 | Docs build reading `config.yaml` | Reads the bundled file directly, no env, so output is deterministic |
+
+## 12. Implementation notes
+
+Implemented in the seven rollout steps of §10. Where the code differs from this spec:
+
+- **Drift test** runs on a freshly migrated database only. An adopted pre-Alembic SQLite database
+  always differs from the metadata in harmless SQLite details (nullable TEXT primary keys, INTEGER
+  booleans), so adoption is tested by reading its data back instead, and `backend/README.md`
+  says to autogenerate revisions against a database created by the migrations.
+- **`0002_dataset_rows`** copies rows only on SQLite: only SQLite databases predate it, so on any
+  other dialect `datasets` is empty at that point.
+- **`data/seed_users.py`** moved to `migrate()` + `Users.ensure` in step 2, not step 6, because
+  step 2 removed the `apply_schema` it used.
