@@ -1,9 +1,0 @@
-channel_key,channel_id,channel_name,channel_tier,active_brokers_count
-1,MOCK-AGENCY-01,Synthetic sales channel 01,INHOUSE,11
-2,MOCK-AGENCY-02,Synthetic sales channel 02,TIER_2_GENERAL,14
-3,MOCK-AGENCY-03,Synthetic sales channel 03,TIER_2_GENERAL,17
-4,MOCK-AGENCY-04,Synthetic sales channel 04,TIER_2_GENERAL,20
-5,MOCK-AGENCY-05,Synthetic sales channel 05,TIER_2_GENERAL,23
-6,MOCK-AGENCY-06,Synthetic sales channel 06,TIER_2_GENERAL,26
-7,MOCK-AGENCY-07,Synthetic sales channel 07,TIER_2_GENERAL,29
-8,MOCK-AGENCY-08,Synthetic sales channel 08,TIER_2_GENERAL,32

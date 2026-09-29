@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMessages } from "../../api/queries";
 import type { AgentDTO, MessageDTO, ToolCallDTO } from "../../api/types";
 import { agentColor } from "../../ui/artifacts";
@@ -22,8 +22,7 @@ export function ChatPane({ agent }: { agent: AgentDTO }) {
   const { messages, toolCalls, toolResults, compactedTasks, lastCompactedSeq } = useMemo(() => {
     const byId = new Map<number, MessageDTO>();
     // pages: newest first; each page ascending by seq.
-    for (const page of [...(pages ?? [])].reverse())
-      for (const m of page.messages) byId.set(m.id, m);
+    for (const page of [...(pages ?? [])].reverse()) for (const m of page.messages) byId.set(m.id, m);
     const sorted = [...byId.values()].sort((a, b) => a.seq - b.seq);
     const calls = new Map<string, ToolCallDTO>();
     const results = new Map<string, MessageDTO>();
@@ -78,11 +77,7 @@ export function ChatPane({ agent }: { agent: AgentDTO }) {
     if (!initialized.current) {
       el.scrollTop = el.scrollHeight;
       initialized.current = true;
-    } else if (
-      oldest !== undefined &&
-      prevOldestSeq.current !== undefined &&
-      oldest < prevOldestSeq.current
-    ) {
+    } else if (oldest !== undefined && prevOldestSeq.current !== undefined && oldest < prevOldestSeq.current) {
       el.scrollTop = el.scrollHeight - distanceFromBottom.current;
     } else if (stickToBottom.current) {
       el.scrollTop = el.scrollHeight;
@@ -129,18 +124,17 @@ export function ChatPane({ agent }: { agent: AgentDTO }) {
   return (
     <div className="chat-pane">
       <header className="chat-header">
-        <span className={`health-dot ${agent.healthy ? "ok" : "down"}`} />
         <h2 style={{ color: agentColor(agent.name) }}>{agent.name}</h2>
         <span className="chat-desc muted">{agent.description}</span>
         <span className="chat-status">
-          {!agent.healthy && <span className="status-pill down">unavailable</span>}
-          {agent.healthy && agent.busy && (
+          {agent.busy ? (
             <span className="status-pill busy">
               <span className="spinner small" /> busy
               {agent.queue_len > 0 && ` (${agent.queue_len} queued)`}
             </span>
+          ) : (
+            <span className="status-pill idle">idle</span>
           )}
-          {agent.healthy && !agent.busy && <span className="status-pill idle">idle</span>}
         </span>
       </header>
 

@@ -65,7 +65,6 @@ export interface UserDTO {
 export interface AgentDTO {
   name: string;
   description: string;
-  healthy: boolean;
   busy: boolean;
   queue_len: number;
 }
@@ -154,7 +153,6 @@ export interface TaskUpdatedData {
 
 export interface AgentStatusData {
   agent: string;
-  healthy: boolean;
   busy: boolean;
   queue_len: number;
 }
@@ -173,102 +171,3 @@ export const SERVER_EVENT_NAMES: readonly ServerEventName[] = [
   "task.updated",
   "agent.status",
 ];
-
-// ---- /api/v1 run view (M12.3). Mirrors `RunView` in src/run-view.ts. ----
-
-export type RunStatusV1 =
-  | "queued"
-  | "leased"
-  | "running"
-  | "waiting"
-  | "retryable"
-  | "completed"
-  | "failed"
-  | "cancelled";
-
-export interface UsageTotalsDTO {
-  records: number;
-  inputTokens: number;
-  outputTokens: number;
-  latencyMs: number;
-  estimatedCost: number;
-}
-
-export interface RunGraphNodeDTO {
-  id: string;
-  kind: "planner" | "agent" | "tool" | "approval";
-  agentId: string | null;
-  capability: string | null;
-  status: "queued" | "running" | "waiting" | "completed" | "failed" | "cancelled";
-  attempt: number;
-  startedAt: string | null;
-  finishedAt: string | null;
-  durationMs: number | null;
-}
-
-export interface RunViewDTO {
-  run: {
-    id: string;
-    workflowId: string;
-    workflowVersion: string;
-    status: RunStatusV1;
-    createdAt: string;
-    updatedAt: string;
-    finishedAt: string | null;
-    durationMs: number | null;
-    terminal: boolean;
-    cancelRequested: boolean;
-  };
-  graph: { nodes: RunGraphNodeDTO[]; edges: { from: string; to: string }[]; roots: string[] };
-  approvals: {
-    stepId: string;
-    state: "pending" | "approved" | "rejected" | "cancelled";
-    requestedAt: string | null;
-    decidedAt: string | null;
-    waitedMs: number | null;
-  }[];
-  artifacts: {
-    id: string;
-    kind: string;
-    version: string;
-    status: "pending" | "ready" | "failed";
-    sha256: string | null;
-    bytes: number | null;
-    verified: boolean;
-    contentUrl: string | null;
-  }[];
-  evidence: {
-    counts: { verified: number; unverified: number; unavailable: number };
-    items: {
-      id: string;
-      kind: "source" | "tool_call" | "model_call" | "artifact_ref" | "checkpoint";
-      verification: "verified" | "unverified" | "unavailable";
-      ref: string;
-      createdAt: string;
-    }[];
-    truncated: boolean;
-  };
-  cost: {
-    totals: UsageTotalsDTO;
-    byModel: Record<string, UsageTotalsDTO>;
-    byAgent: Record<string, UsageTotalsDTO>;
-  };
-  errors: { source: "run" | "step" | "event"; ref: string; message: string; at: string }[];
-  receipt: {
-    status: "success" | "failure" | "timeout" | "cancelled";
-    sealedAt: string;
-    evidenceCount: number;
-    verifiedEvidenceCount: number;
-    durationMs: number | null;
-  } | null;
-  permissions: { canCancel: boolean; canDecideApproval: boolean };
-  truncated: boolean;
-}
-
-/** `GET /api/v1/legacy/tasks/{id}/run` — bridge from a legacy task to its durable run. */
-export interface TaskRunLinkDTO {
-  task_id: string;
-  run_id: string;
-  events: string;
-  stream: string;
-}

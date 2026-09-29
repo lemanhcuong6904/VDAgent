@@ -1,5 +1,0 @@
-infra_key,infra_id,infra_name,infra_type,lifecycle_stage,construction_progress_pct,original_completion_year,revised_completion_year
-1,INF-METRO-05,Metro số 5,URBAN_METRO,PLANNING_APPROVED,0.00,,
-2,INF-METRO-06,Metro số 6,URBAN_METRO,PLANNING_APPROVED,0.00,,
-3,INF-THANG-LONG,Đại lộ Thăng Long,EXPRESSWAY,COMMERCIAL_OPERATION,100.00,,
-4,INF-RING-ROAD-3.5,Vành đai 3.5,RING_ROAD,UNDER_CONSTRUCTION,50.00,,

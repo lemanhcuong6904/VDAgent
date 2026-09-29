@@ -26,12 +26,7 @@ export function splitReport(markdown: string): Segment[] {
 export function ReportView({ id }: { id: string }) {
   const query = useReport(id);
   if (query.isPending) return <div className="muted small">Loading {id}…</div>;
-  if (query.isError)
-    return (
-      <div className="error-text">
-        {id}: {query.error.message}
-      </div>
-    );
+  if (query.isError) return <div className="error-text">{id}: {query.error.message}</div>;
   const report = query.data;
   return (
     <article className="report">

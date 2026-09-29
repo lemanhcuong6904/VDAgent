@@ -18,18 +18,10 @@ export function ChartView({ id }: { id: string }) {
     setError(null);
     import("vega-embed")
       .then(({ default: embed }) =>
-        embed(
-          el,
-          {
-            ...spec,
-            width: "container",
-            autosize: { type: "fit", contains: "padding" },
-          } as VisualizationSpec,
-          {
-            actions: false,
-            renderer: "svg",
-          },
-        ),
+        embed(el, { ...spec, width: "container", autosize: { type: "fit", contains: "padding" } } as VisualizationSpec, {
+          actions: false,
+          renderer: "svg",
+        }),
       )
       .then((result) => {
         if (disposed) result.finalize();
@@ -45,12 +37,7 @@ export function ChartView({ id }: { id: string }) {
   }, [spec]);
 
   if (query.isPending) return <div className="muted small">Loading {id}…</div>;
-  if (query.isError)
-    return (
-      <div className="error-text">
-        {id}: {query.error.message}
-      </div>
-    );
+  if (query.isError) return <div className="error-text">{id}: {query.error.message}</div>;
   return (
     <figure className="chart">
       <figcaption className="chart-head">

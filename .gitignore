@@ -1,12 +1,8 @@
 .env
-node_modules/
-.turbo/
-dist/
-coverage/
-*.tsbuildinfo
-__pycache__/
-*.py[cod]
-.rehearsal/
+var/
 .venv/
-*.egg-info/
-docs/Task Tracker*.xlsx
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+frontend/dist/

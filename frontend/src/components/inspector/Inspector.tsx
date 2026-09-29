@@ -5,7 +5,6 @@ import { useUi } from "../../ui/UiContext";
 import { ChartView } from "./ChartView";
 import { DatasetTable } from "./DatasetTable";
 import { ReportView } from "./ReportView";
-import { RunPanel } from "./RunPanel";
 import { TaskTree } from "./TaskTree";
 
 /** Right column: the selected task's invocation tree, or an artifact viewer. */
@@ -26,15 +25,6 @@ export function Inspector({ taskId }: { taskId: string | null }) {
         <button
           type="button"
           role="tab"
-          aria-selected={tab === "run"}
-          className={`tab${tab === "run" ? " active" : ""}`}
-          onClick={() => setTab("run")}
-        >
-          Run
-        </button>
-        <button
-          type="button"
-          role="tab"
           aria-selected={tab === "artifact"}
           className={`tab${tab === "artifact" ? " active" : ""}`}
           onClick={() => setTab("artifact")}
@@ -49,8 +39,6 @@ export function Inspector({ taskId }: { taskId: string | null }) {
           ) : (
             <div className="muted small">No tasks yet. Message an agent to start one.</div>
           )
-        ) : tab === "run" ? (
-          <RunPanel taskId={taskId} />
         ) : (
           <ArtifactPanel />
         )}
@@ -81,9 +69,7 @@ function ArtifactPanel() {
       {artifactId ? (
         <ArtifactViewer id={artifactId} />
       ) : (
-        <div className="muted small">
-          Click a ds_…, ch_… or rp_… id in any chat to open it here.
-        </div>
+        <div className="muted small">Click a ds_…, ch_… or rp_… id in any chat to open it here.</div>
       )}
       <section className="reports-list">
         <div className="section-label">Reports</div>
