@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api")
 
 @router.get("/tasks")
 async def list_tasks(svc: Svc, user_id: UserId, status: Annotated[str | None, Query()] = None) -> list[dict[str, Any]]:
+    """The caller's tasks, newest first, optionally of one status."""
     if status is not None and status not in TASK_STATUSES:
         raise ApiError(422, "invalid_request", f"status must be one of {', '.join(TASK_STATUSES)}")
     return [task_dto(t) for t in await svc.tasks.list_tasks(user_id, status)]
@@ -23,6 +24,7 @@ async def list_tasks(svc: Svc, user_id: UserId, status: Annotated[str | None, Qu
 
 @router.get("/tasks/{task_id}")
 async def get_task(svc: Svc, user_id: UserId, task_id: str) -> dict[str, Any]:
+    """A task with its invocations in creation order."""
     task = await svc.tasks.get_task(task_id, user_id)
     if task is None:
         raise not_found("task")
@@ -32,6 +34,7 @@ async def get_task(svc: Svc, user_id: UserId, task_id: str) -> dict[str, Any]:
 
 @router.post("/tasks/{task_id}/cancel")
 async def cancel_task(svc: Svc, user_id: UserId, task_id: str) -> dict[str, Any]:
+    """Cancel a running task; `409 task_finished` if it already finished."""
     try:
         task = await svc.engine.cancel_task(user_id, task_id)
     except TaskNotFoundError:

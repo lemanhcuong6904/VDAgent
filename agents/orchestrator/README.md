@@ -9,7 +9,7 @@ process; the agent reports every step through the `ctx` it receives (to build on
 tool-calling loop over LiteLLM (`agent.py`, `llm.py`, `mcp_client.py`); its role prompt is
 `vdagent_orchestrator/prompts/system.md`, the summariser prompt `prompts/compact.md`.
 
-MCP tools granted by the Backend (`backend/vdagent_backend/mcp/tools.py`): `describe_dataset`, `get_dataset_rows`;
+MCP tools granted by `mcp_tools` in `backend/config.yaml`: `describe_dataset`, `get_dataset_rows`;
 plus `send_to_agent` to reach the other agents.
 
 ## Run

@@ -20,7 +20,7 @@ LangChain 1.x agent (`create_agent`) with its own long-term memory:
 Prompts: role `prompts/system.md`, summariser `prompts/compact.md`, memory extraction
 `prompts/extract.md`.
 
-MCP tools granted by the Backend (`backend/vdagent_backend/mcp/tools.py`): `query_datasets`, `describe_dataset`, `get_dataset_rows`;
+MCP tools granted by `mcp_tools` in `backend/config.yaml`: `query_datasets`, `describe_dataset`, `get_dataset_rows`;
 plus `send_to_agent` to reach the other agents.
 
 ## Run

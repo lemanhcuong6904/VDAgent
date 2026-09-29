@@ -14,6 +14,8 @@ _users = tables.users
 
 
 class Users:
+    """Repository of users."""
+
     def __init__(self, db: AsyncEngine) -> None:
         self._db = db
 

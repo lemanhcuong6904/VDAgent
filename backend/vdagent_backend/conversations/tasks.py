@@ -22,6 +22,8 @@ _invs = tables.invocations
 
 
 class Tasks:
+    """Repository of tasks and their invocations."""
+
     def __init__(self, db: AsyncEngine) -> None:
         self._db = db
 

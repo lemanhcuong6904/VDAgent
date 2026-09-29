@@ -26,6 +26,7 @@ def _ping() -> ServerSentEvent:
 
 @router.get("/events")
 async def events(svc: Svc, user_id: Annotated[str | None, Query()] = None) -> EventSourceResponse:
+    """Stream the user's events (`task.updated`, `invocation.updated`, `message.appended`, `agent.status`)."""
     uid = await resolve_user(svc.users, user_id)
     sub = svc.bus.subscribe(uid)
 

@@ -1,4 +1,4 @@
-"""Plugin loading (plugins spec §5.1): spec order, per-plugin transactions, skipping, shutdown."""
+"""Plugin loading: spec order, per-plugin transactions, skipping, shutdown."""
 
 from __future__ import annotations
 

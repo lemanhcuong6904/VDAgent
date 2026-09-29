@@ -65,8 +65,8 @@ plugins:
      `[tool.uv.sources]` (`{ workspace = true }`); run `uv sync`.
   3. List `- module: vdagent_<name>` under `plugins:` in `backend/config.yaml` and
      `backend/config.compose.yaml`.
-  4. Grant MCP tools in `backend/vdagent_backend/mcp/tools.py` (`ALL_AGENTS` and `PERMISSIONS`);
-     an agent not listed there sees no MCP tools.
+  4. Grant MCP tools on the same plugin entries with `mcp_tools: [<tool>, …]`; an entry without
+     `mcp_tools` sees no MCP tools.
   5. For Docker: copy its `pyproject.toml` in `Dockerfile.python` and mount its `.env` in
      `docker-compose.yml`, like the other agents.
 

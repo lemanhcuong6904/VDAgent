@@ -21,10 +21,12 @@ class ApiError(Exception):
 
 
 def error_response(status: int, code: str, message: str) -> JSONResponse:
+    """A JSON response with the error envelope."""
     return JSONResponse(error_body(code, message), status_code=status)
 
 
 def not_found(what: str) -> ApiError:
+    """`404 not_found` with `<what> not found`."""
     return ApiError(404, "not_found", f"{what} not found")
 
 

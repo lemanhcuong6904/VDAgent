@@ -12,6 +12,8 @@ from collections import Counter
 
 
 class WaitGraph:
+    """Counted wait-for edges between agents of one user."""
+
     def __init__(self) -> None:
         self._out: dict[str, Counter[str]] = {}
 

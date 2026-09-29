@@ -18,6 +18,8 @@ from vdagent_sdk import ContractViolation, McpEndpoint, Memory, Message, Peer, T
 
 @dataclass(frozen=True, eq=False)
 class Emit:
+    """Posted by `emit_assistant`."""
+
     content: str
     tool_calls: tuple[ToolCall, ...]
     future: asyncio.Future[None]
@@ -25,6 +27,8 @@ class Emit:
 
 @dataclass(frozen=True, eq=False)
 class ToolResult:
+    """Posted by `emit_tool_result`."""
+
     tool_call_id: str
     content: str
     future: asyncio.Future[None]
@@ -32,6 +36,8 @@ class ToolResult:
 
 @dataclass(frozen=True, eq=False)
 class Call:
+    """Posted by `call_agent`; its future resolves with the peer's reply."""
+
     tool_call_id: str
     target: str
     message: str
@@ -49,6 +55,8 @@ Event = Emit | ToolResult | Call | Ended
 
 
 class TurnContext:
+    """The `InvocationContext` of one turn; each method posts an event and awaits it."""
+
     def __init__(
         self,
         *,

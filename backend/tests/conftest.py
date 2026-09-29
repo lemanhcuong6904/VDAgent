@@ -1,8 +1,11 @@
-"""Engine / API test harness: five fake in-process agents that replay scripted turns.
+"""The shared Backend test harness.
 
-Each fake agent implements the SDK `Agent` protocol and runs a per-test `handler(session)`
-coroutine for every turn; the `Session` helpers are thin wrappers over the Backend's `ctx`, used
-exactly like a real plugin uses it.
+- `FakeAgent`: an in-process SDK `Agent` that runs a per-test `handler(session)` for every turn; the
+  `Session` helpers are thin wrappers over the Backend's `ctx`, used exactly like a real plugin.
+- `Harness` (fixture `harness`): a migrated database, the `Engine` and five fake agents.
+- `app_client(cfg)`: an HTTP client on the real app with its lifespan running.
+- Databases: `migrated_database`, `seed_users`, `build_legacy_db` (a pre-Alembic database).
+- `make_config`, `wait_for`.
 """
 
 from __future__ import annotations
@@ -194,13 +197,6 @@ class Harness:
 
     async def stack(self, agent: str, user_id: str = ALICE) -> list[dict[str, Any]]:
         return await self.messages.messages_page(user_id, agent, None, 1000)
-
-    async def idle(self) -> None:
-        """Wait until no invocation is queued or running."""
-        await wait_for(lambda: self._idle())
-
-    async def _idle(self) -> bool:
-        return not await self.tasks.inflight_invocations()
 
 
 async def wait_for(probe: Callable[[], Awaitable[Any]], timeout: float = WAIT_S) -> Any:

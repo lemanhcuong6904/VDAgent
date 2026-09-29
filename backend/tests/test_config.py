@@ -1,4 +1,4 @@
-"""Backend configuration: the `plugins:` spec list (plugins spec §4.1) and `.env` loading."""
+"""Backend configuration: the `plugins:` entries (incl. `mcp_tools`), scalar overrides and `.env` loading."""
 
 from __future__ import annotations
 

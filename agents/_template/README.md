@@ -43,11 +43,12 @@ agent's message history. An agent keeps no state between turns.
    next to the others; `docker-compose.yml`: mount `./agents/<name>/.env` read-only into the
    backend service like the others.
 6. List `- module: vdagent_<name>` under `plugins:` in `backend/config.yaml` and
-   `backend/config.compose.yaml`.
+   `backend/config.compose.yaml`, with the MCP tools it may use (step 8).
 7. `cp agents/<name>/.env.example agents/<name>/.env`, add the settings your brain reads to both
    files, and fill in `.env`.
-8. Grant MCP tools in `backend/vdagent_backend/mcp/tools.py` (`ALL_AGENTS` and `PERMISSIONS`);
-   an agent name not listed there sees no MCP tools.
+8. Grant MCP tools in both config files with `mcp_tools: [<tool>, …]` on the plugin entry; every
+   agent the plugin registers sees exactly those, and an entry without `mcp_tools` sees none. An
+   unknown tool name stops the Backend at startup.
 9. `uv run pytest agents/<name>`, then `make backend`: the log shows
    `plugin vdagent_<name> loaded: <name>`.
 
@@ -147,7 +148,7 @@ Nothing checks these, so a mistake shows up as wrong behaviour:
 
 | Kind | Executed by | Access controlled by | Report it with |
 |---|---|---|---|
-| MCP tool (`run_query`, `create_chart`, …) | Backend `/mcp` via `ctx.mcp` | Backend `PERMISSIONS` | `emit_assistant` → `emit_tool_result` |
+| MCP tool (`run_query`, `create_chart`, …) | Backend `/mcp` via `ctx.mcp` | `mcp_tools` of your plugin entry in `backend/config.yaml` | `emit_assistant` → `emit_tool_result` |
 | `send_to_agent` (name is fixed: `vdagent_sdk.SEND_TO_AGENT`) | Backend routes to the peer | Backend call checks (unknown, self, depth, deadlock) | `emit_assistant` → `call_agent` → `emit_tool_result` |
 | Local tool | Your plugin | You | `emit_assistant` → `emit_tool_result` |
 

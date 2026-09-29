@@ -16,6 +16,7 @@ Row = dict[str, Any]
 
 
 async def fetch_all(db: AsyncEngine, stmt: Executable) -> list[Row]:
+    """Every row of a read."""
     async with db.connect() as conn:
         return [dict(r) for r in (await conn.execute(stmt)).mappings().all()]
 

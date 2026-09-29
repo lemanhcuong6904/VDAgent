@@ -14,9 +14,8 @@ it, and how to fix the usual failures.
    description when they decide whom to call: say what you do and what you return.
 4. Wire it into the Backend: add `agents/<name>` to the uv workspace in the root `pyproject.toml`,
    list `- module: vdagent_<name>` under `plugins:` in `backend/config.yaml`, and grant MCP tools
-   to `<name>` in `backend/vdagent_backend/mcp/tools.py` (`ALL_AGENTS` for the tools every agent
-   gets, `PERMISSIONS` for the others). The template's README lists every file, including the
-   Docker ones.
+   in the same entry with `mcp_tools: [<tool>, …]` (every agent the plugin registers gets them).
+   The template's README lists every file, including the Docker ones.
 5. Run `uv run pytest agents/<name>`, then `make backend`. The log shows
    `plugin vdagent_<name> loaded: <name>`, or `plugin vdagent_<name> failed: <reason>`.
 
@@ -305,7 +304,7 @@ result field and error is described in `vdagent_backend.mcp.reference`.
 |---|---|---|
 | Log: `plugin vdagent_<name> failed: missing required environment variable …` | A setting is missing from `agents/<name>/.env`. | Copy `.env.example` to `.env` and fill it in. |
 | Your agent is missing from the UI and from other agents' `ctx.peers` | The plugin failed to load, is not listed under `plugins:`, or has `enabled: false`. | Read the `plugin vdagent_<name> …` log line at startup. |
-| `tools/list` returns nothing | Your agent name is in neither `ALL_AGENTS` nor `PERMISSIONS`. | Grant tools in `backend/vdagent_backend/mcp/tools.py`. |
+| `tools/list` returns nothing | Your plugin entry in `backend/config.yaml` has no `mcp_tools`. | Add `mcp_tools: [<tool>, …]` to the entry. |
 | MCP requests get HTTP 401 `invalid_token` | The token was used after its turn ended. | Open the MCP session inside `invoke`. |
 | Turn failed with `contract violation: …` | A requirement the Backend checks was broken. | Find the message under [Requirements the Backend checks](#requirements-the-backend-checks). |
 | Turn failed with `INTERNAL: …` | `invoke` raised. | Turn tool failures into `error: …` results. |

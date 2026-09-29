@@ -43,6 +43,8 @@ def _column_stats(dataset: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 class ArtifactService:
+    """Stores and reads datasets, charts and reports for both transports."""
+
     def __init__(self, db: AsyncEngine) -> None:
         self._repo = Artifacts(db)
 

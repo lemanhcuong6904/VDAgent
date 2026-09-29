@@ -29,12 +29,15 @@ class SqlError(Exception):
 
 @dataclass(frozen=True)
 class QueryResult:
+    """A query result: `columns` `[{name, type}]` (INTEGER, REAL or TEXT), `rows`, and `truncated`."""
+
     columns: list[dict[str, str]]  # [{"name", "type"}], type ∈ INTEGER | REAL | TEXT
     rows: list[list[Any]]
     truncated: bool
 
 
 def quote_ident(name: str) -> str:
+    """`name` as a double-quoted SQL identifier."""
     return '"' + name.replace('"', '""') + '"'
 
 
@@ -127,6 +130,11 @@ def _unique_names(names: Sequence[str]) -> list[str]:
 
 
 def execute_select(conn: sqlite3.Connection, sql: str, *, timeout_s: float) -> QueryResult:
+    """Run one checked SELECT on `conn` under the deadline, keeping at most `MAX_ROWS` rows.
+
+    Raises:
+        SqlError: The statement is not allowed, fails, or runs past `timeout_s`.
+    """
     statement = check_select(sql)
     with _deadline(conn, timeout_s):
         cur = conn.execute(statement)
@@ -152,11 +160,13 @@ def connect_warehouse(path: str) -> sqlite3.Connection:
 
 
 def warehouse_query(path: str, sql: str, *, timeout_s: float) -> QueryResult:
+    """Run one SELECT on the warehouse at `path`."""
     with closing(connect_warehouse(path)) as conn:
         return execute_select(conn, sql, timeout_s=timeout_s)
 
 
 def warehouse_tables(path: str, *, timeout_s: float) -> list[dict[str, Any]]:
+    """`[{name, row_count}]` of every warehouse table."""
     with closing(connect_warehouse(path)) as conn, _deadline(conn, timeout_s):
         names = [
             r[0]
@@ -171,6 +181,11 @@ def warehouse_tables(path: str, *, timeout_s: float) -> list[dict[str, Any]]:
 
 
 def warehouse_describe(path: str, table: str, *, timeout_s: float, sample_rows: int = 5) -> dict[str, Any]:
+    """`{table, columns, sample_rows}` of one table (name matched case-insensitively).
+
+    Raises:
+        SqlError: No such table.
+    """
     with closing(connect_warehouse(path)) as conn, _deadline(conn, timeout_s):
         found = conn.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"

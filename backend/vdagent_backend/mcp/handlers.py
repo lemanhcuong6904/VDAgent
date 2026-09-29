@@ -24,6 +24,7 @@ def _text_result(text: str, *, is_error: bool = False) -> types.CallToolResult:
 
 
 def tool_error(message: str) -> types.CallToolResult:
+    """A tool error result with the text `error: <message>`."""
     return _text_result(f"error: {message}", is_error=True)
 
 
@@ -31,6 +32,8 @@ Handler = Callable[[McpIdentity, dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
 class McpTools:
+    """Runs the catalog's tools for an authenticated caller."""
+
     def __init__(self, artifacts: ArtifactService, warehouse: Warehouse) -> None:
         self._artifacts = artifacts
         self._warehouse = warehouse

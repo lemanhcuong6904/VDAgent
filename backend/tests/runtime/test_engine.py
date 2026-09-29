@@ -1,4 +1,4 @@
-"""Invocation engine (main spec §4, plugins spec §5.3) with fake in-process agents."""
+"""The invocation runtime end to end, with fake in-process agents."""
 
 from __future__ import annotations
 
@@ -219,7 +219,7 @@ async def test_call_depth_limit(harness: Harness) -> None:
 
 
 async def test_cross_task_wait_for_cycle_is_rejected(harness: Harness) -> None:
-    """§4.4 example: task 1 Orchestrator → Data → Compare while task 2 runs Compare → Data."""
+    """Cross-task deadlock: task 1 Orchestrator → Data → Compare while task 2 runs Compare → Data."""
     compare_gate = asyncio.Event()
     compare_results: list[str] = []
 

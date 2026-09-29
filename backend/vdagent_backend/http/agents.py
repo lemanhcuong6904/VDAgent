@@ -16,6 +16,8 @@ router = APIRouter(prefix="/api")
 
 
 class NewMessage(BaseModel):
+    """Body of `POST /api/agents/{agent}/messages`."""
+
     content: str
 
 
@@ -25,6 +27,7 @@ def _unknown_agent(agent: str) -> ApiError:
 
 @router.get("/agents")
 async def list_agents(svc: Svc, user_id: UserId) -> list[dict[str, Any]]:
+    """Every loaded agent with the caller's stack status."""
     return svc.engine.agents(user_id)
 
 
@@ -36,6 +39,7 @@ async def get_messages(
     before_seq: Annotated[int | None, Query(ge=1)] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> dict[str, Any]:
+    """A page of the caller's chat with `agent` (newest `limit` before `before_seq`), its summary and queued inbound messages."""
     if agent not in svc.engine.registry:
         raise _unknown_agent(agent)
     rows = await svc.messages.messages_page(user_id, agent, before_seq, limit)
@@ -48,6 +52,7 @@ async def get_messages(
 
 @router.post("/agents/{agent}/messages", status_code=202)
 async def post_message(svc: Svc, user_id: UserId, agent: str, body: NewMessage) -> dict[str, str]:
+    """Start a task: the message goes to `agent`'s stack (queued if the agent is busy)."""
     content = body.content.strip()
     if not content:
         raise ApiError(422, "invalid_request", "content must not be empty")

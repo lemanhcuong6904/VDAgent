@@ -47,6 +47,8 @@ class PluginSpec:
 
 @dataclass(frozen=True)
 class Config:
+    """The Backend configuration; every scalar field can be overridden by `VDAGENT_<FIELD>`."""
+
     backend_db: str
     warehouse_db: str
     mcp_public_url: str

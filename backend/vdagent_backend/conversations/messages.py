@@ -25,6 +25,8 @@ _APPEND_COLUMNS = (
 
 
 class Messages:
+    """Repository of the message stacks and their compaction summaries."""
+
     def __init__(self, db: AsyncEngine) -> None:
         self._db = db
 

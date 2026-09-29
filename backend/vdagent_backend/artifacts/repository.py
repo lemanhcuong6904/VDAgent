@@ -45,6 +45,8 @@ def _meta(row: Row) -> dict[str, Any]:
 
 
 class Artifacts:
+    """Repository of the artifact tables; every method takes the owning user."""
+
     def __init__(self, db: AsyncEngine) -> None:
         self._db = db
 

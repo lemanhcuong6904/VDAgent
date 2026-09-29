@@ -7,10 +7,12 @@ from typing import Any
 
 
 def user_dto(row: Mapping[str, Any]) -> dict[str, Any]:
+    """`{id, name}`."""
     return {"id": row["id"], "name": row["name"]}
 
 
 def task_dto(row: Mapping[str, Any]) -> dict[str, Any]:
+    """`{id, root_agent, status, created_at, finished_at}`."""
     return {
         "id": row["id"],
         "root_agent": row["root_agent"],
@@ -27,10 +29,12 @@ _INVOCATION_FIELDS = (
 
 
 def invocation_dto(row: Mapping[str, Any]) -> dict[str, Any]:
+    """An invocation row without `user_id`."""
     return {k: row[k] for k in _INVOCATION_FIELDS}
 
 
 def message_dto(row: Mapping[str, Any]) -> dict[str, Any]:
+    """A stack message with `tool_calls` decoded (None without calls) and `compacted` as a bool."""
     return {
         "id": row["id"],
         "seq": row["seq"],

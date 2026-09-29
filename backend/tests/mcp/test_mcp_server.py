@@ -1,4 +1,4 @@
-"""MCP server end-to-end (§6, §13 "MCP"): real uvicorn + the mcp SDK streamable-HTTP client."""
+"""MCP server end-to-end: real uvicorn + the mcp SDK streamable-HTTP client."""
 
 from __future__ import annotations
 
@@ -138,7 +138,7 @@ async def env(tmp_path: Path) -> AsyncIterator[McpEnv]:
 
 @asynccontextmanager
 async def connect(url: str, token: str, mode: str = "auto") -> AsyncIterator[Client]:
-    """Same client construction as the agents' MCP client (§7.2)."""
+    """Same client construction as the bundled agents' MCP client."""
     async with create_mcp_http_client(headers={"Authorization": f"Bearer {token}"}) as http_client:
         async with Client(streamable_http_client(url, http_client=http_client), cache=None, mode=mode) as client:
             yield client

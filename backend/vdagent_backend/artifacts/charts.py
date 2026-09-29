@@ -43,6 +43,14 @@ def _is_temporal(name: str, values: list[Any]) -> bool:
 
 
 def build_chart_spec(dataset: dict[str, Any], kind: str, x: str, y: list[str], title: str) -> dict[str, Any]:
+    """A Vega-Lite v5 spec of `dataset` with its data inlined (at most `MAX_CHART_ROWS` rows).
+
+    bar/line: `x` is the category or date axis and each `y` column a series; pie: `x` gives the
+    slices and `y[0]` their size.
+
+    Raises:
+        ChartError: Unknown kind, no or missing columns, or a non-numeric `y` column.
+    """
     if kind not in CHART_KINDS:
         raise ChartError(f"kind must be one of {', '.join(CHART_KINDS)}")
     if not y:

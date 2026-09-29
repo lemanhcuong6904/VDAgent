@@ -1,4 +1,4 @@
-"""Bearer-token auth for `/mcp` (§6).
+"""Bearer-token auth for `/mcp`.
 
 `Authorization: Bearer <mcp_token>` is resolved through the in-memory `TokenRegistry`; the caller
 identity `(user_id, agent, invocation_id)` is exposed to tool handlers via `current_identity`.

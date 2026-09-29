@@ -33,6 +33,8 @@ class Scope:
 
 
 class MemorySearch(Protocol):
+    """Ranks one scope's notes; scores are lower-is-better."""
+
     async def keyword(self, conn: AsyncConnection, scope: Scope, query: str, limit: int) -> list[Note]: ...
 
     async def vector(self, conn: AsyncConnection, scope: Scope, embedding: Sequence[float], limit: int) -> list[Note]: ...
@@ -50,6 +52,8 @@ async def _notes(conn: AsyncConnection, sql: str, scope: Scope, **params: Any) -
 
 
 class SqliteMemorySearch:
+    """FTS5 `bm25` keyword search and sqlite-vec cosine distance."""
+
     async def keyword(self, conn: AsyncConnection, scope: Scope, query: str, limit: int) -> list[Note]:
         match = fts_query(query)
         if not match:

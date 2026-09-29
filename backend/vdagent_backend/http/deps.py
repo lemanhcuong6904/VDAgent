@@ -27,6 +27,7 @@ class Services:
 
 
 def services(request: Request) -> Services:
+    """The app's `Services`."""
     return request.app.state.services
 
 
@@ -41,6 +42,7 @@ async def current_user(
     svc: Annotated[Services, Depends(services)],
     x_user_id: Annotated[str | None, Header()] = None,
 ) -> str:
+    """The `X-User-Id` header, if it names a user; otherwise `401 unknown_user`."""
     return await resolve_user(svc.users, x_user_id)
 
 

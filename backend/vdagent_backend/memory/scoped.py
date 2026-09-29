@@ -25,6 +25,8 @@ def _search_for(db: AsyncEngine) -> MemorySearch:
 
 
 class ScopedMemory:
+    """The SDK `Memory` of one (user, agent) scope."""
+
     def __init__(self, db: AsyncEngine, user_id: str, agent: str) -> None:
         self._db = db
         self._scope = Scope(user_id, agent)
