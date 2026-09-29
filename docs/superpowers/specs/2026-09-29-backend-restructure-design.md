@@ -161,13 +161,14 @@ flowchart TD
 
 ### 3.2 Composition root
 
-`app.py` builds, inside the lifespan: `migrate` (sync, before any connection is served) →
-`create_database` → repositories →
-`EventBus`, `TokenRegistry` → `PluginManager.load` → grant validation → `Engine` →
-`ArtifactService`, `Warehouse` → `McpServer`, and stores them in one `Services` dataclass on
-`app.state.services`. No globals, no DI framework. Routers are registered at `create_app` time;
-`/mcp` routes dispatch to `app.state.services.mcp` and answer `503 mcp_unavailable` until the
-lifespan has started it. Tests build the same `Services` from a `Config` pointing at `tmp_path`.
+`create_app(cfg)` validates grants against the MCP catalog, then builds the objects that need no
+plugins: `create_database(url)` (an engine; no connection yet), `EventBus`, `TokenRegistry`,
+`ArtifactService`, `Warehouse`, `McpTools` and `McpServer`. The lifespan then runs `migrate`
+(in a worker thread) → `PluginManager.load` → `Engine` → `engine.recover()` →
+`mcp.lifespan(registry)` (the registry supplies the grants), and stores the request-time objects
+in one `Services` dataclass on `app.state.services`. No globals, no DI framework. `/mcp` answers
+`503 mcp_unavailable` until `mcp.lifespan` has started, as today. Tests build the same objects
+from a `Config` pointing at `tmp_path`.
 
 ## 4. Configuration and MCP grants
 
@@ -216,13 +217,15 @@ nullability, check constraints, foreign keys, unique constraints and indexes mat
 | Type | SQLite (now) | PostgreSQL (later) | Python value |
 |---|---|---|---|
 | `UtcTimestamp` | TEXT; writes `…SS.ffffffZ` | `timestamptz` | bind: aware `datetime`; result: `str` in `…SS.mmmZ` |
-| `Json` = `JSON().with_variant(JSONB(), "postgresql")` | TEXT | `jsonb` | any JSON-able value |
+| `Json` (TypeDecorator) | TEXT + `json.dumps`/`loads` | `JSONB` | any JSON-able value |
 | `Boolean` (SQLAlchemy) | INTEGER 0/1 | `boolean` | `bool` |
-| `Embedding` | BLOB (`sqlite_vec.serialize_float32`) | `pgvector.sqlalchemy.Vector()` | `list[float]` |
+| `Embedding` (TypeDecorator) | BLOB (`sqlite_vec.serialize_float32`) | `pgvector` `Vector()`, added with `PgMemorySearch` | `list[float]` |
 
 Timestamps are generated in Python (`core.clock.utcnow()`) through Core column defaults; the
-`strftime` server defaults go away. Legacy rows keep their millisecond text; they always predate
-new rows, so ordering is unaffected.
+`strftime` server defaults go away, so raw-SQL test fixtures and seed scripts pass `created_at`
+explicitly. Legacy rows keep their millisecond text; they always predate new rows, so ordering is
+unaffected. `Json` is a TEXT TypeDecorator rather than SQLAlchemy `JSON` because SQLite gives a
+column declared `JSON` NUMERIC affinity, which would turn a stored scalar like `5` into an integer.
 
 ### 5.3 Query rules
 
@@ -244,8 +247,10 @@ new rows, so ordering is unaffected.
   (`uv run alembic -c backend/alembic.ini revision --autogenerate -m …`).
 - `0001_baseline`: today's schema through `op.create_table`/`op.create_index`; the FTS5 virtual
   table and its two triggers through `op.execute`, only when `dialect == "sqlite"`.
-- `0002_dataset_rows`: create `dataset_rows`, copy every dataset's `rows_json` into it (batch, in
-  row order), drop `datasets.rows_json` (SQLite batch mode).
+- `0002_dataset_rows`: create `dataset_rows`, copy every dataset's `rows_json` into it with one
+  `INSERT … SELECT … FROM json_each(rows_json)` (SQLite; row order = array index), then drop
+  `datasets.rows_json` with `op.drop_column` (native `ALTER TABLE DROP COLUMN`, SQLite ≥ 3.35;
+  the bundled SQLite is 3.53, and existing CHECK constraints survive). Not reversible.
 - `migrate(url)` (sync, run before the async engine serves requests): if the database has a
   `users` table but no `alembic_version`, stamp `0001` (adoption of a pre-Alembic database);
   then `upgrade head`.
@@ -315,16 +320,18 @@ Named invariants (replace `I1`–`I4` and `§` references in docstrings):
 ### 7.1 `artifacts/`
 
 `Artifacts` repository: `insert_dataset` (datasets row + `dataset_rows` in one transaction),
-`get_dataset_meta`, `get_dataset_rows(user, id, offset, limit)`, `get_dataset_all_rows`,
-`get_datasets(user, ids)` (one `IN` query), `insert_chart`, `get_chart`, `insert_report`,
-`list_reports`, `get_report`, `existing_ids(user, table, ids)`.
+`get_dataset` (metadata + all rows), `get_dataset_meta`, `get_rows(user, id, offset, limit)`,
+`get_datasets(user, ids)` (two queries for any number of ids), `insert_chart`, `get_chart`,
+`insert_report`, `list_reports`, `get_report`, `existing_ids(user, table, ids)`.
 
-`ArtifactService` holds the rules both transports need: `store_dataset(identity, name, sql,
-result)`, `describe_dataset` (column stats), `dataset_page` (REST `GET /api/datasets/{id}` and MCP
-`get_dataset_rows`), `create_chart`, `save_report` (embed-id validation). Reads of a missing or
-foreign artifact return `None` (HTTP maps it to `404 not_found` as today; MCP to
-`error: dataset not found`). Invalid requests raise `ArtifactError`, whose text MCP returns as
-`error: <text>` (today's `ToolError`/`ChartError` texts, unchanged).
+`ArtifactService` is the only artifact entry point for both transports: `store_dataset(user_id,
+invocation_id, name, source_sql, result)`, `get_dataset`, `datasets(user_id, ids)` (for
+`query_datasets`), `describe_dataset` (column stats), `dataset_page` (REST
+`GET /api/datasets/{id}` and MCP `get_dataset_rows`), `create_chart`, `get_chart`, `save_report`
+(embed-id validation), `list_reports`, `get_report`. Reads of a missing or foreign artifact return
+`None` (HTTP maps it to `404 not_found` as today; MCP to `error: dataset not found`). Invalid
+requests raise `ArtifactError` (`ChartError` is a subclass), whose text MCP returns as
+`error: <text>` (today's texts, unchanged).
 
 ### 7.2 `warehouse/`
 
