@@ -26,6 +26,7 @@ from vdagent_backend.config import Config
 from vdagent_backend.db import artifacts
 from vdagent_backend.db.database import create_db
 from vdagent_backend.mcp.server import create_mcp
+from vdagent_backend.mcp.tools import PERMISSIONS, RESULT_FIELDS, TOOLS
 from vdagent_backend.tokens import TokenRegistry
 
 ALICE, BOB = "u_000000000001", "u_000000000002"
@@ -288,3 +289,26 @@ async def test_invalid_or_revoked_token_gets_401(env: McpEnv, path: str) -> None
             )
             assert response.status_code == 401, headers
             assert response.json()["error"]["code"] == "invalid_token"
+
+
+def test_every_tool_has_permissions_and_documented_result_fields() -> None:
+    names = {t.name for t in TOOLS}
+    assert set(PERMISSIONS) == names
+    assert set(RESULT_FIELDS) == names
+
+
+@pytest.mark.parametrize("tool", [t.name for t in TOOLS])
+async def test_successful_result_has_exactly_the_documented_fields(env: McpEnv, tool: str) -> None:
+    ds = (await call_ok(env, "data", "run_query", {"sql": "SELECT region, revenue FROM sales"}))["dataset_id"]
+    agent, args = {
+        "list_tables": ("data", {}),
+        "describe_table": ("data", {"table": "sales"}),
+        "run_query": ("data", {"sql": "SELECT region FROM sales"}),
+        "describe_dataset": ("orchestrator", {"dataset_id": ds}),
+        "get_dataset_rows": ("orchestrator", {"dataset_id": ds}),
+        "query_datasets": ("compare", {"sql": f'SELECT * FROM "{ds}"', "dataset_ids": [ds]}),
+        "create_chart": ("report", {"dataset_id": ds, "kind": "bar", "x": "region", "y": ["revenue"], "title": "Revenue"}),
+        "save_report": ("report", {"title": "Revenue", "markdown": f"{{{{dataset:{ds}}}}}"}),
+    }[tool]
+    result = await call_ok(env, agent, tool, args)
+    assert set(result) == set(RESULT_FIELDS[tool])

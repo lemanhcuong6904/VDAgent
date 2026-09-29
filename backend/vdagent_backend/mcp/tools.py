@@ -149,6 +149,55 @@ TOOLS: list[types.Tool] = [
     ),
 ]
 
+_DATASET_FIELDS: dict[str, str] = {
+    "dataset_id": "Id of the new dataset (`ds_…`); pass it to other tools or to another agent.",
+    "name": "The `name` argument, or null.",
+    "columns": "`[{name, type}]`; type is INTEGER, REAL or TEXT (TEXT when every value is null).",
+    "row_count": f"Rows stored, at most {sql.MAX_ROWS:,}.",
+    "truncated": f"true when the query returned more than {sql.MAX_ROWS:,} rows and the rest were dropped.",
+    "preview": f"The first {PREVIEW_ROWS} rows, each a list of values in column order.",
+}
+
+# Top-level fields of each tool's successful JSON result, with their meaning. Rendered into the MCP
+# tools reference (`vdagent_backend.mcp.reference`); a test keeps it equal to what the handlers return.
+RESULT_FIELDS: dict[str, dict[str, str]] = {
+    "list_tables": {"tables": "`[{name, row_count}]`, one entry per warehouse table."},
+    "describe_table": {
+        "table": "The table name.",
+        "columns": "`[{name, type}]` as declared in the warehouse.",
+        "sample_rows": "Up to 5 rows, each a list of values in column order.",
+    },
+    "run_query": _DATASET_FIELDS,
+    "describe_dataset": {
+        "dataset_id": "The dataset id.",
+        "name": "The dataset's name, or null.",
+        "row_count": "Rows stored.",
+        "truncated": "true when the dataset was cut at the row cap.",
+        "source_sql": "The SQL that produced the dataset.",
+        "columns": "`[{name, type, min, max, null_count}]`; min/max are null when every value is null.",
+    },
+    "get_dataset_rows": {
+        "dataset_id": "The dataset id.",
+        "columns": "`[{name, type}]`.",
+        "row_count": "Total rows in the dataset; page until `offset + limit >= row_count`.",
+        "offset": "The offset used.",
+        "limit": "The limit used.",
+        "rows": "The page, each row a list of values in column order.",
+    },
+    "query_datasets": _DATASET_FIELDS,
+    "create_chart": {
+        "chart_id": "Id of the new chart (`ch_…`).",
+        "title": "The chart title.",
+        "dataset_id": "The charted dataset.",
+        "kind": "bar, line or pie.",
+        "embed": "`{{chart:<chart_id>}}`; put it on its own line in a `save_report` markdown.",
+    },
+    "save_report": {
+        "report_id": "Id of the saved report (`rp_…`).",
+        "title": "The report title.",
+    },
+}
+
 
 class ToolError(Exception):
     """A user-facing tool failure; its message becomes the tool error text."""
