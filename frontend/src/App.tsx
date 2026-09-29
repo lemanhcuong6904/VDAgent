@@ -7,7 +7,7 @@ import { ChatPane } from "./components/chat/ChatPane";
 import { Inspector } from "./components/inspector/Inspector";
 import { TaskList } from "./components/TaskList";
 import { UserPicker } from "./components/UserPicker";
-import { type StreamState, useEventStream } from "./events/useEventStream";
+import { useEventStream, type StreamState } from "./events/useEventStream";
 import { UiProvider, useUi } from "./ui/UiContext";
 
 const USER_KEY = "vdagent.userId";
@@ -37,14 +37,7 @@ export function App() {
   const queryClient = useMemo(
     () =>
       new QueryClient({
-        defaultOptions: {
-          queries: {
-            retry: 1,
-            refetchOnWindowFocus: true,
-            refetchOnReconnect: true,
-            staleTime: 5_000,
-          },
-        },
+        defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 5_000 } },
       }),
     // A fresh cache per user: query keys carry no user id.
     [userId],
@@ -62,18 +55,14 @@ export function App() {
   );
 }
 
-function Shell({
-  userId,
-  onSelectUser,
-}: {
-  userId: string | null;
-  onSelectUser: (id: string | null) => void;
-}) {
+function Shell({ userId, onSelectUser }: { userId: string | null; onSelectUser: (id: string | null) => void }) {
   const stream = useEventStream(userId);
   return (
     <div className="app">
       <aside className="sidebar">
-        <div className="brand">VDaAgent</div>
+        <div className="brand">
+          vdagent <span className="muted small">analytics agents</span>
+        </div>
         <UserPicker userId={userId} onSelect={onSelectUser} />
         {userId && <SidebarLists />}
         {userId && <StreamBadge state={stream} />}
@@ -119,9 +108,7 @@ function Workspace() {
         {agent ? (
           <ChatPane key={agent.name} agent={agent} />
         ) : (
-          <div className="chat-empty muted">
-            {agents.isError ? agents.error.message : "Loading agents…"}
-          </div>
+          <div className="chat-empty muted">{agents.isError ? agents.error.message : "Loading agents…"}</div>
         )}
       </main>
       <aside className="inspector">
