@@ -1,0 +1,157 @@
+# Semantic layer (Data v02 §6.1, build spec 02 §4): the single source of business meaning.
+# Owned with the Data Analyst; every change bumps semantic_version (= catalog_version) and runs the eval (§10).
+# SQLite dialect. Base entity: fact_unit_inventory_snapshot AS f, joined to m, z, p, c below.
+semantic_version: 1.3.0
+dw_version: 3.1.0
+
+tables:   # whitelist for the SQL linter (TABLE_NOT_ALLOWED / COLUMN_NOT_ALLOWED)
+  snapshot_manifest: [snapshot_id, snapshot_date_key, status, semantic_config_version, loaded_at]
+  semantic_config: [config_version, config_key, config_value, status, description]
+  dim_project_profile: [project_key, project_name, market_id, segment, is_sales_permit_issued, is_bank_guarantee_issued]
+  dim_zone_master: [zone_key, zone_name, project_key]
+  dim_unit_master: [unit_key, unit_code, project_key, zone_key, unit_type, area_m2, net_area_m2, floor_no, floor_band,
+                    balcony_orientation, view_primary_type, launch_batch_id, release_date]
+  dim_sales_channel: [channel_key, channel_name, base_commission_pct, spiff_bonus_vnd]
+  fact_unit_inventory_snapshot: [unit_key, snapshot_date_key, project_key, zone_key, channel_key, inventory_status,
+                                 unsold_days_dom, release_date, snapshot_date, sold_date, asking_price_vnd, net_price_per_m2]
+  fact_sales_channel_performance: [channel_key, project_key, snapshot_date_key, web_listing_views,
+                                   locked_inventory_over_90d, absorption_rate_pct]
+  fact_unit_price_history: [unit_key, effective_date, asking_price_vnd, net_price_per_m2]
+  fact_sales_funnel_daily: [unit_key, date_key, leads, site_visits, bookings, cancellations, contracts, cancellation_reason]
+  dim_secondary_market_comps: [comp_key, project_key, unit_type, transaction_date, price_per_m2]
+  fact_market_macro_monthly: [market_id, segment, month_key, mortgage_rate_pct, absorption_rate_pct, months_of_inventory,
+                              price_to_income_ratio]
+  dim_infrastructure_assets: [asset_key, project_key, asset_type, asset_name, distance_km, status]
+  dm_unit_friction_diagnostics: [unit_key, snapshot_date_key, primary_cause_code, price_spread_vs_peer_pct,
+                                 is_peer_sample_constrained, peer_n, physical_defect_penalty, thermal_view_penalty,
+                                 subsidy_duration_mo, secondary_price_gap_pct, ticket_size_vs_income_ratio,
+                                 funnel_dropoff_rate_pct, west_facing_exposure_pct, recommended_action]
+  unit_diagnostic_causes: [unit_key, snapshot_date_key, cause_code, severity_rank, attribution_score]
+
+snapshot_tables:   # tables carrying snapshot_date_key: the linter injects the snapshot filter on each
+  - fact_unit_inventory_snapshot
+  - fact_sales_channel_performance
+  - dm_unit_friction_diagnostics
+  - unit_diagnostic_causes
+
+rbac:   # table → column holding the project (unit-only tables are scoped through dim_unit_master)
+  dim_project_profile: project_key
+  dim_zone_master: project_key
+  dim_unit_master: project_key
+  fact_unit_inventory_snapshot: project_key
+  fact_sales_channel_performance: project_key
+  dim_secondary_market_comps: project_key
+  dim_infrastructure_assets: project_key
+
+joins:   # allowed JOIN edges (undirected)
+  - [fact_unit_inventory_snapshot.unit_key, dim_unit_master.unit_key]
+  - [fact_unit_inventory_snapshot.zone_key, dim_zone_master.zone_key]
+  - [fact_unit_inventory_snapshot.project_key, dim_project_profile.project_key]
+  - [fact_unit_inventory_snapshot.channel_key, dim_sales_channel.channel_key]
+  - [dim_unit_master.zone_key, dim_zone_master.zone_key]
+  - [dim_unit_master.project_key, dim_project_profile.project_key]
+  - [dim_zone_master.project_key, dim_project_profile.project_key]
+  - [dm_unit_friction_diagnostics.unit_key, fact_unit_inventory_snapshot.unit_key]
+  - [dm_unit_friction_diagnostics.unit_key, dim_unit_master.unit_key]
+  - [unit_diagnostic_causes.unit_key, fact_unit_inventory_snapshot.unit_key]
+  - [unit_diagnostic_causes.unit_key, dim_unit_master.unit_key]
+  - [unit_diagnostic_causes.unit_key, dm_unit_friction_diagnostics.unit_key]
+  - [fact_unit_price_history.unit_key, dim_unit_master.unit_key]
+  - [fact_sales_funnel_daily.unit_key, dim_unit_master.unit_key]
+  - [dim_secondary_market_comps.project_key, dim_project_profile.project_key]
+  - [dim_infrastructure_assets.project_key, dim_project_profile.project_key]
+  - [fact_sales_channel_performance.channel_key, dim_sales_channel.channel_key]
+  - [fact_sales_channel_performance.project_key, dim_project_profile.project_key]
+  - [fact_market_macro_monthly.market_id, dim_project_profile.market_id]
+
+join_forbidden:   # sensor JOIN_NOT_ALLOWED with the fix to suggest
+  - from: fact_sales_funnel_daily
+    to: dim_project_profile
+    fix: "Đi qua dim_unit_master.project_key hoặc fact_unit_inventory_snapshot.project_key"
+
+base: "fact_unit_inventory_snapshot f JOIN dim_unit_master m ON m.unit_key = f.unit_key JOIN dim_zone_master z ON z.zone_key = f.zone_key JOIN dim_project_profile p ON p.project_key = f.project_key LEFT JOIN dim_sales_channel c ON c.channel_key = f.channel_key"
+
+dimensions:
+  project:     {column: p.project_name, description: "Dự án", synonyms: ["dự án", "project"]}
+  zone:        {column: z.zone_name, description: "Phân khu / tòa", synonyms: ["phân khu", "tòa", "tòa tháp", "zone"]}
+  market:      {column: p.market_id, description: "Thị trường / khu vực", synonyms: ["thị trường", "khu vực"]}
+  floor_band:  {column: m.floor_band, description: "Nhóm tầng LOW/MID/HIGH/TOP",
+                synonyms: ["nhóm tầng", "tầng thấp", "tầng trung", "tầng cao"]}
+  balcony_orientation: {column: m.balcony_orientation, description: "Hướng ban công", synonyms: ["hướng", "hướng ban công"]}
+  view_primary_type:   {column: m.view_primary_type, description: "Loại view chính", synonyms: ["view", "tầm nhìn"]}
+  unit_type:   {column: m.unit_type, description: "Loại căn (1PN/2PN/3PN)", synonyms: ["loại căn", "số phòng ngủ"]}
+  launch_batch: {column: m.launch_batch_id, description: "Đợt mở bán", synonyms: ["đợt mở bán", "đợt"]}
+  channel:     {column: c.channel_name, description: "Kênh / sàn phân phối", synonyms: ["kênh", "sàn", "đại lý"]}
+
+filters:
+  released:    {sql: "f.release_date <= f.snapshot_date", description: "Căn đã mở bán", synonyms: ["đã mở bán"]}
+  available:   {sql: "f.inventory_status = 'AVAILABLE'", description: "Căn còn trống", synonyms: ["còn hàng", "chưa bán"]}
+  sold:        {sql: "f.inventory_status = 'SOLD'", description: "Căn đã bán", synonyms: ["đã bán"]}
+  slow_moving: {sql: "f.inventory_status = 'AVAILABLE' AND f.unsold_days_dom > {cfg.overdue_threshold_days}",
+                description: "Căn bán chậm: còn trống và DOM vượt ngưỡng quá hạn",
+                synonyms: ["bán chậm", "tồn lâu", "quá hạn", "khó bán"]}
+
+# Every metric = numerator / denominator (integers from SQL, division in Decimal); denominator null = a count.
+metrics:
+  absorption_rate:
+    formula_id: F-ABS-01
+    description: "Tỷ lệ hấp thụ: căn đã bán / căn đã mở bán"
+    synonyms: ["tỷ lệ hấp thụ", "tốc độ bán", "absorption"]
+    numerator: "SUM(CASE WHEN f.inventory_status = 'SOLD' THEN 1 ELSE 0 END)"
+    denominator: "SUM(CASE WHEN f.release_date <= f.snapshot_date THEN 1 ELSE 0 END)"
+    unit: RATIO
+    min_n: 5
+  avg_dom_unsold:
+    formula_id: F-DOM-01
+    description: "DOM trung bình của căn còn trống (ngày)"
+    synonyms: ["dom", "số ngày tồn", "thời gian tồn kho"]
+    numerator: "SUM(CASE WHEN f.inventory_status = 'AVAILABLE' THEN f.unsold_days_dom ELSE 0 END)"
+    denominator: "SUM(CASE WHEN f.inventory_status = 'AVAILABLE' THEN 1 ELSE 0 END)"
+    unit: DAY
+    min_n: 5
+  slow_moving_count:
+    formula_id: F-SLOW-01
+    description: "Số căn bán chậm (quá ngưỡng)"
+    synonyms: ["số căn bán chậm", "số căn quá hạn"]
+    numerator: "SUM(CASE WHEN f.inventory_status = 'AVAILABLE' AND f.unsold_days_dom > {cfg.overdue_threshold_days} THEN 1 ELSE 0 END)"
+    denominator: null
+    unit: COUNT
+    min_n: 1
+  slow_moving_rate:
+    formula_id: F-SLOW-02
+    description: "Tỷ lệ căn bán chậm trên căn còn trống"
+    synonyms: ["tỷ lệ bán chậm", "tỷ lệ quá hạn"]
+    numerator: "SUM(CASE WHEN f.inventory_status = 'AVAILABLE' AND f.unsold_days_dom > {cfg.overdue_threshold_days} THEN 1 ELSE 0 END)"
+    denominator: "SUM(CASE WHEN f.inventory_status = 'AVAILABLE' THEN 1 ELSE 0 END)"
+    unit: RATIO
+    min_n: 5
+  avg_net_price_per_m2:
+    formula_id: F-PRICE-01
+    description: "Đơn giá ròng trung bình (VND/m²)"
+    synonyms: ["giá/m2", "đơn giá", "giá trung bình"]
+    numerator: "SUM(f.net_price_per_m2)"
+    denominator: "COUNT(f.net_price_per_m2)"
+    unit: VND_PER_M2
+    min_n: 5
+  unit_count:
+    formula_id: F-CNT-01
+    description: "Số căn"
+    synonyms: ["số căn", "số lượng căn"]
+    numerator: "COUNT(*)"
+    denominator: null
+    unit: COUNT
+    min_n: 1
+
+attributes:   # unit-level columns fetch_units may return
+  unit_code: {column: m.unit_code, description: "Mã căn"}
+  zone: {column: z.zone_name, description: "Phân khu"}
+  unit_type: {column: m.unit_type, description: "Loại căn"}
+  area_m2: {column: m.area_m2, description: "Diện tích (m²)"}
+  floor_band: {column: m.floor_band, description: "Nhóm tầng"}
+  balcony_orientation: {column: m.balcony_orientation, description: "Hướng ban công"}
+  view_primary_type: {column: m.view_primary_type, description: "View chính"}
+  launch_batch: {column: m.launch_batch_id, description: "Đợt mở bán"}
+  inventory_status: {column: f.inventory_status, description: "Trạng thái tồn kho"}
+  unsold_days_dom: {column: f.unsold_days_dom, description: "DOM (ngày)"}
+  asking_price_vnd: {column: f.asking_price_vnd, description: "Giá chào (VND)"}
+  net_price_per_m2: {column: f.net_price_per_m2, description: "Đơn giá ròng (VND/m²)"}

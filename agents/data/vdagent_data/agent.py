@@ -1,205 +1,140 @@
-"""This agent's brain: a thin tool-calling loop over LiteLLM with the Backend's MCP tools.
+"""The Data Agent plugin (Data v02): one turn = one data step, answered with an AgentReport (system prompt §6.1).
 
-Per turn: open an MCP session, offer its tools plus `send_to_agent`, and step the model up to
-`ctx.max_steps` times (`tool_choice="none"` on the last step). Every assistant step and tool
-result is reported through `ctx`; tool calls of one step run concurrently.
+A `StepSpec@1` JSON message runs the pipeline strictly. Free text (a user chatting with Data directly, or a peer
+asking in words) is turned into a StepSpec by one structured LLM call, or answered with guidance. MCP calls are
+harness steps, not model tool calls: the turn emits exactly one assistant step, the report; lineage lives in the
+Data Package.
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from vdagent_sdk import SEND_TO_AGENT, Agent, AgentTimeoutError, InvocationContext, Message, Peer, ToolCall
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from vdagent_sdk import InvocationContext, Message, PluginConfigError
 
-from .llm import AssistantMessage, LiteLLMClient, LLMClient, LLMTimeoutError, ToolChoice
-from .mcp_client import McpSession, McpSessionFactory, open_mcp_session, openai_tool_schema, run_mcp_tool
-from .settings import load_settings
+from vdagent_agentkit.llm import LlmError, LlmRouter
+from vdagent_agentkit.mcp_client import McpSession, McpSessionFactory, open_mcp_session
+from vdagent_agentkit.settings import load_llm_settings
+from vdagent_contracts.messages import ContractMessage, FreeText, StepSpec, parse_incoming
+from vdagent_contracts.reports import AgentReport, ReportError, render_agent_report
+from vdagent_contracts.scope import UserContext
+from vdagent_data.pipeline.machine import run_step
 
 NAME = "data"
-DESCRIPTION = "Queries the warehouse; returns dataset ids."
-
+DESCRIPTION = (
+    "Data Agent: runs one data step (StepSpec@1: fetch_units, aggregate_metrics, fetch_peer_candidates,"
+    " fetch_unit_context) on the real-estate warehouse and returns a Data Package; also answers simple data questions."
+)
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-SUMMARY_HEADING = "## Summary of earlier work with this user"
-STEP_LIMIT_TEXT = "[step limit reached before I could finish; no further tool calls were made]"
-COMPACT_TOOL_TEXT_CHARS = 2_000
+log = logging.getLogger(__name__)
 
 
-def load_prompt(name: str) -> str:
-    return (PROMPTS_DIR / f"{name}.md").read_text(encoding="utf-8").strip()
+class FreeTextRequest(BaseModel):
+    """What the model may fill from a free-text question: names only, never SQL or scope."""
+
+    model_config = ConfigDict(extra="forbid")
+    answerable: bool
+    guidance: str = ""
+    operation: Literal["aggregate_metrics", "fetch_units"] = "aggregate_metrics"
+    mentions: list[dict[str, str]] = Field(default_factory=list)
+    metrics: list[str] = Field(default_factory=list)
+    group_by: list[str] = Field(default_factory=list)
+    filters: list[str] = Field(default_factory=list)
 
 
-def build_system_prompt(prompt: str, summary: str) -> str:
-    if not summary.strip():
-        return prompt
-    return f"{prompt}\n\n{SUMMARY_HEADING}\n{summary.strip()}"
+def _free_text_prompt() -> str:
+    from vdagent_data.semantic.loader import LAYER
+
+    vocab = "\n".join(
+        [f"metric {n}: {m.description}" for n, m in LAYER.metrics.items()]
+        + [f"dimension {n}: {d.description}" for n, d in LAYER.dimensions.items()]
+        + [f"filter {n}: {f.description}" for n, f in LAYER.filters.items()]
+    )
+    return (PROMPTS_DIR / "system.md").read_text(encoding="utf-8").strip() + "\n\nTừ vựng:\n" + vocab
 
 
-def send_to_agent_tool(peers: Sequence[Peer]) -> dict[str, Any]:
-    roster = "\n".join(f"- {p.name}: {p.description}" for p in peers)
-    return {
-        "type": "function",
-        "function": {
-            "name": SEND_TO_AGENT,
-            "description": (
-                "Send a message to another agent and wait for its reply. "
-                f"The reply is returned as this tool's result. Agents:\n{roster}"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "agent": {"type": "string", "enum": [p.name for p in peers]},
-                    "message": {
-                        "type": "string",
-                        "description": "Self-contained request, including any dataset ids it needs.",
-                    },
-                },
-                "required": ["agent", "message"],
-            },
-        },
-    }
+def _summary_line(report: AgentReport) -> str:
+    if report.state == "completed":
+        return report.summary.splitlines()[0] if report.summary else "Đã chuẩn bị dữ liệu."
+    if report.state == "input_required" and report.question:
+        return report.question.text
+    return report.error.message if report.error else "Không thực hiện được yêu cầu dữ liệu."
 
 
-def render_for_compaction(previous_summary: str, messages: Sequence[Message]) -> str:
-    lines = ["Previous summary:", previous_summary.strip() or "(none)", "", "Messages to fold in:"]
-    for msg in messages:
-        if msg["role"] == "user":
-            lines.append(f"[inbound] {msg['content']}")
-        elif msg["role"] == "assistant":
-            if msg.get("content"):
-                lines.append(f"[you] {msg['content']}")
-            for tc in msg.get("tool_calls") or []:
-                lines.append(f"[you called {tc['function']['name']}] {tc['function']['arguments']}")
-        elif msg["role"] == "tool":
-            content = msg["content"]
-            if len(content) > COMPACT_TOOL_TEXT_CHARS:
-                content = content[:COMPACT_TOOL_TEXT_CHARS] + "…[truncated]"
-            lines.append(f"[tool result] {content}")
-    return "\n".join(lines)
-
-
-class LiteLLMAgent:
-    def __init__(
-        self,
-        *,
-        llm: LLMClient,
-        mcp_session_factory: McpSessionFactory = open_mcp_session,
-        system_prompt: str,
-        compact_prompt: str,
-    ) -> None:
-        self._llm = llm
-        self._mcp_session_factory = mcp_session_factory
-        self._system_prompt = system_prompt
-        self._compact_prompt = compact_prompt
-
-    async def _complete(
-        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], tool_choice: ToolChoice
-    ) -> AssistantMessage:
-        try:
-            return await self._llm.complete(messages, tools, tool_choice)
-        except LLMTimeoutError as exc:
-            raise AgentTimeoutError(str(exc)) from exc
+class DataAgent:
+    def __init__(self, *, router: LlmRouter | None, mcp_session_factory: McpSessionFactory = open_mcp_session) -> None:
+        self._router = router
+        self._mcp = mcp_session_factory
 
     async def invoke(self, ctx: InvocationContext) -> None:
-        async with self._mcp_session_factory(ctx.mcp.url, ctx.mcp.token) as mcp:
-            await _Turn(ctx, mcp, self._system_prompt, self._complete).run()
+        text = ctx.history[-1]["content"] if ctx.history else ""
+        async with self._mcp(ctx.mcp.url, ctx.mcp.token) as session:
+            report = await self._handle(text, ctx, session)
+        await ctx.emit_assistant(render_agent_report(_summary_line(report), report))
+
+    async def _handle(self, text: str, ctx: InvocationContext, session: McpSession) -> AgentReport:
+        try:
+            incoming = parse_incoming(text)
+        except ValueError as exc:
+            return self._rejected("SPEC_MISMATCH", f"Yêu cầu JSON không hợp lệ: {exc}")
+        if isinstance(incoming, ContractMessage):
+            if incoming.contract != "StepSpec@1":
+                return self._rejected("OUT_OF_SCOPE", f"Data Agent không nhận hợp đồng {incoming.contract}.")
+            try:
+                step = StepSpec.model_validate(incoming.data)
+            except ValidationError as exc:
+                return self._rejected("SPEC_MISMATCH", f"StepSpec không hợp lệ: {exc.error_count()} lỗi.")
+            return await run_step(step, session, self._router, user_id=ctx.user_id)
+        assert isinstance(incoming, FreeText)
+        return await self._free_text(incoming.text, ctx, session)
+
+    @staticmethod
+    def _rejected(code: str, message: str) -> AgentReport:
+        return AgentReport(state="rejected", error=ReportError(code=code, message=message), summary=message)
+
+    async def _free_text(self, question: str, ctx: InvocationContext, session: McpSession) -> AgentReport:
+        if self._router is None:
+            return self._rejected("LLM_UNAVAILABLE", "Hãy gửi yêu cầu dạng StepSpec@1; chế độ hỏi tự do cần mô hình ngôn ngữ.")
+        try:
+            parsed = await self._router.structured(FreeTextRequest, [
+                {"role": "system", "content": _free_text_prompt()},
+                {"role": "user", "content": f"<data>\n{question}\n</data>"},
+            ])
+        except LlmError as exc:
+            code = "LLM_QUOTA_EXHAUSTED" if exc.agent_code == "LLM_QUOTA_EXHAUSTED" else "LLM_UNAVAILABLE"
+            return AgentReport(state="failed", error=ReportError(code=code, message="Mô hình ngôn ngữ không dùng được.",
+                                                                  retryable=True), summary="Mô hình ngôn ngữ không dùng được.")
+        request = parsed.value
+        if not request.answerable:
+            return self._rejected("OUT_OF_SCOPE", request.guidance or "Câu hỏi nằm ngoài dữ liệu Data Agent có thể lấy.")
+        outcome = await session.call_tool("get_user_context", {})
+        context = UserContext.model_validate_json(outcome.text)
+        spec: dict[str, Any] = {
+            "objective": question[:300],
+            "scope": {"mentions": request.mentions, "scope_all": not request.mentions},
+            "filters": request.filters,
+        }
+        if request.operation == "aggregate_metrics":
+            spec |= {"metrics": request.metrics, "group_by": request.group_by}
+        plan_id = f"ADHOC-{ctx.invocation_id}"
+        step = StepSpec(run_id=ctx.task_id, plan_id=plan_id, step_id="B1", idempotency_key=f"{plan_id}:B1",
+                        operation=request.operation, spec=spec, user_context=context, original_question=question)
+        return await run_step(step, session, self._router, user_id=ctx.user_id)
 
     async def compact(self, previous_summary: str, messages: list[Message]) -> str:
-        reply = await self._complete(
-            [
-                {"role": "system", "content": self._compact_prompt},
-                {"role": "user", "content": render_for_compaction(previous_summary, messages)},
-            ],
-            [],
-            "none",
-        )
-        return reply.content.strip()
+        """Data keeps no conversational state: every step is self-contained (R1)."""
+        return previous_summary
 
 
-class _Turn:
-    """State of one `invoke` (kept off the agent object: one agent serves concurrent turns)."""
-
-    def __init__(
-        self,
-        ctx: InvocationContext,
-        mcp: McpSession,
-        system_prompt: str,
-        complete: Callable[[list[dict[str, Any]], list[dict[str, Any]], ToolChoice], Awaitable[AssistantMessage]],
-    ) -> None:
-        self._ctx = ctx
-        self._mcp = mcp
-        self._system_prompt = system_prompt
-        self._complete = complete
-        self._mcp_tool_names: set[str] = set()
-
-    async def run(self) -> None:
-        ctx = self._ctx
-        tools: list[dict[str, Any]] = []
-        for tool in await self._mcp.list_tools():
-            if tool.name == SEND_TO_AGENT:
-                continue
-            self._mcp_tool_names.add(tool.name)
-            tools.append(openai_tool_schema(tool))
-        if ctx.peers:
-            tools.append(send_to_agent_tool(ctx.peers))
-
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": build_system_prompt(self._system_prompt, ctx.summary)},
-            *ctx.history,
-        ]
-        for step in range(1, ctx.max_steps + 1):
-            last_step = step == ctx.max_steps
-            reply = await self._complete(messages, tools, "none" if last_step else "auto")
-            if last_step and reply.tool_calls:
-                # The model ignored tool_choice="none"; there is no step left to run the calls.
-                reply = AssistantMessage(content=reply.content or STEP_LIMIT_TEXT)
-            await ctx.emit_assistant(reply.content, reply.tool_calls)
-            messages.append(reply.to_openai())
-            if not reply.tool_calls:
-                return
-            async with asyncio.TaskGroup() as tg:
-                tasks = [tg.create_task(self._run_tool_call(tc)) for tc in reply.tool_calls]
-            for tc, task in zip(reply.tool_calls, tasks, strict=True):
-                messages.append({"role": "tool", "tool_call_id": tc.id, "content": task.result()})
-
-    async def _run_tool_call(self, tc: ToolCall) -> str:
-        content = await self._tool_content(tc)
-        await self._ctx.emit_tool_result(tc.id, content)
-        return content
-
-    async def _tool_content(self, tc: ToolCall) -> str:
-        try:
-            arguments = json.loads(tc.arguments_json) if tc.arguments_json.strip() else {}
-        except json.JSONDecodeError as exc:
-            return f"error: invalid JSON arguments for '{tc.name}': {exc}"
-        if not isinstance(arguments, dict):
-            return f"error: arguments for '{tc.name}' must be a JSON object"
-
-        if tc.name == SEND_TO_AGENT and self._ctx.peers:
-            target, message = arguments.get("agent"), arguments.get("message")
-            if not isinstance(target, str) or not target.strip():
-                return "error: send_to_agent requires 'agent' (the name of the agent to call)"
-            if not isinstance(message, str) or not message.strip():
-                return "error: send_to_agent requires a non-empty 'message'"
-            return await self._ctx.call_agent(tc.id, target.strip(), message)
-        if tc.name in self._mcp_tool_names:
-            return await run_mcp_tool(self._mcp, tc.name, arguments)
-        return f"error: unknown tool '{tc.name}'"
-
-
-def build_agent(env: Mapping[str, str]) -> Agent:
-    """Raises `PluginConfigError` naming the missing or invalid setting."""
-    settings = load_settings(env)
-    for noisy in ("httpx", "httpx2", "LiteLLM"):  # per-request INFO lines drown out agent logs
-        logging.getLogger(noisy).setLevel(logging.WARNING)
-    llm = LiteLLMClient(
-        model=settings.llm_model,
-        api_base=settings.openai_base_url,
-        api_key=settings.openai_api_key,
-        timeout_s=settings.llm_timeout_s,
-    )
-    return LiteLLMAgent(llm=llm, system_prompt=load_prompt("system"), compact_prompt=load_prompt("compact"))
+def build_agent(env: Mapping[str, str]) -> DataAgent:
+    """LLM settings are optional: without them T1/T2 still run; T3, summaries by LLM and free text are off."""
+    try:
+        router: LlmRouter | None = load_llm_settings(env).router()
+    except PluginConfigError as exc:
+        log.warning("data agent without LLM (%s): T1/T2 only", exc)
+        router = None
+    return DataAgent(router=router)
