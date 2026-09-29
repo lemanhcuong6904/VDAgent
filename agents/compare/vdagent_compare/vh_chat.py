@@ -1,6 +1,5 @@
 """Deterministic Vietnamese chat adapter for the VHOP Compare demo."""
 from __future__ import annotations
-import asyncio
 import json
 import re
 import unicodedata

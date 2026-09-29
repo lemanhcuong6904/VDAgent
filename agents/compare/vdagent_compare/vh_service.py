@@ -555,7 +555,7 @@ class CompareService:
         rows, dropped, counts = [], [], []
         not_applicable = [m for m in metrics if level == "unit" and m in GROUP_ONLY]
         for metric in [m for m in metrics if m not in not_applicable]:
-            def value(units):
+            def value(units, metric=metric):
                 if metric == "absorption_rate":
                     n = len(units)
                     return (rounded(Decimal(sum(u.status == "sold" for u in units)) / n * 100), n) if n >= min_n else (None, n)
