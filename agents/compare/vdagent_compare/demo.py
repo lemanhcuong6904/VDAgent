@@ -107,8 +107,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="in artifact gốc (JSON), chỉ engine")
     parser.add_argument("--artifact-out", type=Path, help="ghi artifact gốc ra file")
     args = parser.parse_args(argv)
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
+    for stream in (sys.stdout, sys.stderr):  # Windows consoles default to a legacy code page
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     show = (lambda text: text) if args.markdown else to_terminal
 
     if args.json or args.request_file or args.artifact_out:
@@ -128,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     mode = "mô hình " + ", ".join(agent.model_names) if agent.has_model else "quy tắc + câu mẫu (không dùng mô hình)"
     history: list[dict[str, Any]] = []
     if not args.chat:
+        print(f"[Compare · {mode}]", file=sys.stderr)
         print(show(_ask(agent, history, args.question or "Tại sao A12-08 bán chậm?")))
         return 0
     print(f"Compare Agent · {mode}. Gõ câu hỏi, 'thoát' để dừng.\n{HELP}\n")

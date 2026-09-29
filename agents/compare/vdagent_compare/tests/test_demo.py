@@ -20,8 +20,9 @@ def test_markdown_becomes_plain_aligned_text():
 
 def test_single_question_prints_a_plain_answer(capsys):
     assert demo.main(["--question", "Tại sao A12-08 bán chậm?", "--no-llm"]) == 0
-    out = capsys.readouterr().out
-    assert "62.500.000" in out and "**" not in out and "###" not in out
+    captured = capsys.readouterr()
+    assert "62.500.000" in captured.out and "**" not in captured.out and "###" not in captured.out
+    assert "không dùng mô hình" in captured.err  # which brain answered, kept off stdout
 
 
 def test_json_flag_prints_the_raw_artifacts(capsys):
