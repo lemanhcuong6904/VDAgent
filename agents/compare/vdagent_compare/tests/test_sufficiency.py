@@ -152,3 +152,20 @@ def test_ranking_order_uses_contract_names_and_accepts_the_old_one():
     legacy = service.run({**base, "rankingOptions": {"order": "attention"}})["comparison"]["rankingList"]["order"]
     best = service.run({**base, "rankingOptions": {"order": "best_first"}})["comparison"]["rankingList"]["order"]
     assert (default, legacy, best) == ("attention_first", "attention_first", "best_first")
+
+
+def test_limit_sentence_carries_no_advice_word():
+    from vdagent_compare.phrasing import check_phrase
+
+    cmp = CompareService().run({"subject": {"entityType": "unit", "entityCode": "A12-08"}})["comparison"]
+    assert check_phrase(cmp["dataSufficiency"]["summary"], cmp["dataSufficiency"]["summary"]) == []
+
+
+def test_rendered_percent_gaps_carry_sign_and_percent():
+    from vdagent_compare.vh_chat import render
+
+    text = render(CompareService().run({"subject": {"entityType": "unit", "entityCode": "A12-08"},
+                                        "metricsRequested": [PRICE, DOM, "inquiry_leads_30d"]}))
+    assert "| Giá ròng/m² | 72.500.000 | 62.500.000 | 10.000.000 | +16% | 6/6 |" in text
+    assert "| DOM | 138 | 48 | 90 | +187,5% | 6/6 |" in text
+    assert "| -62,5% |" in text

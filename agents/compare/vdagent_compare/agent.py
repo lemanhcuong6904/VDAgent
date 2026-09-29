@@ -166,8 +166,8 @@ class _Turn:
     async def _answer(self, question: str, result: dict) -> str:
         rendered = render(result)
         cmp = result["comparison"]
-        if cmp["status"] == "INVALID" or cmp.get("clarification"):
-            return rendered
+        if cmp["status"] == "INVALID" or cmp.get("clarification") or cmp.get("reason_code") == "INSUFFICIENT_EVIDENCE":
+            return rendered  # nothing to word: an error, a question, or "not enough data" (said by the engine)
         llm = self._llm
         facts = phrasing.facts_from(rendered)
         text = await self._model(lambda: phrasing.phrase(llm, question, facts)) if llm else None

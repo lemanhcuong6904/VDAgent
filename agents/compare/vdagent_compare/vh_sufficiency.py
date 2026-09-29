@@ -79,5 +79,5 @@ def summary(level: str, reasons: Sequence[str], peer_count: int) -> str:
         return f"So sánh đầy đủ: nhóm {peer_count} căn tương đồng, đủ dữ liệu."
     detail = ", ".join(REASON_LABELS[r] for r in reasons)
     if level == "LIMITED":
-        return f"So sánh có giới hạn: nhóm {peer_count} căn tương đồng ({detail}); chỉ nên đọc như mô tả."
+        return f"So sánh có giới hạn: nhóm {peer_count} căn tương đồng ({detail}); chỉ dùng để mô tả, chưa đủ để kết luận."
     return f"Không đủ dữ liệu để so sánh: nhóm {peer_count} căn tương đồng ({detail})."

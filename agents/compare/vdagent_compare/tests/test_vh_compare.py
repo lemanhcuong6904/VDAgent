@@ -168,7 +168,7 @@ def test_hero_full_table_matches_golden_content_hash():
     # v5.3 added `dataSufficiency` (spec §2.4); without that field the hash is still the v5.2
     # golden dd9ccf894e9f1064f2b3ad1bcd0e4f24272f5003cc8aa3528e8eabdde8d98bdf.
     assert result["comparison"]["content_hash"] == (
-        "7f7603cf643217c1548cc83e8fd7395cdd3ea3fd75d5a5b948a9ed99d0ebcca1")
+        "d7200241dd3f61b990caa3d4eb16d923a20f094744f447f7aea3331fa188bc81")
 
 
 def test_chat_does_not_silently_choose_wrong_mode_or_ignore_entities():

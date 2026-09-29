@@ -126,6 +126,13 @@ def _num(value: Any) -> str:
         return f"{value:,.2f}".rstrip("0").rstrip(".").replace(",", "_").replace(".", ",").replace("_", ".")
     return str(value)
 
+def _pct(value: Any) -> str:
+    """A percentage gap as read aloud: sign, Vietnamese decimal comma, percent sign."""
+    if value is None:
+        return "không xác định"
+    return ("+" if value > 0 else "") + _num(value) + "%"
+
+
 def _table(headers: list[str], rows: list[list[Any]]) -> str:
     return "\n".join(["| " + " | ".join(headers) + " |",
                       "| " + " | ".join("---" for _ in headers) + " |",
@@ -193,7 +200,7 @@ def render(result: dict[str, Any]) -> str:
                     ["Chỉ số", "Căn", "Trung vị nhóm", "Chênh", "Chênh %", "Hạng"],
                     [[LABELS[row["metric"]][0], _num(row["subjectValue"]),
                       _num(row["benchmark"]["value"]), _num(row["absGap"]),
-                      _num(row["pctGap"]), f"{row['rankInGroup']}/{row['groupSize']}"]
+                      _pct(row["pctGap"]), f"{row['rankInGroup']}/{row['groupSize']}"]
                      for row in cmp["metrics"]]
                 ))
             values = cmp.get("peerValues", [])
@@ -223,7 +230,7 @@ def render(result: dict[str, Any]) -> str:
             lines.append(_table(
                 ["Chỉ số", "Đối tượng", "Đích", "Chênh", "Chênh %", "Vị trí"],
                 [[LABELS.get(row["metric"], (row["metric"],))[0], _num(row["subjectValue"]),
-                  _num(row["targetValue"]), _num(row["absGap"]), _num(row["pctGap"]),
+                  _num(row["targetValue"]), _num(row["absGap"]), _pct(row["pctGap"]),
                   POSITION_LABELS.get(row["position"], row["position"])]
                  for row in direct["rows"]]
             ))
@@ -235,7 +242,7 @@ def render(result: dict[str, Any]) -> str:
             for row in group["metrics"]:
                 rows.append([group["key"], LABELS.get(row["metric"], (row["metric"],))[0],
                              _num(row["benchmark"]["value"]), row["benchmark"]["n"],
-                             _num(row["pctGap"]), f"{row['rank']}/{row['of']}"])
+                             _pct(row["pctGap"]), f"{row['rank']}/{row['of']}"])
         if rows:
             lines.append(_table(["Nhóm", "Chỉ số", "Trung vị", "n", "Chênh %", "Hạng"], rows))
     elif mode == "ranking" and cmp.get("rankingList"):

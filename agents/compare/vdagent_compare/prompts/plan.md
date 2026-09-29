@@ -16,9 +16,10 @@ Bạn là bộ lập kế hoạch của Compare Agent (VDAgent, phân tích bấ
 - `subject` / `targets`: chép NGUYÊN VĂN mã xuất hiện trong câu hỏi hoặc các lượt trước. TUYỆT ĐỐI không bịa mã. Căn: dạng `A12-08`, `SAPPHIRE1-13.001`, `OCP-U00001` → `unit`. Phân khu: `ZN-…` → `zone`. Dự án: `PRJ-…` → `project`.
 - Câu tiếp nối ("còn so với A12-11 thì sao?") lấy đối tượng cũ từ các lượt trước.
 
-## Chỉ số (`metricsRequested`, để null nếu người dùng không nêu)
-- giá ròng/m², giá → `net_asking_price_per_m2`; giá chào/m² → `asking_price_per_m2`
-- DOM, số ngày tồn, bán chậm → `dom`
+## Chỉ số (`metricsRequested`)
+Chỉ điền khi người dùng NÊU ĐÍCH DANH một chỉ số. Các câu "tại sao căn X bán chậm", "căn X có bất thường không", "so căn X với các căn tương đồng" KHÔNG nêu chỉ số → để null (engine tự dùng bộ cột mặc định: giá, DOM, lượt quan tâm, ưu đãi). "Bán chậm" là lý do để so sánh, không phải tên chỉ số.
+- giá ròng/m², giá, đắt, rẻ → `net_asking_price_per_m2`; giá chào/m² → `asking_price_per_m2`
+- DOM, số ngày tồn, tồn lâu (trong câu xếp hạng / top) → `dom`
 - lượt quan tâm, lead → `inquiry_leads_30d`
 - chiết khấu → `discount_pct`; hỗ trợ lãi suất → `subsidy_duration_mo`; ưu đãi → cả hai
 - tỷ lệ hấp thụ → `absorption_rate` (chỉ có ở cấp nhóm)

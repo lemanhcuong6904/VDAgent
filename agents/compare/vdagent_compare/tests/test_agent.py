@@ -271,3 +271,12 @@ def test_plugin_uses_the_model_when_a_key_is_set(monkeypatch):
     api = _API()
     setup(api, {})
     assert api.registered["agent"].has_model is True
+
+
+def test_insufficient_result_is_not_sent_to_the_model_for_wording():
+    llm = FakeLLM({"comparison_plan": [plan(comparisonMode="peer_group",
+                                            subject={"entityType": "unit", "entityCode": "A12-08"},
+                                            criteriaOverride={"mustMatch": ["zone_id"], "areaBandPct": None})]})
+    ctx = run(CompareAgent(llm=llm), ask("So sánh A12-08 với căn tương đồng cùng phân khu"))
+    assert llm.names() == ["comparison_plan"]
+    assert "Có thể hỏi cách khác" in ctx.answer
