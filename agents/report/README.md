@@ -2,7 +2,9 @@
 
 Builds charts (`create_chart`) and a saved markdown report (`save_report`) from the findings and datasets it is given; replies with the report id.
 
-A Backend plugin (see [`agents/_template`](../_template/README.md) and the `vdagent_sdk` docstring):
+A Backend plugin: the Backend imports this package at startup and runs the agent's turns in its own
+process; the agent reports every step through the `ctx` it receives (to build one, see
+[`agents/_template`](../_template/README.md)).
 `vdagent_report/__init__.py` exports `setup(api, opts)`, which registers the agent. The brain is a
 hand-built LangGraph `StateGraph` (`graph.py`) with a quality gate:
 

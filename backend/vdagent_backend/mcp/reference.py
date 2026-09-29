@@ -63,7 +63,7 @@ Errors any tool can return:
 | Text | Cause | Fix |
 |---|---|---|
 | `error: unknown tool '<name>'` | The name is not in the catalog. | Only offer names from `tools/list`. |
-| `error: tool '<name>' is not available to the <agent> agent` | Your agent has no permission for it. | Ask a peer that has it, or add your agent to `PERMISSIONS` in `vdagent_backend/mcp/tools.py`. |
+| `error: tool '<name>' is not available to the <agent> agent` | Your agent has no permission for it. | Ask a peer that has it, or grant it in `vdagent_backend/mcp/tools.py` (`ALL_AGENTS` or `PERMISSIONS`). |
 | `error: '<arg>' is required and must be a non-empty string` (or `must be an integer`, `must be between …`, `must be a non-empty array of strings`) | A bad argument. | Follow the tool's input schema. |
 | `error: dataset not found` | Wrong id, or the dataset belongs to another user. | Use an id created in this user's tasks. |
 
@@ -104,8 +104,8 @@ def _matrix() -> str:
     lines = [
         "## Who can call what",
         "",
-        "An agent that is not listed here sees no MCP tools. Grant tools in `PERMISSIONS` in"
-        " `vdagent_backend/mcp/tools.py`.",
+        "An agent that is not listed here sees no MCP tools. Grant tools in `vdagent_backend/mcp/tools.py`:"
+        " add the agent to `ALL_AGENTS` for the tools every agent gets, and to `PERMISSIONS` for the others.",
         "",
         "| Tool | " + " | ".join(agents) + " |",
         "|---|" + "|".join(":-:" for _ in agents) + "|",

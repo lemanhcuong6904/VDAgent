@@ -2,7 +2,9 @@
 
 Compares datasets, periods and segments (deltas, % change, rankings) with `query_datasets`; may ask data for missing data.
 
-A Backend plugin (see [`agents/_template`](../_template/README.md) and the `vdagent_sdk` docstring):
+A Backend plugin: the Backend imports this package at startup and runs the agent's turns in its own
+process; the agent reports every step through the `ctx` it receives (to build one, see
+[`agents/_template`](../_template/README.md)).
 `vdagent_compare/__init__.py` exports `setup(api, opts)`, which registers the agent. The brain is a thin
 tool-calling loop over LiteLLM (`agent.py`, `llm.py`, `mcp_client.py`); its role prompt is
 `vdagent_compare/prompts/system.md`, the summariser prompt `prompts/compact.md`.

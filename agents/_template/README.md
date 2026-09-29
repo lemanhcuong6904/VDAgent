@@ -3,10 +3,12 @@
 Copy this folder to build a vdagent agent **plugin**. The Backend imports your package at startup
 (it is listed under `plugins:` in `backend/config.yaml`), calls its `setup(api, opts)`, and runs
 your agent's turns in its own process and event loop. You write the **brain** with whatever you
-like — plain code, LiteLLM, LangChain/LangGraph, the OpenAI Agents SDK. The only contract is the
-interface in `vdagent_sdk` (`sdk/vdagent_sdk/__init__.py`; its docstring is the reference).
+like — plain code, LiteLLM, LangChain/LangGraph, the OpenAI Agents SDK. Your only dependency on the
+Backend is the `vdagent_sdk` package (`sdk/`), summarised below.
 
-Design: [`docs/superpowers/specs/2026-09-26-agent-plugins-design.md`](../../docs/superpowers/specs/2026-09-26-agent-plugins-design.md).
+For the full reference (a complete example turn, the exact failure messages, what the Backend does
+around a turn, troubleshooting), run `make sdk-docs-serve` and open http://127.0.0.1:8080. The same
+text is the docstring of `sdk/vdagent_sdk/__init__.py`.
 
 ## What a plugin is
 
@@ -23,8 +25,8 @@ agents/<name>/
 ```
 
 The **Backend** owns everything shared: loading plugins, the agent registry, MCP tool permissions,
-routing and deadlock checks for agent calls, the turn rules, and every agent's message history. An
-agent keeps no state between turns.
+routing and deadlock checks for agent calls, the checks on how a turn reports its steps, and every
+agent's message history. An agent keeps no state between turns.
 
 ## Create a plugin
 
@@ -51,7 +53,7 @@ agent keeps no state between turns.
 
 ## Configuration
 
-Plugins share the Backend's process, so **never write `os.environ`** (rule R11): read your own
+Plugins share the Backend's process, so **never write `os.environ`**: read your own
 `agents/<name>/.env` with `dotenv.dotenv_values()` inside `setup()` and pass the values to your
 agent. The bundled agents overlay the file on the process environment (`settings.read_env()`), so
 the file wins. Raise `vdagent_sdk.PluginConfigError` for a missing or bad setting: the Backend logs
@@ -86,14 +88,14 @@ already took. `api` is only valid while `setup` runs.
 |---|---|
 | `invocation_id`, `task_id`, `user_id` | Ids of this turn. |
 | `summary` | Rolling summary of this user's earlier tasks (`""` if none). Put it in your system prompt. |
-| `history` | Uncompacted messages as OpenAI chat dicts; the last one is the inbound `[from: <sender>] …` message. |
+| `history` | This user's messages with your agent not yet folded into `summary`, as OpenAI chat dicts. Incoming messages read `[from: <sender>] …` (`user` or the calling agent); the last one started this turn. |
 | `peers` | Every other registered agent (`name`, `description`). |
-| `mcp` | `url` + `token` of the Backend's MCP server (streamable HTTP, `Authorization: Bearer <token>`). |
+| `mcp` | `url` + `token` of the Backend's MCP server (streamable HTTP, `Authorization: Bearer <token>`); the token works only during this turn, and `tools/list` returns only the tools granted to your agent. |
 | `max_steps` | Budget of assistant steps for this turn. |
 | `memory` | This user's notes for your agent, kept by the Backend across tasks: `save(text, kind, embedding=None)`, `search(query, limit, embedding=None)` (keyword, or cosine nearest when you pass your own embedding), `recent(limit)`, `delete(id)`. What to remember and what reaches the model is yours to decide. |
 | `await emit_assistant(content, tool_calls=())` | Record one assistant step (persisted and shown in the UI before it returns). |
 | `await emit_tool_result(tool_call_id, content)` | Record one tool result. |
-| `await call_agent(tool_call_id, target, message) -> str` | Ask another agent for a `send_to_agent` tool call; returns its reply or `error: …`. |
+| `await call_agent(tool_call_id, target, message) -> str` | Ask another agent for a `send_to_agent` tool call; returns its reply or an `error: …` text (unknown agent, calling yourself, depth limit, deadlock, peer failed). Emit the reply with `emit_tool_result`. |
 
 A turn, step by step:
 
@@ -111,24 +113,35 @@ sequenceDiagram
   A-->>BE: return → "final answer" is the answer
 ```
 
-### Rules
+### Requirements
 
-| # | Rule | Checked by the Backend |
-|---|---|:-:|
-| R1 | No hidden memory between turns: `summary`, `history` and `memory` are the whole truth. | |
-| R2 | Emit an assistant step (with its tool calls) before any result or `call_agent` for them. A new step only once every call of the previous step has a result. Tool-call ids non-empty and unique in a step. | ✓ |
-| R3 | Every tool call gets exactly one `emit_tool_result` — including `send_to_agent`: `call_agent`, then emit its reply. | ✓ |
-| R4 | `call_agent` only for an unresolved `send_to_agent` call of the latest step, once per id; no result for that id while its call is pending. | ✓ |
-| R5 | When `invoke` returns, every call is resolved and the last step has no tool calls — its content is the final answer. Nothing may be emitted afterwards. | ✓ |
-| R6 | Tool failures become result content `error: …`; the turn continues. Model timeout → raise `AgentTimeoutError` (reported as `DEADLINE_EXCEEDED`). Anything else raised fails the turn (`INTERNAL`). | mapping ✓ |
-| R7 | At most `ctx.max_steps` assistant steps. Internal model calls (embeddings, extraction, judges) are your own budget. | |
-| R8 | One agent object serves concurrent turns: keep per-turn state off `self`. | |
-| R9 | Never swallow `asyncio.CancelledError` (the user cancelled the task, or the Backend is stopping). | |
-| R10 | Never block the event loop — it is the Backend's. Use `asyncio.to_thread` for blocking work. | |
-| R11 | Never write `os.environ` or other process-global state. | |
+The Backend checks these. Breaking one makes the offending `ctx` call raise `ContractViolation`
+and fails the turn with `contract violation: <message>`, even if you catch the exception:
 
-A broken rule raises `ContractViolation` at the offending call and fails the turn with
-`contract violation: …`, even if you catch it. After the turn every `ctx` method raises.
+- **Record the step before its results.** Call `emit_assistant(content, tool_calls)` before any
+  `emit_tool_result` or `call_agent` for those calls; start the next step only after every call of
+  this step has a result. Tool-call ids are non-empty and unique within a step.
+- **Give every tool call exactly one result**, including `send_to_agent` calls: `call_agent`, then
+  `emit_tool_result` with its reply.
+- **Call other agents only through `send_to_agent`.** `call_agent` only for a `send_to_agent` call of
+  the latest step, once per id; no result for that id while its `call_agent` is still waiting.
+- **End with an answer.** When `invoke` returns, every call has a result and the last step has no
+  tool calls; its content is the answer. Nothing may use `ctx` after that.
+
+Nothing checks these, so a mistake shows up as wrong behaviour:
+
+- **Keep state only in `ctx`.** `summary`, `history` and `memory` are all you know about the user;
+  save what must outlive the turn with `ctx.memory`.
+- **Keep per-turn state off `self`.** One agent object serves concurrent turns of different users.
+- **Report tool failures as results.** A failed tool becomes result content `error: …` and the turn
+  continues. A model timeout: raise `AgentTimeoutError` (the turn fails with `DEADLINE_EXCEEDED`).
+  Anything else raised fails the turn with `INTERNAL`.
+- **Stay within `ctx.max_steps`** assistant steps; give the model no tools on the last one.
+  Internal model calls (embeddings, extraction, judges) do not count.
+- **Let cancellation through.** Never swallow `asyncio.CancelledError` (the user cancelled the task,
+  or the Backend is stopping).
+- **Do not block the event loop.** It is the Backend's; use `asyncio.to_thread` for blocking work.
+- **Do not change process-wide state** such as `os.environ`.
 
 ## Tools
 
@@ -224,14 +237,15 @@ class SdkBackedAgent:
 
 Check that MCP tool calls reach `on_tool_end` with a `ToolContext` in your SDK version; otherwise
 emit their results from a wrapper. `MaxTurnsExceeded` ends the run without a final step — emit
-one (R5). Map the SDK's timeout exception to `AgentTimeoutError`.
+one, because a turn must end with a step that has no tool calls. Map the SDK's timeout exception to
+`AgentTimeoutError`.
 
 ### Both
 
 - Put `ctx.summary` in the system prompt, feed `ctx.history` as the conversation.
-- Cap model calls at `ctx.max_steps` (R7) and make sure the turn ends with an assistant step that
-  has no tool calls (R5).
-- Build per-turn objects inside `invoke`; the agent object is shared by concurrent turns (R8).
+- Cap model calls at `ctx.max_steps` and make sure the turn ends with an assistant step that has no
+  tool calls.
+- Build per-turn objects inside `invoke`; the agent object is shared by concurrent turns.
 
 ## Testing
 
