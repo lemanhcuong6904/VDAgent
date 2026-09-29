@@ -40,7 +40,12 @@ vdagent-insight = { workspace = true }
 vdagent-report = { workspace = true }
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-asyncio>=0.24", "httpx>=0.27"]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+    "pdoc>=16.0.0",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
