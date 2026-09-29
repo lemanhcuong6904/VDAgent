@@ -271,17 +271,3 @@ def answer(message: str, service: CompareService | None = None) -> str:
         return render((service or CompareService()).run(request))
     except (KeyError, TypeError, ValueError) as exc:
         return f"Yêu cầu chưa hợp lệ: {exc}. {HELP}"
-
-
-class DemoAgent:
-    """Backend plugin for the copied VHOP data pack; no model key is needed."""
-    def __init__(self):
-        self.service = CompareService()
-
-    async def invoke(self, ctx) -> None:
-        message = ctx.history[-1]["content"] if ctx.history else ""
-        reply = await asyncio.to_thread(answer, message, self.service)
-        await ctx.emit_assistant(reply)
-
-    async def compact(self, previous_summary: str, messages: list) -> str:
-        return previous_summary

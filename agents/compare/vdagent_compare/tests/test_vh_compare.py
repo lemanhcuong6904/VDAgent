@@ -103,9 +103,11 @@ def test_hash_is_stable_across_run_ids_and_chat_parses_vietnamese():
     assert "Hạng" in render(call("ZURICH-20.022"))
 
 @pytest.mark.needs_pack
-def test_backend_plugin_demo_mode_registers_and_answers_without_model_key():
+def test_backend_plugin_demo_mode_registers_and_answers_without_model_key(monkeypatch):
     import asyncio
     from vdagent_compare import setup
+
+    monkeypatch.setattr("vdagent_compare.read_env", lambda: {})
 
     class API:
         def __init__(self):
@@ -116,13 +118,17 @@ def test_backend_plugin_demo_mode_registers_and_answers_without_model_key():
             self.agent = agent
 
     class Context:
-        history = [{"role": "user", "content": "So sánh căn ZURICH-20.022 với các căn tương đồng"}]
+        history = [{"role": "user", "content": "[from: user] So sánh căn ZURICH-20.022 với các căn tương đồng"}]
+        max_steps = 12
 
         def __init__(self):
             self.reply = None
 
         async def emit_assistant(self, content, tool_calls=()):
             self.reply = content
+
+        async def emit_tool_result(self, tool_call_id, content):
+            pass
 
     api, ctx = API(), Context()
     setup(api, {"vhop_demo": True})

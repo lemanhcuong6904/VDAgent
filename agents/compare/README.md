@@ -1,53 +1,76 @@
-# Compare agent: VHOP demo
+# compare agent
 
-The Compare plugin runs the approved v5.1 deterministic comparison rules over the copied VHOP Data Package. Backend registration is enabled by opts: {vhop_demo: true} in both backend config files. It needs no model key. The existing LiteLLM retail comparison loop remains available when that option is absent.
+Trả lời câu hỏi *"So với các căn thật sự tương đồng, căn này chênh bao nhiêu và đứng thứ mấy?"* —
+nhóm căn tương đồng, so trực diện hai đối tượng, so theo nhóm (tầng, hướng, view, phân khu), xếp hạng.
+Compare nói **khác bao nhiêu**; Insight nói **vì sao**. Spec đầy đủ: *Compare Agent — Spec v5.3*
+(Drive của team Agent B).
 
-The source CSV pack was copied read-only from Team_6_cAi, branch origin/feature/warehouse-data-pack, commit adf2d05d06211b7462c92dda73844a86d4316387. The copied files are under data/vhop. Do not edit the source repo. The CSV snapshot has 3,000 units, snapshot SNAP-20260630-01, semantic config 3.1.0. A12-08 is absent from that CSV, so data/vhop/hero_a12_08.json is a separate regression fixture from the approved golden case.
+## Cách agent làm việc
 
-## Run in the browser
+| Bước | Ai làm | File |
+|---|---|---|
+| Hiểu câu hỏi → kế hoạch so sánh (`ComparisonPlan`) | Mô hình `gpt-6-luna` (dự phòng `gpt-4o-mini`); code kiểm kế hoạch, **mã căn phải có trong câu hỏi** | `planner.py`, `prompts/plan.md` |
+| Không có / lỗi mô hình, hoặc kế hoạch sai | Bộ phân tích câu theo quy tắc (tiếng Việt có / không dấu) | `vh_chat.parse_request` |
+| Mọi con số: mốc chuẩn, chênh, hạng, đáng chú ý, mức đủ dữ liệu | Engine tất định (`Decimal`, ROUND_HALF_UP) | `vh_service.py`, `vh_peers.py`, `vh_math.py`, `vh_sufficiency.py` |
+| Câu trả lời | Mô hình viết 2–4 câu; code kiểm **mọi số phải có trong kết quả**, cấm từ nhân quả / khuyến nghị, sai thì viết lại 1 lần rồi dùng câu mẫu. Bảng số luôn do engine in | `phrasing.py`, `prompts/phrase.md`, `vh_chat.render` |
 
-From the repository root:
+Mỗi lượt ghi một bước công cụ `run_comparison` (tham số = yêu cầu đã chuẩn hóa, kết quả = trạng thái,
+mức đủ dữ liệu, `artifact_id`, `content_hash`) để truy vết. Tin nhắn là JSON (từ agent khác) thì
+bỏ qua mô hình, chạy thẳng engine.
 
-    uv sync --frozen
-    uv run python data/seed_warehouse.py
-    uv run python data/seed_users.py
-    cd frontend
-    npm ci
-    npm run build
-    cd ..
-    uv run uvicorn vdagent_backend.app:app --host 127.0.0.1 --port 8000
+**3 mức đủ dữ liệu** (spec §2.4, cùng bậc với Insight): **Đầy đủ** ≥ 10 căn tương đồng, đủ dữ liệu ·
+**Hạn chế** 5–9 căn / đã mở tầng liền kề / thiếu dữ liệu một phần → câu trả lời mở đầu bằng giới hạn ·
+**Không đủ** < 5 căn → không đưa số, gợi ý cách hỏi khác (`suggestedNextSteps`).
 
-Open http://127.0.0.1:8000, choose Alice and select the compare agent in the left panel. The other agents still need their own model settings if used; Compare works without them in demo mode.
-## Demo questions
+**Nhóm tương đồng do Data chọn** (spec v5.3 §1.5): yêu cầu có `peerSet` (gói `fetch_peer_candidates`:
+`unit_key`, `match_tier` strict/expanded/excluded) thì Compare dùng nguyên, chỉ kiểm bất biến; không có
+thì engine tự lọc theo luật peer của team (chế độ dùng cho golden và demo).
 
-1. "So sánh căn ZURICH-20.022 với các căn tương đồng" — real CSV unit with 10 eligible peers. Shows benchmark, exclusions and evidence.
-2. "So sánh A12-08 với A12-11" — regression fixture, direct comparison. Both names are from the fixture, not the CSV.
-3. "Xếp hạng DOM của ZURICH-20.022" — full project ranking; the peer group is not reused as the ranking population.
-4. "So sánh DOM 2PN theo tầng trong PRJ-VHOP" — cohort across available 2PN units.
-5. "PRJ-VHOP so với thị trường" — correctly returns insufficient evidence because the Data Package has no comparable external market benchmark.
-6. "So sánh A12-08 chỉ với các căn cùng phân khu" — narrows the peer rules; 4 peers is insufficient, so no numeric conclusion is shown.
-7. "So sánh A12-08 về giá, DOM, lượt quan tâm, ưu đãi" — shows all five comparison metrics, the per-unit table, and notable differences.
-8. "So sánh ZURICH-20" — asks the user to choose a full unit code from matching units.
+## Dữ liệu
 
-The chat also accepts a full JSON Compare request, for example:
+- Căn mẫu **A12-08** (hero case) đi kèm plugin: `vdagent_compare/fixtures/hero_a12_08.json`.
+- Gói CSV VHOP (3.000 căn) **thuộc team DATA, không commit ở đây**. Compare tìm lần lượt:
+  `VDAGENT_VHOP_DATA_DIR` → `warehouse/vhop` → `var/vhop` → `data/vhop`. Lấy bản đã phát hành trên
+  nhánh `DATA` (commit `adf2d05`) vào `var/vhop` (đã gitignore):
 
-    {"subject":{"entityType":"unit","entityCode":"ZURICH-20.022"},"comparisonMode":"peer_group","metricsRequested":["net_asking_price_per_m2","dom"]}
+  ```
+  git archive adf2d05 warehouse/vhop | tar -x -C var --strip-components=1
+  ```
 
-The response displays the artifact ID and content hash. Numeric calculations use Decimal and run without a model. The engine returns JSON peer_definition and comparison artifacts through CompareService.run, including source refs, confidence, limitations and chart hints.
+## Chạy
 
-## Offline fallback
+Cấu hình trong `agents/compare/.env` (gitignored, chép từ `.env.example`). **Mọi biến đều tùy chọn**:
+không có `OPENAI_API_KEY` plugin vẫn nạp và trả lời bằng quy tắc + câu mẫu.
 
-    uv run python -m vdagent_compare.demo --artifact-out var/compare-demo.json
+| Biến | Mặc định | |
+|---|---|---|
+| `OPENAI_API_KEY` | — | Có thì dùng mô hình |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Endpoint tương thích OpenAI |
+| `LLM_MODEL` / `LLM_FALLBACK_MODEL` | `gpt-6-luna` / `gpt-4o-mini` | Thử lần lượt |
+| `LLM_TIMEOUT_S` | `20` | Mỗi lần gọi; cả lượt giữ trong 25 giây |
+| `COMPARE_LLM` | `on` | `off` = không gọi mô hình dù có key |
 
-This prints the same real CSV comparison and saves both JSON artifacts; no browser or model key is needed.
+**Terminal** (không cần UI):
+
+```
+uv run python -m vdagent_compare.demo --question "Tại sao A12-08 bán chậm?"
+uv run python -m vdagent_compare.demo --chat            # hỏi liên tục, nhớ câu trước
+uv run python -m vdagent_compare.demo --question "..." --json   # artifact gốc
+```
+
+**Backend + UI:** `make backend` (plugin `vdagent_compare` đã có trong `backend/config.yaml`), chọn
+agent `compare`.
+
+Câu hỏi mẫu: *Tại sao A12-08 bán chậm?* · *So sánh A12-08 với A12-11* · *So sánh A12-08 với căn tương
+đồng cùng phân khu* · *So sánh căn SAPPHIRE1-13.001 với các căn tương đồng* · *Xếp hạng DOM của
+SAPPHIRE1-13.001* · *So sánh DOM 2PN theo tầng trong PRJ-VHOP*.
 
 ## Test
 
-    uv run pytest -q agents/compare
+```
+uv run pytest agents/compare
+```
 
-The existing LiteLLM tests run with the new tests. The new tests cover the A12-08 golden numbers, a real CSV peer group, all internal modes, unavailable market benchmark, scope denial, hash stability and backend demo registration.
-
-## Scope of this demo
-
-The copied CSV data is synthetic. The demo chat does not load per-user project/zone grants from the app database; structured Compare requests support an explicit allowedProjectIds/allowedZoneIds scope, which the engine enforces. For production, the Backend must supply those grants from authenticated user context. Group metrics and any comparison against the outside market must use an approved, same-definition Data Package.
-The browser flow is a demo adapter. It does not persist artifacts in a shared store or execute the v5.1 batch run (GC-15). Those integrations require the production orchestrator and artifact services. The deterministic service covers the interactive comparison modes and returns artifacts inline.
+Test cần gói CSV được đánh dấu `needs_pack` và tự bỏ qua khi máy chưa có gói. Test agent dùng mô hình
+giả (`FakeLLM`), không gọi mạng. Đối chiếu 26 golden case (kho spec của Compare Owner):
+`COMPARE_DEMO_DIR=agents/compare uv run python <kho-spec>/_tools/test/golden/golden_vs_python.py` → 42/42.
