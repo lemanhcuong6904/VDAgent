@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Mapping
 
-from .vh_data import DataPackage, Unit, default_data_root, load_package_for
+from .vh_data import DataPackage, Unit, load_hero_package, load_package_for
 from .vh_math import (
     DIRECTIONS, GROUP_ONLY, SOURCES, UNITS, benchmark, compare_value,
     confidence, magnitude, number, rounded, threshold,
@@ -120,7 +120,8 @@ def _source_tables(metrics: list[dict]) -> list[str]:
 
 class CompareService:
     def __init__(self, root: Path | None = None):
-        self.root = root or default_data_root()
+        # None: find the CSV pack on first CSV question (hero questions never need it).
+        self.root = root
 
     def _env(self, package: DataPackage, raw: Mapping[str, Any], kind: str,
              status: str, limitations: list[str], sources: list[str] | None = None,
@@ -164,7 +165,7 @@ class CompareService:
                     for key in ("entityCode", "entityId") if subject_ref.get(key) is not None)
         )
         if not valid_subject:
-            package = load_package_for({}, self.root)
+            package = load_hero_package()  # no subject → no pack to pick; ids only
             return self._invalid(package, raw, str(raw.get("comparisonMode") or "peer_group"),
                                  "INVALID_INPUT", "Thiếu subject.entityCode hoặc subject.entityId.")
         package = load_package_for(subject_ref, self.root)

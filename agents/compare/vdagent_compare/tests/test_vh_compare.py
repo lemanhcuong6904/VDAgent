@@ -1,6 +1,8 @@
 """Regression tests over the copied Data pack and approved A12-08 fixture."""
 from __future__ import annotations
 
+import pytest
+
 from vdagent_compare.vh_chat import parse_request, render
 from vdagent_compare.vh_service import CompareService
 
@@ -28,6 +30,7 @@ def test_hero_golden_peer_group_numbers_and_exclusions():
     assert len(cmp["notableDifferences"]) == 2
 
 
+@pytest.mark.needs_pack
 def test_real_csv_peer_group_has_sufficient_sample():
     result = call("ZURICH-20.022")
     assert result["peer_definition"]["peerCount"] == 10
@@ -35,6 +38,7 @@ def test_real_csv_peer_group_has_sufficient_sample():
     assert all(row["benchmark"]["n"] == 10 for row in result["comparison"]["metrics"])
 
 
+@pytest.mark.needs_pack
 def test_head_to_head_unit_no_materiality_and_group_has_medians():
     result = call("A12-08", "head_to_head",
                   targets=[{"entityType": "unit", "entityCode": "A12-11"}])
@@ -55,6 +59,7 @@ def test_head_to_head_unit_no_materiality_and_group_has_medians():
                for row in grouped["headToHead"]["rows"])
 
 
+@pytest.mark.needs_pack
 def test_cohort_and_ranking_use_full_scope():
     cohort = SERVICE.run({
         "subject": {"entityType": "project", "entityCode": "PRJ-VHOP"},
@@ -74,6 +79,7 @@ def test_cohort_and_ranking_use_full_scope():
     assert ranking["rows"][0]["value"] >= ranking["rows"][-1]["value"]
 
 
+@pytest.mark.needs_pack
 def test_unsupported_market_and_permission_never_leak_numbers():
     market = SERVICE.run({
         "subject": {"entityType": "project", "entityCode": "PRJ-VHOP"},
@@ -86,6 +92,7 @@ def test_unsupported_market_and_permission_never_leak_numbers():
         "INVALID", "PERMISSION_DENIED", [])
 
 
+@pytest.mark.needs_pack
 def test_hash_is_stable_across_run_ids_and_chat_parses_vietnamese():
     a = call("A12-08", run_id="first")
     b = call("A12-08", run_id="second")
@@ -95,6 +102,7 @@ def test_hash_is_stable_across_run_ids_and_chat_parses_vietnamese():
     assert request["comparisonMode"] == "ranking"
     assert "Hạng" in render(call("ZURICH-20.022"))
 
+@pytest.mark.needs_pack
 def test_backend_plugin_demo_mode_registers_and_answers_without_model_key():
     import asyncio
     from vdagent_compare import setup
@@ -122,6 +130,7 @@ def test_backend_plugin_demo_mode_registers_and_answers_without_model_key():
     assert "10 căn" in ctx.reply
     assert "Hoàn tất" in ctx.reply
 
+@pytest.mark.needs_pack
 def test_external_requires_project_and_default_ids_do_not_collide():
     invalid = call("ZURICH-20.022", "external_benchmark")["comparison"]
     assert (invalid["status"], invalid["reason_code"]) == ("INVALID", "INVALID_INPUT")
@@ -191,6 +200,7 @@ def test_cohort_clarification_only_lists_types_in_allowed_scope(monkeypatch):
     assert {o["entityId"] for o in result["clarification"]["options"]} == {"2PN", "3PN"}
 
 
+@pytest.mark.needs_pack
 def test_absorption_only_comparison_cites_inventory_snapshot():
     grouped = SERVICE.run({
         "subject": {"entityType": "zone", "entityCode": "ZN-SAPPHIRE1"},
@@ -228,6 +238,7 @@ def test_insufficient_peer_group_has_no_misleading_dropped_metric_lines():
     assert "peerValues" not in cmp
 
 
+@pytest.mark.needs_pack
 def test_max_peers_config_cuts_ranked_list_and_explains_cut_units():
     full = call("ZURICH-20.022")["peer_definition"]
     cut = call("ZURICH-20.022", maxPeers=6)["peer_definition"]
@@ -242,6 +253,7 @@ def test_unit_head_to_head_names_the_peer_rule_mismatch():
     assert "Hai căn không tương đồng theo luật peer (khác nhóm tầng)." in cmp["limitations"]
 
 
+@pytest.mark.needs_pack
 def test_market_benchmark_uses_contract_field_names():
     cmp = SERVICE.run({"subject": {"entityType": "project", "entityCode": "PRJ-VHOP"},
                        "comparisonMode": "external_benchmark"})["comparison"]
@@ -249,6 +261,7 @@ def test_market_benchmark_uses_contract_field_names():
     assert "suggestedModes" not in cmp and cmp["reason"].startswith("Chưa có dữ liệu thị trường")
 
 
+@pytest.mark.needs_pack
 def test_prefix_clarification_counts_all_matches_but_lists_at_most_ten():
     cmp = call("ZURICH-2")["comparison"]
     assert cmp["reason_code"] == "CLARIFICATION_NEEDED"
@@ -298,6 +311,7 @@ def test_chat_incentives_and_default_peer_table_are_complete():
     assert "| Căn |" in reply
 
 
+@pytest.mark.needs_pack
 def test_chat_partial_unit_code_returns_specific_choices():
     from vdagent_compare.vh_chat import answer
 
@@ -309,6 +323,7 @@ def test_chat_partial_unit_code_returns_specific_choices():
     assert "ZURICH-20." in reply
 
 
+@pytest.mark.needs_pack
 def test_chat_localizes_status_confidence_and_percentile():
     from vdagent_compare.vh_chat import answer
 

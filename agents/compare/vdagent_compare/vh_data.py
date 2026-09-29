@@ -1,6 +1,7 @@
 """Read the synthetic VHOP CSV pack as a versioned, immutable Compare input package.
 
-The package is copied from the DATA branch. This module never queries the warehouse or
+The CSV pack belongs to the DATA team and is not committed with this plugin (see
+`default_data_root`); the A12-08 hero fixture ships in `fixtures/`. This module never queries the warehouse or
 computes canonical price/DOM values; it only maps columns and sums the already recorded
 daily inquiry counts for the requested 30-day window.
 """
@@ -147,8 +148,15 @@ def load_csv_package(root: Path) -> DataPackage:
     )
 
 
-def load_hero_package(root: Path) -> DataPackage:
-    raw = json.loads((root / "hero_a12_08.json").read_text(encoding="utf-8"))
+HERO_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "hero_a12_08.json"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+# Where the Data team's pack may live, in order: the path Data publishes it under, then local copies.
+PACK_LOCATIONS = ("warehouse/vhop", "var/vhop", "data/vhop")
+
+
+def load_hero_package(root: Path | None = None) -> DataPackage:
+    """The approved A12-08 fixture (spec §5.1). It ships with the plugin; `root` is ignored."""
+    raw = json.loads(HERO_FIXTURE.read_text(encoding="utf-8"))
     units = tuple(Unit(
         unit_id=row["unit_id"], unit_code=row["unit_code"], project_id=row["project_id"],
         zone_id=row["zone_id"], unit_type=row["unit_type"], area_m2=Decimal(str(row["area_m2"])),
@@ -166,20 +174,32 @@ def load_hero_package(root: Path) -> DataPackage:
     )
 
 
-def default_data_root() -> Path:
+def default_data_root(repo_root: Path | None = None) -> Path:
+    """The CSV pack: `VDAGENT_VHOP_DATA_DIR`, else the first of `PACK_LOCATIONS` holding a pack.
+
+    Locations are tried under the repository root, then under the working directory.
+    """
     configured = os.getenv("VDAGENT_VHOP_DATA_DIR")
     if configured:
         return Path(configured).resolve()
-    candidates = [Path.cwd() / "data" / "vhop", Path(__file__).resolve().parents[3] / "data" / "vhop"]
-    for candidate in candidates:
+    bases = [repo_root or REPO_ROOT, Path.cwd()]
+    tried = [base / location for base in bases for location in PACK_LOCATIONS]
+    for candidate in tried:
         if (candidate / "export" / "snapshot_manifest.csv").exists():
-            return candidate
-    raise FileNotFoundError("VHOP CSV pack not found; set VDAGENT_VHOP_DATA_DIR")
+            return candidate.resolve()
+    raise FileNotFoundError(
+        "VHOP CSV pack not found; set VDAGENT_VHOP_DATA_DIR or put it at one of: "
+        + ", ".join(location for location in PACK_LOCATIONS)
+    )
+
+
+def is_hero_ref(ref: Mapping[str, str]) -> bool:
+    key = (ref.get("entityCode") or ref.get("entityId") or "").upper()
+    return key.startswith(("A12-", "A10-", "A14-", "B09-", "B11-", "ZN-A", "ZN-B", "PRJ-X")) or key in {
+        "U812", "U801", "U815", "U820", "U833", "U841"}
 
 
 def load_package_for(ref: Mapping[str, str], root: Path | None = None) -> DataPackage:
-    base = root or default_data_root()
-    key = (ref.get("entityCode") or ref.get("entityId") or "").upper()
-    if key.startswith(("A12-", "A10-", "A14-", "B09-", "B11-", "ZN-A", "ZN-B", "PRJ-X")) or key in {"U812", "U801", "U815", "U820", "U833", "U841"}:
-        return load_hero_package(base)
-    return load_csv_package(base)
+    if is_hero_ref(ref):
+        return load_hero_package()
+    return load_csv_package(root or default_data_root())
