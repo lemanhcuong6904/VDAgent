@@ -13,24 +13,51 @@ import sqlite3
 import sys
 import types
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
+import httpx
 import pytest
 
+from vdagent_backend.app import create_app
 from vdagent_backend.config import Config, PluginSpec
-from vdagent_backend.db import repo
-from vdagent_backend.db.database import create_db
+from vdagent_backend.conversations import Messages, Tasks
+from vdagent_backend.core import EventBus, TokenRegistry
 from vdagent_backend.engine import Engine
-from vdagent_backend.core.events import EventBus
+from vdagent_backend.persistence import create_database, migrate, sqlite_url
 from vdagent_backend.plugins import AgentRegistry, RegisteredAgent
-from vdagent_backend.core.tokens import TokenRegistry
 from vdagent_sdk import InvocationContext, Message, PluginAPI, ToolCall
 
 ALICE, BOB = "u_000000000001", "u_000000000002"
 AGENTS = ("orchestrator", "data", "compare", "insight", "report")
 WAIT_S = 5.0
+
+
+@asynccontextmanager
+async def app_client(cfg: Config) -> AsyncIterator[httpx.AsyncClient]:
+    """An HTTP client on `create_app(cfg)` with its lifespan running; `client.app` is the app."""
+    app = create_app(cfg)
+    # The lifespan owns anyio task groups: enter and exit it from one dedicated task.
+    ready, stop = asyncio.Event(), asyncio.Event()
+
+    async def run_lifespan() -> None:
+        async with app.router.lifespan_context(app):
+            ready.set()
+            await stop.wait()
+
+    runner = asyncio.create_task(run_lifespan())
+    await asyncio.wait_for(ready.wait(), 10)
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+            c.app = app  # type: ignore[attr-defined]
+            yield c
+    finally:
+        stop.set()
+        await runner
+
 
 Call = tuple[str, str, dict[str, Any]]
 
@@ -150,22 +177,30 @@ class Harness:
             assert row["status"] == status, row
         return row
 
+    @property
+    def tasks(self) -> Tasks:
+        return Tasks(self.db)
+
+    @property
+    def messages(self) -> Messages:
+        return Messages(self.db)
+
     async def _task_done(self, task_id: str) -> dict[str, Any] | None:
-        row = await repo.get_task(self.db, task_id)
+        row = await self.tasks.get_task(task_id)
         return row if row and row["status"] != "running" else None
 
     async def invocations(self, task_id: str) -> list[dict[str, Any]]:
-        return await repo.list_task_invocations(self.db, task_id)
+        return await self.tasks.list_task_invocations(task_id)
 
     async def stack(self, agent: str, user_id: str = ALICE) -> list[dict[str, Any]]:
-        return await repo.messages_page(self.db, user_id, agent, None, 1000)
+        return await self.messages.messages_page(user_id, agent, None, 1000)
 
     async def idle(self) -> None:
         """Wait until no invocation is queued or running."""
         await wait_for(lambda: self._idle())
 
     async def _idle(self) -> bool:
-        return not await repo.inflight_invocations(self.db)
+        return not await self.tasks.inflight_invocations()
 
 
 async def wait_for(probe: Callable[[], Awaitable[Any]], timeout: float = WAIT_S) -> Any:
@@ -177,9 +212,59 @@ async def wait_for(probe: Callable[[], Awaitable[Any]], timeout: float = WAIT_S)
             await asyncio.sleep(0.01)
 
 
+NOW = "2026-09-29T00:00:00.000000Z"  # created_at for rows inserted with raw SQL
+
+
 def seed_users(path: str) -> None:
     with sqlite3.connect(path) as conn:
+        conn.executemany("INSERT INTO users (id, name, created_at) VALUES (?, ?, ?)", [(ALICE, "Alice", NOW), (BOB, "Bob", NOW)])
+    conn.close()
+
+
+async def migrated_database(path: str) -> Any:
+    """Migrate the SQLite file at `path` to head and return an `AsyncEngine` on it."""
+    url = sqlite_url(path)
+    await asyncio.to_thread(migrate, url)
+    return create_database(url)
+
+
+LEGACY_SCHEMA = Path(__file__).resolve().parent / "fixtures" / "legacy_schema.sql"
+LEGACY_TASK, LEGACY_DATASET = "t_legacy000001", "ds_legacy00001"
+
+
+def build_legacy_db(path: str) -> None:
+    """A pre-Alembic backend.db (old `schema.sql`, its `strftime` defaults) holding one finished task
+    of Alice's with a delegation step, a dataset and a memory note."""
+    calls = json.dumps([{"id": "c1", "name": "send_to_agent", "arguments_json": "{}"}])
+    with sqlite3.connect(path) as conn:
+        conn.executescript(LEGACY_SCHEMA.read_text())
         conn.executemany("INSERT INTO users (id, name) VALUES (?, ?)", [(ALICE, "Alice"), (BOB, "Bob")])
+        conn.execute(
+            "INSERT INTO tasks (id, user_id, root_agent, status, finished_at)"
+            " VALUES (?, ?, 'data', 'completed', '2026-09-24T08:00:01.000Z')",
+            (LEGACY_TASK, ALICE),
+        )
+        conn.execute(
+            "INSERT INTO invocations (id, task_id, user_id, agent, caller, depth, inbound_text, status, result_text)"
+            " VALUES ('inv_legacy0001', ?, ?, 'data', 'user', 0, 'sales?', 'completed', 'done')",
+            (LEGACY_TASK, ALICE),
+        )
+        conn.executemany(
+            "INSERT INTO messages (user_id, agent, seq, task_id, invocation_id, role, sender, content, tool_calls_json,"
+            " tool_call_id) VALUES (?, 'data', ?, ?, 'inv_legacy0001', ?, ?, ?, ?, ?)",
+            [
+                (ALICE, 1, LEGACY_TASK, "user", "user", "sales?", None, None),
+                (ALICE, 2, LEGACY_TASK, "assistant", None, "", calls, None),
+                (ALICE, 3, LEGACY_TASK, "tool", None, "rows", None, "c1"),
+                (ALICE, 4, LEGACY_TASK, "assistant", None, "done", None, None),
+            ],
+        )
+        conn.execute(
+            "INSERT INTO datasets (id, user_id, invocation_id, name, source_sql, columns_json, rows_json, row_count)"
+            " VALUES (?, ?, 'inv_legacy0001', 'sales', 'SELECT 1', ?, ?, 3)",
+            (LEGACY_DATASET, ALICE, json.dumps([{"name": "n", "type": "INTEGER"}]), json.dumps([[0], [1], [2]])),
+        )
+        conn.execute("INSERT INTO memories (user_id, agent, kind, text) VALUES (?, 'data', 'fact', 'west revenue fell')", (ALICE,))
     conn.close()
 
 
@@ -208,7 +293,7 @@ def cfg_overrides() -> dict[str, Any]:
 @pytest.fixture
 async def harness(tmp_path: Path, fake_agents: dict[str, FakeAgent], cfg_overrides: dict[str, Any]) -> AsyncIterator[Harness]:
     cfg = make_config(tmp_path, **cfg_overrides)
-    db = create_db(cfg.backend_db)
+    db = await migrated_database(cfg.backend_db)
     seed_users(cfg.backend_db)
     bus, tokens = EventBus(), TokenRegistry()
     registry = registry_of(fake_agents)

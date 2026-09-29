@@ -1,4 +1,4 @@
-"""REST API (§10) through the real app, with fake agents loaded as a plugin."""
+"""REST API through the real app, with fake agents loaded as a plugin."""
 
 from __future__ import annotations
 
@@ -9,10 +9,19 @@ from pathlib import Path
 import httpx
 import pytest
 
-from conftest import ALICE, BOB, FakeAgent, Session, install_plugin, make_config, seed_users, wait_for
-from vdagent_backend.app import create_app
-from vdagent_backend.db import artifacts
-from vdagent_backend.db.database import apply_schema
+from conftest import (
+    ALICE,
+    BOB,
+    FakeAgent,
+    Session,
+    app_client,
+    install_plugin,
+    make_config,
+    migrated_database,
+    seed_users,
+    wait_for,
+)
+from vdagent_backend.artifacts import Artifacts
 
 A = {"X-User-Id": ALICE}
 B = {"X-User-Id": BOB}
@@ -24,27 +33,10 @@ async def client(
 ) -> AsyncIterator[httpx.AsyncClient]:
     spec = install_plugin(monkeypatch, "fake_agents_plugin", fake_agents)
     cfg = make_config(tmp_path, plugins=[spec])
-    apply_schema(cfg.backend_db)
+    await (await migrated_database(cfg.backend_db)).dispose()
     seed_users(cfg.backend_db)
-    app = create_app(cfg)
-    # The lifespan owns anyio task groups: enter and exit it from one dedicated task.
-    ready, stop = asyncio.Event(), asyncio.Event()
-
-    async def run_lifespan() -> None:
-        async with app.router.lifespan_context(app):
-            ready.set()
-            await stop.wait()
-
-    runner = asyncio.create_task(run_lifespan())
-    await asyncio.wait_for(ready.wait(), 10)
-    try:
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-            c.app = app  # type: ignore[attr-defined]
-            yield c
-    finally:
-        stop.set()
-        await runner
+    async with app_client(cfg) as c:
+        yield c
 
 
 async def _task_status(c: httpx.AsyncClient, task_id: str, headers: dict[str, str] = A) -> str | None:
@@ -142,9 +134,8 @@ async def test_artifacts_are_owner_scoped_and_dataset_rows_page(client: httpx.As
     task_id = (await client.post("/api/agents/data/messages", json={"content": "x"}, headers=A)).json()["task_id"]
     await wait_for(lambda: _task_status(client, task_id))
     inv_id = (await client.get(f"/api/tasks/{task_id}", headers=A)).json()["invocations"][0]["id"]
-    db = client.app.state.services.db  # type: ignore[attr-defined]
+    artifacts = Artifacts(client.app.state.services.db)  # type: ignore[attr-defined]
     ds = await artifacts.insert_dataset(
-        db,
         user_id=ALICE,
         invocation_id=inv_id,
         name="n",
@@ -157,7 +148,7 @@ async def test_artifacts_are_owner_scoped_and_dataset_rows_page(client: httpx.As
     body = r.json()
     assert (body["row_count"], body["rows"], body["source_sql"]) == (5, [[1], [2]], "SELECT n")
     assert (await client.get(f"/api/datasets/{ds}", headers=B)).status_code == 404
-    report = await artifacts.insert_report(db, user_id=ALICE, invocation_id=inv_id, title="R", markdown="# hi")
+    report = await artifacts.insert_report(user_id=ALICE, invocation_id=inv_id, title="R", markdown="# hi")
     assert [x["id"] for x in (await client.get("/api/reports", headers=A)).json()] == [report]
     assert (await client.get("/api/reports", headers=B)).json() == []
     assert (await client.get(f"/api/reports/{report}", headers=B)).status_code == 404

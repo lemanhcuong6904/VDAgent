@@ -23,8 +23,8 @@ from mcp.shared._httpx_utils import create_mcp_http_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from vdagent_backend.config import Config
-from vdagent_backend.db import artifacts
-from vdagent_backend.db.database import create_db
+from conftest import NOW, migrated_database
+from vdagent_backend.artifacts import Artifacts
 from vdagent_backend.mcp.server import create_mcp
 from vdagent_backend.mcp.tools import RESULT_FIELDS, TOOLS
 from vdagent_backend.core.tokens import TokenRegistry
@@ -74,15 +74,15 @@ def seed_backend(path: Path) -> None:
     with sqlite3.connect(path) as conn:
         for user_id, name in ((ALICE, "Alice"), (BOB, "Bob")):
             task_id = f"t_{user_id[-12:]}"
-            conn.execute("INSERT INTO users (id, name) VALUES (?, ?)", (user_id, name))
+            conn.execute("INSERT INTO users (id, name, created_at) VALUES (?, ?, ?)", (user_id, name, NOW))
             conn.execute(
-                "INSERT INTO tasks (id, user_id, root_agent, status) VALUES (?, ?, 'orchestrator', 'running')",
-                (task_id, user_id),
+                "INSERT INTO tasks (id, user_id, root_agent, status, created_at) VALUES (?, ?, 'orchestrator', 'running', ?)",
+                (task_id, user_id, NOW),
             )
             conn.execute(
-                "INSERT INTO invocations (id, task_id, user_id, agent, caller, depth, inbound_text, status)"
-                " VALUES (?, ?, ?, 'orchestrator', 'user', 0, 'hi', 'running')",
-                (INVOCATION[user_id], task_id, user_id),
+                "INSERT INTO invocations (id, task_id, user_id, agent, caller, depth, inbound_text, status, created_at)"
+                " VALUES (?, ?, ?, 'orchestrator', 'user', 0, 'hi', 'running', ?)",
+                (INVOCATION[user_id], task_id, user_id, NOW),
             )
     conn.close()
 
@@ -102,7 +102,7 @@ class McpEnv:
 async def env(tmp_path: Path) -> AsyncIterator[McpEnv]:
     warehouse, backend = tmp_path / "warehouse.db", tmp_path / "backend.db"
     build_warehouse(warehouse)
-    db = create_db(str(backend))
+    db = await migrated_database(str(backend))
     seed_backend(backend)
     cfg = Config(
         backend_db=str(backend),
@@ -229,7 +229,7 @@ async def test_run_query_caps_rows_at_10000_and_flags_truncation(env: McpEnv) ->
     assert capped["row_count"] == 10_000 and capped["truncated"] is True
     assert capped["columns"] == [{"name": "n", "type": "INTEGER"}]
     assert capped["preview"] == [[i] for i in range(20)]
-    stored = await artifacts.get_dataset(env.db, ALICE, capped["dataset_id"])
+    stored = await Artifacts(env.db).get_dataset(ALICE, capped["dataset_id"])
     assert stored is not None and len(stored["rows"]) == 10_000 and stored["truncated"] is True
     assert stored["rows"][-1] == [9_999]
 
@@ -259,7 +259,7 @@ async def test_other_users_dataset_is_not_found(env: McpEnv) -> None:
     ]:
         is_error, text = await call(env, "data", tool, args, BOB)
         assert is_error and text.startswith("error: dataset not found"), (tool, text)
-    assert await artifacts.get_dataset(env.db, BOB, dataset_id) is None
+    assert await Artifacts(env.db).get_dataset(BOB, dataset_id) is None
 
 
 async def test_query_datasets_joins_two_datasets(env: McpEnv) -> None:
@@ -281,7 +281,7 @@ async def test_query_datasets_joins_two_datasets(env: McpEnv) -> None:
     assert joined["columns"] == [{"name": "region", "type": "TEXT"}, {"name": "delta", "type": "REAL"}]
     assert joined["preview"] == [["East", 5.5], ["North", 60.0], ["South", -20.0]]
     assert joined["name"] == "delta" and joined["truncated"] is False
-    stored = await artifacts.get_dataset(env.db, ALICE, joined["dataset_id"])
+    stored = await Artifacts(env.db).get_dataset(ALICE, joined["dataset_id"])
     assert stored is not None and stored["rows"] == joined["preview"]
 
 

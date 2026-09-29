@@ -9,13 +9,11 @@ from pydantic import BaseModel, Field
 
 from vdagent_backend.api.deps import Svc, UserId
 from vdagent_backend.api.errors import ApiError, not_found
-from vdagent_backend.db import artifacts, repo
+from vdagent_backend.artifacts import Artifacts
+from vdagent_backend.conversations import TASK_STATUSES, Messages, Tasks, Users, invocation_dto, message_dto, task_dto, user_dto
 from vdagent_backend.engine import TaskFinishedError, TaskNotFoundError, UnknownAgentError
 
 router = APIRouter(prefix="/api")
-
-TASK_STATUSES = ("running", "completed", "failed", "cancelled")
-
 
 class NewUser(BaseModel):
     name: str = Field(min_length=1)
@@ -34,7 +32,7 @@ def _unknown_agent(agent: str) -> ApiError:
 
 @router.get("/users")
 async def list_users(svc: Svc) -> list[dict[str, Any]]:
-    return [repo.user_dto(u) for u in await repo.list_users(svc.db)]
+    return [user_dto(u) for u in await Users(svc.db).list_users()]
 
 
 @router.post("/users", status_code=201)
@@ -42,7 +40,7 @@ async def create_user(svc: Svc, body: NewUser) -> dict[str, Any]:
     name = body.name.strip()
     if not name:
         raise ApiError(422, "invalid_request", "name must not be empty")
-    return repo.user_dto(await repo.create_user(svc.db, name))
+    return user_dto(await Users(svc.db).create_user(name))
 
 
 # --------------------------------------------------------------------------- agents + chats
@@ -63,10 +61,10 @@ async def get_messages(
 ) -> dict[str, Any]:
     if agent not in svc.engine.registry:
         raise _unknown_agent(agent)
-    rows = await repo.messages_page(svc.db, user_id, agent, before_seq, limit)
+    rows = await Messages(svc.db).messages_page(user_id, agent, before_seq, limit)
     return {
-        "summary": await repo.get_summary(svc.db, user_id, agent),
-        "messages": [repo.message_dto(r) for r in rows],
+        "summary": await Messages(svc.db).get_summary(user_id, agent),
+        "messages": [message_dto(r) for r in rows],
         "pending": svc.engine.pending(user_id, agent),
     }
 
@@ -92,16 +90,16 @@ async def list_tasks(
 ) -> list[dict[str, Any]]:
     if status is not None and status not in TASK_STATUSES:
         raise ApiError(422, "invalid_request", f"status must be one of {', '.join(TASK_STATUSES)}")
-    return [repo.task_dto(t) for t in await repo.list_tasks(svc.db, user_id, status)]
+    return [task_dto(t) for t in await Tasks(svc.db).list_tasks(user_id, status)]
 
 
 @router.get("/tasks/{task_id}")
 async def get_task(svc: Svc, user_id: UserId, task_id: str) -> dict[str, Any]:
-    task = await repo.get_task(svc.db, task_id, user_id)
+    task = await Tasks(svc.db).get_task(task_id, user_id)
     if task is None:
         raise not_found("task")
-    invocations = await repo.list_task_invocations(svc.db, task_id)
-    return {"task": repo.task_dto(task), "invocations": [repo.invocation_dto(i) for i in invocations]}
+    invocations = await Tasks(svc.db).list_task_invocations(task_id)
+    return {"task": task_dto(task), "invocations": [invocation_dto(i) for i in invocations]}
 
 
 @router.post("/tasks/{task_id}/cancel")
@@ -112,7 +110,7 @@ async def cancel_task(svc: Svc, user_id: UserId, task_id: str) -> dict[str, Any]
         raise not_found("task") from None
     except TaskFinishedError:
         raise ApiError(409, "task_finished", "task already finished") from None
-    return {"task": repo.task_dto(task)}
+    return {"task": task_dto(task)}
 
 
 # --------------------------------------------------------------------------- artifacts
@@ -126,7 +124,7 @@ async def get_dataset(
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=1000)] = 200,
 ) -> dict[str, Any]:
-    ds = await artifacts.get_dataset(svc.db, user_id, dataset_id)
+    ds = await Artifacts(svc.db).get_dataset(user_id, dataset_id)
     if ds is None:
         raise not_found("dataset")
     return {
@@ -142,7 +140,7 @@ async def get_dataset(
 
 @router.get("/charts/{chart_id}")
 async def get_chart(svc: Svc, user_id: UserId, chart_id: str) -> dict[str, Any]:
-    chart = await artifacts.get_chart(svc.db, user_id, chart_id)
+    chart = await Artifacts(svc.db).get_chart(user_id, chart_id)
     if chart is None:
         raise not_found("chart")
     return chart
@@ -150,12 +148,12 @@ async def get_chart(svc: Svc, user_id: UserId, chart_id: str) -> dict[str, Any]:
 
 @router.get("/reports")
 async def list_reports(svc: Svc, user_id: UserId) -> list[dict[str, Any]]:
-    return await artifacts.list_reports(svc.db, user_id)
+    return await Artifacts(svc.db).list_reports(user_id)
 
 
 @router.get("/reports/{report_id}")
 async def get_report(svc: Svc, user_id: UserId, report_id: str) -> dict[str, Any]:
-    report = await artifacts.get_report(svc.db, user_id, report_id)
+    report = await Artifacts(svc.db).get_report(user_id, report_id)
     if report is None:
         raise not_found("report")
     return report

@@ -18,7 +18,8 @@ from typing import Any
 import mcp_types as types
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from vdagent_backend.db import artifacts
+from vdagent_backend.artifacts import Artifacts
+from vdagent_backend.persistence import tables
 from vdagent_backend.mcp import sql
 from vdagent_backend.mcp.charts import CHART_KINDS, ChartError, build_chart_spec
 from vdagent_backend.core import McpIdentity
@@ -265,7 +266,7 @@ Handler = Callable[[McpIdentity, dict[str, Any]], Awaitable[dict[str, Any]]]
 
 class McpTools:
     def __init__(self, db: AsyncEngine, warehouse_db: str, *, sql_timeout_s: float) -> None:
-        self._db = db
+        self._artifacts = Artifacts(db)
         self._warehouse_db = warehouse_db
         self._timeout_s = sql_timeout_s
         self._handlers: dict[str, Handler] = {
@@ -297,7 +298,7 @@ class McpTools:
     # -- helpers --------------------------------------------------------------------------------
 
     async def _dataset(self, identity: McpIdentity, dataset_id: str) -> dict[str, Any]:
-        dataset = await artifacts.get_dataset(self._db, identity.user_id, dataset_id)
+        dataset = await self._artifacts.get_dataset(identity.user_id, dataset_id)
         if dataset is None:
             raise ToolError("dataset not found")
         return dataset
@@ -305,8 +306,7 @@ class McpTools:
     async def _store_dataset(
         self, identity: McpIdentity, name: str | None, source_sql: str, result: sql.QueryResult
     ) -> dict[str, Any]:
-        dataset_id = await artifacts.insert_dataset(
-            self._db,
+        dataset_id = await self._artifacts.insert_dataset(
             user_id=identity.user_id,
             invocation_id=identity.invocation_id,
             name=name,
@@ -373,7 +373,7 @@ class McpTools:
         sql.check_select(query)
         datasets: list[dict[str, Any]] = []
         for dataset_id in dataset_ids:
-            dataset = await artifacts.get_dataset(self._db, identity.user_id, dataset_id)
+            dataset = await self._artifacts.get_dataset(identity.user_id, dataset_id)
             if dataset is None:
                 raise ToolError(f"dataset not found: {dataset_id}")
             datasets.append(dataset)
@@ -388,8 +388,7 @@ class McpTools:
         title = _required_str(args, "title")
         dataset = await self._dataset(identity, dataset_id)
         spec = await asyncio.to_thread(build_chart_spec, dataset, kind, x, y, title)
-        chart_id = await artifacts.insert_chart(
-            self._db,
+        chart_id = await self._artifacts.insert_chart(
             user_id=identity.user_id,
             invocation_id=identity.invocation_id,
             dataset_id=dataset_id,
@@ -407,15 +406,15 @@ class McpTools:
     async def _save_report(self, identity: McpIdentity, args: dict[str, Any]) -> dict[str, Any]:
         title = _required_str(args, "title")
         markdown = _required_str(args, "markdown")
-        refs: dict[str, set[str]] = {"charts": set(), "datasets": set()}
+        refs = {"chart": set[str](), "dataset": set[str]()}
         for kind, artifact_id in _EMBED.findall(markdown):
-            refs[f"{kind}s"].add(artifact_id)
+            refs[kind].add(artifact_id)
         missing: set[str] = set()
-        for table, ids in refs.items():
-            missing |= ids - await artifacts.existing_artifact_ids(self._db, identity.user_id, table, ids)
+        for kind, table in (("chart", tables.charts), ("dataset", tables.datasets)):
+            missing |= refs[kind] - await self._artifacts.existing_ids(identity.user_id, table, refs[kind])
         if missing:
             raise ToolError(f"markdown references unknown ids: {', '.join(sorted(missing))}")
-        report_id = await artifacts.insert_report(
-            self._db, user_id=identity.user_id, invocation_id=identity.invocation_id, title=title, markdown=markdown
+        report_id = await self._artifacts.insert_report(
+            user_id=identity.user_id, invocation_id=identity.invocation_id, title=title, markdown=markdown
         )
         return {"report_id": report_id, "title": title}

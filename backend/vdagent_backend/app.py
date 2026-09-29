@@ -12,6 +12,7 @@ directory exists.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
@@ -27,7 +28,7 @@ from vdagent_backend.api import rest, sse
 from vdagent_backend.api.deps import Services
 from vdagent_backend.api.errors import error_response, install_error_handlers
 from vdagent_backend.config import Config, PluginSpec, load_config
-from vdagent_backend.db.database import create_db
+from vdagent_backend.persistence import create_database, migrate, sqlite_url
 from vdagent_backend.engine import Engine
 from vdagent_backend.core import EventBus
 from vdagent_backend.mcp.server import create_mcp
@@ -41,11 +42,13 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     _check_grants(cfg.plugins)
     tokens = TokenRegistry()
     bus = EventBus()
-    db = create_db(cfg.backend_db)
+    url = sqlite_url(cfg.backend_db)
+    db = create_database(url)
     mcp = create_mcp(cfg, db, tokens)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        await asyncio.to_thread(migrate, url)
         plugins = PluginManager()
         registry = await plugins.load(cfg.plugins)
         engine = Engine(cfg, db, bus, tokens, registry)

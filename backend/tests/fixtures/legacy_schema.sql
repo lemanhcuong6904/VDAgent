@@ -1,3 +1,5 @@
+-- The pre-Alembic backend.db schema (applied with CREATE TABLE IF NOT EXISTS at every startup until
+-- the Alembic migrations replaced it). Kept only to build legacy databases in the adoption tests.
 CREATE TABLE IF NOT EXISTS users (
   id          TEXT PRIMARY KEY,               -- 'u_…'
   name        TEXT NOT NULL,

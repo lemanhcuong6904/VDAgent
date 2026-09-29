@@ -9,8 +9,7 @@ from collections.abc import Awaitable, Callable
 
 import pytest
 
-from conftest import ALICE, Harness, Session, wait_for
-from vdagent_backend.db import repo
+from conftest import ALICE, NOW, Harness, Session, wait_for
 from vdagent_backend.engine import Engine, TaskFinishedError
 from vdagent_sdk import AgentTimeoutError, ContractViolation, InvocationContext
 
@@ -25,7 +24,7 @@ def _assert_i2(stack: list[dict]) -> None:
     for m in stack:
         if m["role"] == "assistant":
             assert not open_calls, f"unanswered tool calls {open_calls} before {m['content']!r}"
-            open_calls = {c["id"] for c in json.loads(m["tool_calls_json"] or "[]")}
+            open_calls = {c["id"] for c in m["tool_calls_json"] or []}
         elif m["role"] == "tool":
             assert m["tool_call_id"] in open_calls, m
             open_calls.discard(m["tool_call_id"])
@@ -551,28 +550,31 @@ async def test_cancel_during_a_turn_delivers_cancelled_error_into_invoke(harness
 
 async def test_startup_recovery_fails_inflight_work_and_patches_stacks(harness: Harness) -> None:
     with sqlite3.connect(harness.cfg.backend_db) as conn:
-        conn.execute("INSERT INTO tasks (id, user_id, root_agent, status) VALUES ('t_1', ?, 'orchestrator', 'running')", (ALICE,))
+        conn.execute(
+            "INSERT INTO tasks (id, user_id, root_agent, status, created_at) VALUES ('t_1', ?, 'orchestrator', 'running', ?)",
+            (ALICE, NOW),
+        )
         conn.executemany(
-            "INSERT INTO invocations (id, task_id, user_id, agent, caller, parent_id, depth, inbound_text, status)"
-            " VALUES (?, 't_1', ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO invocations (id, task_id, user_id, agent, caller, parent_id, depth, inbound_text, status, created_at)"
+            " VALUES (?, 't_1', ?, ?, ?, ?, ?, ?, ?, ?)",
             [
-                ("inv_root", ALICE, "orchestrator", "user", None, 0, "go", "running"),
-                ("inv_child", ALICE, "data", "orchestrator", "inv_root", 1, "work", "queued"),
+                ("inv_root", ALICE, "orchestrator", "user", None, 0, "go", "running", NOW),
+                ("inv_child", ALICE, "data", "orchestrator", "inv_root", 1, "work", "queued", NOW),
             ],
         )
         conn.executemany(
-            "INSERT INTO messages (user_id, agent, seq, task_id, invocation_id, role, sender, content, tool_calls_json)"
-            " VALUES (?, 'orchestrator', ?, 't_1', 'inv_root', ?, ?, ?, ?)",
+            "INSERT INTO messages (user_id, agent, seq, task_id, invocation_id, role, sender, content, tool_calls_json,"
+            " created_at) VALUES (?, 'orchestrator', ?, 't_1', 'inv_root', ?, ?, ?, ?, ?)",
             [
-                (ALICE, 1, "user", "user", "go", None),
-                (ALICE, 2, "assistant", None, "", json.dumps([{"id": "c1", "name": "send_to_agent", "arguments_json": "{}"}])),
+                (ALICE, 1, "user", "user", "go", None, NOW),
+                (ALICE, 2, "assistant", None, "", json.dumps([{"id": "c1", "name": "send_to_agent", "arguments_json": "{}"}]), NOW),
             ],
         )
     conn.close()
 
     await harness.engine.recover()
 
-    assert (await repo.get_task(harness.db, "t_1"))["status"] == "failed"
+    assert (await harness.tasks.get_task("t_1"))["status"] == "failed"
     invs = {i["id"]: i for i in await harness.invocations("t_1")}
     assert {(i["status"], i["error"]) for i in invs.values()} == {("failed", "backend restarted")}
     stack = await harness.stack("orchestrator")
@@ -595,7 +597,7 @@ async def test_engine_restart_recovers_via_start(harness: Harness) -> None:
 
     engine2 = Engine(harness.cfg, harness.db, harness.bus, harness.tokens, harness.registry)
     await engine2.start()
-    row = await repo.get_task(harness.db, task_id)
+    row = await harness.tasks.get_task(task_id)
     assert row["status"] == "failed"
     gate.set()
 
@@ -644,7 +646,7 @@ async def test_compaction_selects_only_finished_other_task_uncompacted_messages(
     for m in await harness.stack("data"):
         by_task.setdefault(m["task_id"], set()).add(bool(m["compacted"]))
     assert by_task == {t_c: {True}, t_a: {False}, t_b: {False}}
-    assert await repo.get_summary(harness.db, ALICE, "data") == "SUMMARY#1"
+    assert await harness.messages.get_summary(ALICE, "data") == "SUMMARY#1"
 
     gate.set()
     await harness.wait_task(t_a, "completed")

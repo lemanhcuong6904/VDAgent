@@ -18,7 +18,6 @@ Concurrency model (single process, single event loop):
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections import deque
 from collections.abc import Mapping
@@ -28,8 +27,8 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from vdagent_backend.config import Config
-from vdagent_backend.db import repo
-from vdagent_backend.db.memory import ScopedMemory
+from vdagent_backend.conversations import Messages, Tasks, invocation_dto, message_dto, task_dto
+from vdagent_backend.memory import ScopedMemory
 from vdagent_backend.engine.context import Call, Emit, Ended, Event, ToolResult, TurnContext
 from vdagent_backend.engine.waitgraph import WaitGraph
 from vdagent_backend.core import EventBus, TokenRegistry, describe, new_id
@@ -116,7 +115,7 @@ def _to_message(row: Mapping[str, Any]) -> Message:
     if role == "user":
         return {"role": "user", "content": f"[from: {row['sender']}] {row['content']}"}
     if role == "assistant":
-        calls = json.loads(row["tool_calls_json"]) if row["tool_calls_json"] else []
+        calls = row["tool_calls_json"] or []
         if not calls:
             return {"role": "assistant", "content": row["content"]}
         return {
@@ -165,6 +164,8 @@ class Engine:
         self.tokens = tokens
         self.registry = registry
         self.compact_timeout_s = compact_timeout_s
+        self._tasks = Tasks(db)
+        self._messages = Messages(db)
         self._stacks: dict[tuple[str, str], Stack] = {}
         self._graphs: dict[str, WaitGraph] = {}
         self._cancelled: set[str] = set()  # task ids cancelled while this process runs
@@ -187,10 +188,10 @@ class Engine:
 
     async def recover(self) -> None:
         """§4.6: every queued/running invocation → failed (stack patched); every running task → failed."""
-        for row in await repo.inflight_invocations(self.db):
+        for row in await self._tasks.inflight_invocations():
             await self._patch_stack(row["user_id"], row["agent"], row["task_id"], row["id"], RESTARTED)
-            await repo.finish_invocation(self.db, row["id"], "failed", error=RESTARTED)
-        await repo.fail_running_tasks(self.db)
+            await self._tasks.finish_invocation(row["id"], "failed", error=RESTARTED)
+        await self._tasks.fail_running_tasks()
 
     # ------------------------------------------------------------------ queries for the API
 
@@ -238,7 +239,7 @@ class Engine:
         """Human trigger (§4.1): new task + queued root invocation. Returns (task row, invocation row)."""
         if agent not in self.registry:
             raise UnknownAgentError(agent)
-        task, inv = await repo.create_task(self.db, user_id, agent, content)
+        task, inv = await self._tasks.create_task(user_id, agent, content)
         self._publish_task(task)
         self._publish_invocation(inv)
         run = Run(
@@ -256,7 +257,7 @@ class Engine:
 
     async def cancel_task(self, user_id: str, task_id: str) -> dict[str, Any]:
         """§4.6 cancel. Returns the task row afterwards."""
-        task = await repo.get_task(self.db, task_id, user_id)
+        task = await self._tasks.get_task(task_id, user_id)
         if task is None:
             raise TaskNotFoundError(task_id)
         in_progress = self._cancelling.get(task_id)
@@ -284,9 +285,9 @@ class Engine:
                 if run.rpc is not None:
                     run.rpc.cancel()
             await asyncio.gather(*(r.done.wait() for r in running))
-            for row in await repo.cancel_task_invocations(self.db, task_id):
+            for row in await self._tasks.cancel_task_invocations(task_id):
                 self._publish_invocation(row)
-            row = await repo.finish_task(self.db, task_id, "cancelled")
+            row = await self._tasks.finish_task(task_id, "cancelled")
             if row is None:  # finished on its own while we were cancelling
                 current = await self._task_row(task_id)
                 if current["status"] != "cancelled":
@@ -299,7 +300,7 @@ class Engine:
             done.set_result(None)
 
     async def _task_row(self, task_id: str) -> dict[str, Any]:
-        row = await repo.get_task(self.db, task_id)
+        row = await self._tasks.get_task(task_id)
         assert row is not None
         return row
 
@@ -343,7 +344,7 @@ class Engine:
             self._settle(run)
             if run.cancel_requested:
                 await self._patch_stack(run.user_id, run.agent, run.task_id, run.id, CANCELLED)
-                row = await repo.finish_invocation(self.db, run.id, "cancelled")
+                row = await self._tasks.finish_invocation(run.id, "cancelled")
                 if row is not None:
                     self._publish_invocation(row)
             elif reason is not None:
@@ -379,7 +380,7 @@ class Engine:
             return None, f"internal error: {e}"
 
     async def _execute(self, run: Run) -> str:
-        row = await repo.mark_invocation_running(self.db, run.id)
+        row = await self._tasks.mark_invocation_running(run.id)
         self._publish_invocation(row)
         run.check_cancel()
 
@@ -388,8 +389,8 @@ class Engine:
 
         await self._append(run, role="user", sender=run.caller, content=run.inbound_text)
         token = run.token = self.tokens.issue(run.user_id, run.agent, run.id)
-        summary = await repo.get_summary(self.db, run.user_id, run.agent)
-        history = await repo.stack_history(self.db, run.user_id, run.agent)
+        summary = await self._messages.get_summary(run.user_id, run.agent)
+        history = await self._messages.stack_history(run.user_id, run.agent)
         run.check_cancel()
 
         entry = self.registry.get(run.agent)
@@ -508,7 +509,7 @@ class Engine:
         }
         error = self._call_error(run, target)
         if error is not None:
-            row = await repo.insert_invocation(self.db, id=new_id("inv"), status="rejected", error=error, **fields)
+            row = await self._tasks.insert_invocation(id=new_id("inv"), status="rejected", error=error, **fields)
             self._publish_invocation(row)
             self._send_result(run, tcid, error)
             return
@@ -528,7 +529,7 @@ class Engine:
         self.graph(run.user_id).add(run.agent, target)
         run.children[tcid] = child
         try:
-            row = await repo.insert_invocation(self.db, id=child.id, status="queued", **fields)
+            row = await self._tasks.insert_invocation(id=child.id, status="queued", **fields)
         except BaseException:
             self._drop_call(run, tcid)
             raise
@@ -608,7 +609,7 @@ class Engine:
     # ------------------------------------------------------------------ outcomes
 
     async def _conclude_completed(self, run: Run, final: str) -> None:
-        row = await repo.finish_invocation(self.db, run.id, "completed", result_text=final)
+        row = await self._tasks.finish_invocation(run.id, "completed", result_text=final)
         if row is not None:
             self._publish_invocation(row)
         if run.parent is not None:
@@ -619,7 +620,7 @@ class Engine:
     async def _conclude_failed(self, run: Run, reason: str) -> None:
         log.warning("invocation %s (%s) failed: %s", run.id, run.agent, reason)
         await self._patch_stack(run.user_id, run.agent, run.task_id, run.id, reason)
-        row = await repo.finish_invocation(self.db, run.id, "failed", error=reason)
+        row = await self._tasks.finish_invocation(run.id, "failed", error=reason)
         if row is not None:
             self._publish_invocation(row)
         if run.parent is not None:
@@ -630,14 +631,14 @@ class Engine:
     async def _finish_task(self, task_id: str, status: str) -> None:
         if task_id in self._cancelled:
             return  # the cancel owns the task's final status
-        row = await repo.finish_task(self.db, task_id, status)
+        row = await self._tasks.finish_task(task_id, status)
         if row is not None:
             self._publish_task(row)
 
     async def _patch_stack(self, user_id: str, agent: str, task_id: str, invocation_id: str, reason: str) -> None:
         """§4.6 steps 1–2 for an invocation that wrote to its stack: synthesise the missing tool
         results (I2), then `[turn failed: <reason>]`. No-op for invocations that never started."""
-        msgs = await repo.invocation_messages(self.db, invocation_id)
+        msgs = await self._messages.invocation_messages(invocation_id)
         if not msgs:
             return
         answered = {m["tool_call_id"] for m in msgs if m["role"] == "tool"}
@@ -645,7 +646,7 @@ class Engine:
             call["id"]
             for m in msgs
             if m["role"] == "assistant" and m["tool_calls_json"]
-            for call in json.loads(m["tool_calls_json"])
+            for call in m["tool_calls_json"]
             if call["id"] not in answered
         ]
         ids = dict(user_id=user_id, agent=agent, task_id=task_id, invocation_id=invocation_id)
@@ -659,10 +660,10 @@ class Engine:
 
     async def _compact(self, run: Run) -> None:
         """§4.5: fold finished, other-task, uncompacted messages into the stack summary."""
-        rows = await repo.compaction_candidates(self.db, run.user_id, run.agent, run.task_id)
+        rows = await self._messages.compaction_candidates(run.user_id, run.agent, run.task_id)
         if not rows:
             return
-        previous = await repo.get_summary(self.db, run.user_id, run.agent) or ""
+        previous = await self._messages.get_summary(run.user_id, run.agent) or ""
         entry = self.registry.get(run.agent)
         assert entry is not None
         coro = asyncio.wait_for(entry.agent.compact(previous, [_to_message(r) for r in rows]), self.compact_timeout_s)
@@ -681,7 +682,7 @@ class Engine:
         if not isinstance(summary, str):  # pyright: ignore[reportUnnecessaryIsInstance]
             log.warning("compaction of stack (%s, %s) returned %s, not str; continuing", run.user_id, run.agent, type(summary).__name__)
             return
-        await repo.apply_compaction(self.db, run.user_id, run.agent, summary, [r["id"] for r in rows])
+        await self._messages.apply_compaction(run.user_id, run.agent, summary, [r["id"] for r in rows])
 
     # ------------------------------------------------------------------ persistence + events
 
@@ -691,14 +692,14 @@ class Engine:
         )
 
     async def _append_message(self, **fields: Any) -> None:
-        row = await repo.append_message(self.db, **fields)
-        self.bus.publish(row["user_id"], "message.appended", {"agent": row["agent"], "message": repo.message_dto(row)})
+        row = await self._messages.append_message(**fields)
+        self.bus.publish(row["user_id"], "message.appended", {"agent": row["agent"], "message": message_dto(row)})
 
     def _publish_invocation(self, row: Mapping[str, Any]) -> None:
-        self.bus.publish(row["user_id"], "invocation.updated", {"invocation": repo.invocation_dto(row)})
+        self.bus.publish(row["user_id"], "invocation.updated", {"invocation": invocation_dto(row)})
 
     def _publish_task(self, row: Mapping[str, Any]) -> None:
-        self.bus.publish(row["user_id"], "task.updated", {"task": repo.task_dto(row)})
+        self.bus.publish(row["user_id"], "task.updated", {"task": task_dto(row)})
 
     def _publish_status(self, user_id: str, agent: str) -> None:
         self.bus.publish(user_id, "agent.status", self.agent_status(user_id, agent))

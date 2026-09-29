@@ -1,21 +1,21 @@
-"""Agent memory (agent-freedom spec §2): notes scoped to (user, agent), keyword and vector search."""
+"""Agent memory: notes scoped to (user, agent), keyword and vector search."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
 
-from conftest import ALICE, BOB, seed_users
-from vdagent_backend.db.database import create_db
-from vdagent_backend.db.memory import ScopedMemory
+from conftest import ALICE, BOB, migrated_database, seed_users
+from vdagent_backend.memory import ScopedMemory
 
 
 @pytest.fixture
 async def db(tmp_path: Path) -> AsyncIterator[object]:
     path = str(tmp_path / "backend.db")
-    engine = create_db(path)
+    engine = await migrated_database(path)
     seed_users(path)
     yield engine
     await engine.dispose()
@@ -34,6 +34,13 @@ async def test_notes_are_invisible_outside_their_user_and_agent_scope(db: object
         assert await other.recent() == []
         assert await other.delete(note_id) is False
     assert [n.id for n in await mine.recent()] == [note_id]
+
+
+async def test_notes_carry_the_api_timestamp_format(db: object) -> None:
+    m = mem(db)
+    await m.save("west revenue", "finding", [1.0, 0.0])
+    for notes in (await m.recent(), await m.search("west"), await m.search("x", embedding=[1.0, 0.0])):
+        assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z", notes[0].created_at), notes
 
 
 async def test_keyword_search_matches_and_ranks_best_first(db: object) -> None:
