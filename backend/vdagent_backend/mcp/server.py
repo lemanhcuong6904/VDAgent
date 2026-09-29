@@ -1,14 +1,15 @@
-"""MCP server at `/mcp` (§6): streamable HTTP via the official SDK's low-level `Server`.
+"""The MCP server at `/mcp`: streamable HTTP via the official SDK's low-level `Server`.
 
 The low-level `Server` lets `tools/list` and `tools/call` see the per-request caller identity, so
-the tool list is filtered by the caller agent's grants (`AgentRegistry.tools_for`). The SDK session manager runs stateless: every HTTP request is
-self-contained and authenticated on its own, so a revoked token stops working immediately.
+both are filtered by the caller agent's grants (`AgentRegistry.tools_for`). The SDK session manager
+runs stateless: every HTTP request is self-contained and authenticated on its own, so a revoked
+token stops working immediately. Until `lifespan` runs, `/mcp` answers `503 mcp_unavailable`.
 
-Usage (FastAPI app lifespan):
+Usage (FastAPI app):
 
-    mcp = create_mcp(artifacts, warehouse, tokens)
+    mcp = McpServer(McpTools(artifacts, warehouse), tokens)
     mcp.install(app)
-    async with mcp.lifespan(registry):
+    async with mcp.lifespan(registry):  # inside the app lifespan
         yield
 """
 
@@ -27,17 +28,18 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.types import Receive, Scope, Send
 
-from vdagent_backend.artifacts import ArtifactService
-from vdagent_backend.mcp.auth import BearerAuth, current_identity
-from vdagent_backend.mcp.tools import TOOLS, McpTools, tool_error
-from vdagent_backend.plugins import AgentRegistry
-from vdagent_backend.warehouse import Warehouse
 from vdagent_backend.core import TokenRegistry, error_body
+from vdagent_backend.mcp.auth import BearerAuth, current_identity
+from vdagent_backend.mcp.catalog import TOOLS
+from vdagent_backend.mcp.handlers import McpTools, tool_error
+from vdagent_backend.plugins import AgentRegistry
 
 MCP_PATHS = ("/mcp", "/mcp/")
 
 
 class McpServer:
+    """Serves the catalog's tools to the agents that are granted them."""
+
     def __init__(self, tools: McpTools, tokens: TokenRegistry) -> None:
         self._tools = tools
         self._server: Server[Any] = Server(
@@ -62,7 +64,8 @@ class McpServer:
         identity = current_identity.get()
         if identity is None:
             return tool_error("unauthenticated")
-        return await self._tools.call(identity, self._registry.tools_for(identity.agent), params.name, params.arguments or {})
+        granted = self._registry.tools_for(identity.agent)
+        return await self._tools.call(identity, granted, params.name, params.arguments or {})
 
     async def _handle(self, scope: Scope, receive: Receive, send: Send) -> None:
         manager = self._manager
@@ -88,7 +91,3 @@ class McpServer:
         """Route exactly `/mcp` and `/mcp/` (no slash redirect) ahead of any catch-all route."""
         for path in MCP_PATHS:
             app.router.routes.insert(0, Route(path, endpoint=self._endpoint))
-
-
-def create_mcp(artifacts: ArtifactService, warehouse: Warehouse, tokens: TokenRegistry) -> McpServer:
-    return McpServer(McpTools(artifacts, warehouse), tokens)

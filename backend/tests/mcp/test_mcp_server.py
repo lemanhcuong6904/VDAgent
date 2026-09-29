@@ -24,9 +24,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from conftest import NOW, migrated_database
 from vdagent_backend.artifacts import Artifacts, ArtifactService
-from vdagent_backend.mcp.server import create_mcp
-from vdagent_backend.mcp.tools import RESULT_FIELDS, TOOLS
-from vdagent_backend.core.tokens import TokenRegistry
+from vdagent_backend.mcp import RESULT_FIELDS, TOOLS, McpServer, McpTools
+from vdagent_backend.core import TokenRegistry
 from vdagent_backend.plugins import AgentRegistry, RegisteredAgent
 from vdagent_backend.warehouse import Warehouse
 
@@ -105,7 +104,7 @@ async def env(tmp_path: Path) -> AsyncIterator[McpEnv]:
     db = await migrated_database(str(backend))
     seed_backend(backend)
     tokens = TokenRegistry()
-    mcp = create_mcp(ArtifactService(db), Warehouse(str(warehouse), SQL_TIMEOUT_S), tokens)
+    mcp = McpServer(McpTools(ArtifactService(db), Warehouse(str(warehouse), SQL_TIMEOUT_S)), tokens)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:

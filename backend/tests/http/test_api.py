@@ -21,7 +21,7 @@ from conftest import (
     seed_users,
     wait_for,
 )
-from vdagent_backend.artifacts import Artifacts
+from vdagent_backend.warehouse import QueryResult
 
 A = {"X-User-Id": ALICE}
 B = {"X-User-Id": BOB}
@@ -134,21 +134,14 @@ async def test_artifacts_are_owner_scoped_and_dataset_rows_page(client: httpx.As
     task_id = (await client.post("/api/agents/data/messages", json={"content": "x"}, headers=A)).json()["task_id"]
     await wait_for(lambda: _task_status(client, task_id))
     inv_id = (await client.get(f"/api/tasks/{task_id}", headers=A)).json()["invocations"][0]["id"]
-    artifacts = Artifacts(client.app.state.services.db)  # type: ignore[attr-defined]
-    ds = await artifacts.insert_dataset(
-        user_id=ALICE,
-        invocation_id=inv_id,
-        name="n",
-        source_sql="SELECT n",
-        columns=[{"name": "n", "type": "INTEGER"}],
-        rows=[[i] for i in range(5)],
-        truncated=False,
-    )
+    artifacts = client.app.state.services.artifacts  # type: ignore[attr-defined]
+    columns, rows = [{"name": "n", "type": "INTEGER"}], [[i] for i in range(5)]
+    ds = await artifacts.store_dataset(ALICE, inv_id, "n", "SELECT n", QueryResult(columns, rows, truncated=False))
     r = await client.get(f"/api/datasets/{ds}?offset=1&limit=2", headers=A)
     body = r.json()
     assert (body["row_count"], body["rows"], body["source_sql"]) == (5, [[1], [2]], "SELECT n")
     assert (await client.get(f"/api/datasets/{ds}", headers=B)).status_code == 404
-    report = await artifacts.insert_report(user_id=ALICE, invocation_id=inv_id, title="R", markdown="# hi")
+    report = await artifacts.save_report(ALICE, inv_id, "R", "# hi")
     assert [x["id"] for x in (await client.get("/api/reports", headers=A)).json()] == [report]
     assert (await client.get("/api/reports", headers=B)).json() == []
     assert (await client.get(f"/api/reports/{report}", headers=B)).status_code == 404

@@ -1,4 +1,4 @@
-"""REST error envelope (§10): `{"error": {"code": "<snake_case>", "message": "<text>"}}`."""
+"""The REST error envelope `{"error": {"code": "<snake_case>", "message": "<text>"}}` and its handlers."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ from vdagent_backend.core import error_body
 
 
 class ApiError(Exception):
+    """An error response: HTTP `status` with the envelope's `code` and `message`."""
+
     def __init__(self, status: int, code: str, message: str) -> None:
         super().__init__(message)
         self.status = status
@@ -27,6 +29,8 @@ def not_found(what: str) -> ApiError:
 
 
 def install_error_handlers(app: FastAPI) -> None:
+    """Render `ApiError`, request validation errors and Starlette HTTP errors as the envelope."""
+
     @app.exception_handler(ApiError)
     async def _api_error(_req: Request, exc: ApiError) -> JSONResponse:
         return error_response(exc.status, exc.code, exc.message)

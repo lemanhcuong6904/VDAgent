@@ -1,5 +1,6 @@
 # The MCP tools reference page for agent developers. The module docstring is rendered at import
-# time from the tool catalog in `tools.py` (see `_render`); `make sdk-docs` publishes it with pdoc.
+# time from the tool catalog in `catalog.py` and the bundled `backend/config.yaml` grants (see
+# `_render`); `make sdk-docs` publishes it with pdoc.
 
 from __future__ import annotations
 
@@ -8,8 +9,8 @@ from typing import Any
 import yaml
 
 from vdagent_backend.config import DEFAULT_CONFIG_PATH, PluginSpec, parse_plugins
+from vdagent_backend.mcp.catalog import DEFAULT_PAGE_ROWS, MAX_PAGE_ROWS, PREVIEW_ROWS, RESULT_FIELDS, TOOLS
 from vdagent_backend.warehouse import MAX_ROWS, SQL_TIMEOUT_S
-from vdagent_backend.mcp.tools import DEFAULT_PAGE_ROWS, MAX_PAGE_ROWS, PREVIEW_ROWS, RESULT_FIELDS, TOOLS
 
 __all__: list[str] = []
 
@@ -18,7 +19,7 @@ _INTRO = f"""\
 
 The tools an agent calls through the Backend's MCP server during a turn: warehouse access,
 datasets, charts and reports. This page is generated from the Backend's tool catalog
-(`vdagent_backend/mcp/tools.py`), so it always matches the running Backend.
+(`vdagent_backend/mcp/catalog.py`), so it always matches the running Backend.
 
 ## Connect
 
