@@ -8,7 +8,8 @@ from typing import Any
 from .vh_service import CompareService, LABELS
 from .vh_sufficiency import LEVEL_LABELS
 
-UNIT = re.compile(r"\b[A-Z][A-Z0-9]*-\d+(?:\.\d+)?\b", re.I)
+# A12-08, SAPPHIRE1-13.001 (VHOP pack) and OCP-U00001 (id_registry v3.1.1). ZN-/PRJ- codes are not units.
+UNIT = re.compile(r"\b(?!(?:ZN|PRJ)-)[A-Z][A-Z0-9]*-(?:U\d+|\d+(?:\.\d+)?)\b", re.I)
 ZONE = re.compile(r"\bZN-[A-Z0-9-]+\b", re.I)
 PROJECT = re.compile(r"\bPRJ-[A-Z0-9-]+\b", re.I)
 TYPE = re.compile(r"\b(?:STUDIO|1PN|2PN|3PN|4PN)\b", re.I)

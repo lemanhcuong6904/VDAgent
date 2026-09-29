@@ -342,3 +342,11 @@ def test_chat_localizes_status_confidence_and_percentile():
     rank_reply = answer("Xep hang DOM cua ZURICH-20.022", SERVICE)
     assert "phân vị" in rank_reply
     assert "65,9%" in rank_reply
+
+
+def test_rules_recognise_the_new_registry_unit_codes():
+    request = parse_request("So sánh căn OCP-U00001 với các căn tương đồng")
+    assert request["subject"] == {"entityType": "unit", "entityCode": "OCP-U00001"}
+    assert parse_request("So sánh OCP-U00001 với OCP-U00002")["targets"][0]["entityCode"] == "OCP-U00002"
+    assert parse_request("So sánh phân khu ZN-A với ZN-B")["subject"]["entityType"] == "zone"
+    assert parse_request("Xếp hạng DOM trong PRJ-VHOP")["subject"]["entityType"] == "project"
