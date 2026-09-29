@@ -1,11 +1,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type KeyboardEvent, useState } from "react";
+import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { queryKeys } from "../../api/keys";
 import { useApi } from "../../api/queries";
 import type { AgentDTO } from "../../api/types";
 import { useUi } from "../../ui/UiContext";
 
-/** Posts a human message into the agent's chat (creates a task); disabled while unhealthy. */
+/** Posts a human message into the agent's chat (creates a task). */
 export function Composer({ agent }: { agent: AgentDTO }) {
   const api = useApi();
   const queryClient = useQueryClient();
@@ -21,9 +21,8 @@ export function Composer({ agent }: { agent: AgentDTO }) {
     },
   });
 
-  const disabled = !agent.healthy;
   const content = text.trim();
-  const canSend = !disabled && content.length > 0 && !post.isPending;
+  const canSend = content.length > 0 && !post.isPending;
 
   const submit = (e?: FormEvent) => {
     e?.preventDefault();
@@ -38,12 +37,11 @@ export function Composer({ agent }: { agent: AgentDTO }) {
   };
 
   return (
-    <form className={`composer${disabled ? " disabled" : ""}`} onSubmit={submit}>
+    <form className="composer" onSubmit={submit}>
       <textarea
         rows={2}
         value={text}
-        disabled={disabled}
-        placeholder={disabled ? `${agent.name} is unavailable` : `Message ${agent.name}…`}
+        placeholder={`Message ${agent.name}…  (Enter to send, Shift+Enter for a new line)`}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKeyDown}
       />

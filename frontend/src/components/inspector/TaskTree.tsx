@@ -35,9 +35,7 @@ export function TaskTree({ taskId }: { taskId: string }) {
   const cancel = useMutation({
     mutationFn: () => api.cancelTask(taskId),
     onSuccess: ({ task }) => {
-      queryClient.setQueryData<TaskDetailDTO>(queryKeys.task(taskId), (old) =>
-        old ? { ...old, task } : old,
-      );
+      queryClient.setQueryData<TaskDetailDTO>(queryKeys.task(taskId), (old) => (old ? { ...old, task } : old));
       void queryClient.invalidateQueries({ queryKey: queryKeys.task(taskId) });
     },
   });
@@ -94,9 +92,7 @@ function TreeNode({ node }: { node: Node }) {
           {inv.agent}
         </button>
         <span className="muted small">← {inv.caller}</span>
-        <span className="muted small tree-time">
-          {formatDuration(inv.started_at, inv.finished_at)}
-        </span>
+        <span className="muted small tree-time">{formatDuration(inv.started_at, inv.finished_at)}</span>
       </div>
       <div className="tree-detail">
         <div className="tree-inbound">

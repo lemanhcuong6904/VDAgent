@@ -11,12 +11,7 @@ export function DatasetTable({ id, compact = false }: { id: string; compact?: bo
   const query = useDataset(id, offset, pageSize);
 
   if (query.isPending) return <div className="muted small">Loading {id}…</div>;
-  if (query.isError)
-    return (
-      <div className="error-text">
-        {id}: {query.error.message}
-      </div>
-    );
+  if (query.isError) return <div className="error-text">{id}: {query.error.message}</div>;
   const ds = query.data;
   const last = Math.min(offset + ds.rows.length, ds.row_count);
 
@@ -51,12 +46,7 @@ export function DatasetTable({ id, compact = false }: { id: string; compact?: bo
             {ds.rows.map((row, i) => (
               <tr key={offset + i}>
                 {row.map((cell, j) => (
-                  <td
-                    key={j}
-                    className={
-                      typeof cell === "number" ? "num" : cell === null ? "null" : undefined
-                    }
-                  >
+                  <td key={j} className={typeof cell === "number" ? "num" : cell === null ? "null" : undefined}>
                     {formatCell(cell)}
                   </td>
                 ))}
