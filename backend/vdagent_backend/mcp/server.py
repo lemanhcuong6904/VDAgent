@@ -6,7 +6,7 @@ self-contained and authenticated on its own, so a revoked token stops working im
 
 Usage (FastAPI app lifespan):
 
-    mcp = create_mcp(cfg, db, tokens)
+    mcp = create_mcp(artifacts, warehouse, tokens)
     mcp.install(app)
     async with mcp.lifespan(registry):
         yield
@@ -23,16 +23,15 @@ from fastapi import FastAPI
 from mcp.server.context import ServerRequestContext
 from mcp.server.lowlevel import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.types import Receive, Scope, Send
 
-from vdagent_backend.config import Config
+from vdagent_backend.artifacts import ArtifactService
 from vdagent_backend.mcp.auth import BearerAuth, current_identity
-from vdagent_backend.mcp.sql import SQL_TIMEOUT_S
 from vdagent_backend.mcp.tools import TOOLS, McpTools, tool_error
 from vdagent_backend.plugins import AgentRegistry
+from vdagent_backend.warehouse import Warehouse
 from vdagent_backend.core import TokenRegistry, error_body
 
 MCP_PATHS = ("/mcp", "/mcp/")
@@ -91,7 +90,5 @@ class McpServer:
             app.router.routes.insert(0, Route(path, endpoint=self._endpoint))
 
 
-def create_mcp(
-    cfg: Config, db: AsyncEngine, tokens: TokenRegistry, *, sql_timeout_s: float = SQL_TIMEOUT_S
-) -> McpServer:
-    return McpServer(McpTools(db, cfg.warehouse_db, sql_timeout_s=sql_timeout_s), tokens)
+def create_mcp(artifacts: ArtifactService, warehouse: Warehouse, tokens: TokenRegistry) -> McpServer:
+    return McpServer(McpTools(artifacts, warehouse), tokens)

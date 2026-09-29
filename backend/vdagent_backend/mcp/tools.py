@@ -4,30 +4,24 @@ Which agent may call which tool is not decided here: grants come from each plugi
 `mcp_tools` (see `AgentRegistry.tools_for`).
 
 Handlers return a JSON-able payload (sent as text content) or raise a user-facing error that
-becomes an MCP tool error result `error: …`. Blocking sqlite3 work runs in a worker thread.
+becomes an MCP tool error result `error: …`.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
-import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 import mcp_types as types
-from sqlalchemy.ext.asyncio import AsyncEngine
 
-from vdagent_backend.artifacts import Artifacts
-from vdagent_backend.persistence import tables
-from vdagent_backend.mcp import sql
-from vdagent_backend.mcp.charts import CHART_KINDS, ChartError, build_chart_spec
+from vdagent_backend.artifacts import CHART_KINDS, ArtifactError, ArtifactService
 from vdagent_backend.core import McpIdentity
+from vdagent_backend.warehouse import MAX_ROWS, QueryResult, SqlError, Warehouse, check_select
 
 PREVIEW_ROWS = 20
 DEFAULT_PAGE_ROWS = 50
 MAX_PAGE_ROWS = 200
-_EMBED = re.compile(r"\{\{\s*(chart|dataset)\s*:\s*([^}\s]+)\s*\}\}")
 
 _DATASET_RESULT = (
     ' Returns {"dataset_id", "name", "columns": [{"name", "type"}], "row_count", "truncated", "preview"}'
@@ -145,8 +139,8 @@ _DATASET_FIELDS: dict[str, str] = {
     "dataset_id": "Id of the new dataset (`ds_…`); pass it to other tools or to another agent.",
     "name": "The `name` argument, or null.",
     "columns": "`[{name, type}]`; type is INTEGER, REAL or TEXT (TEXT when every value is null).",
-    "row_count": f"Rows stored, at most {sql.MAX_ROWS:,}.",
-    "truncated": f"true when the query returned more than {sql.MAX_ROWS:,} rows and the rest were dropped.",
+    "row_count": f"Rows stored, at most {MAX_ROWS:,}.",
+    "truncated": f"true when the query returned more than {MAX_ROWS:,} rows and the rest were dropped.",
     "preview": f"The first {PREVIEW_ROWS} rows, each a list of values in column order.",
 }
 
@@ -232,27 +226,6 @@ def _str_list(args: dict[str, Any], key: str) -> list[str]:
     return [v.strip() for v in value]
 
 
-def _sort_key(value: Any) -> tuple[int, Any]:
-    """SQLite ordering across storage classes: numbers before text."""
-    return (0, value) if isinstance(value, int | float) else (1, str(value))
-
-
-def _column_stats(dataset: dict[str, Any]) -> list[dict[str, Any]]:
-    stats: list[dict[str, Any]] = []
-    for i, column in enumerate(dataset["columns"]):
-        present = [row[i] for row in dataset["rows"] if row[i] is not None]
-        stats.append(
-            {
-                "name": column["name"],
-                "type": column["type"],
-                "min": min(present, key=_sort_key) if present else None,
-                "max": max(present, key=_sort_key) if present else None,
-                "null_count": len(dataset["rows"]) - len(present),
-            }
-        )
-    return stats
-
-
 def _text_result(text: str, *, is_error: bool = False) -> types.CallToolResult:
     return types.CallToolResult(content=[types.TextContent(type="text", text=text)], is_error=is_error)
 
@@ -265,10 +238,9 @@ Handler = Callable[[McpIdentity, dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
 class McpTools:
-    def __init__(self, db: AsyncEngine, warehouse_db: str, *, sql_timeout_s: float) -> None:
-        self._artifacts = Artifacts(db)
-        self._warehouse_db = warehouse_db
-        self._timeout_s = sql_timeout_s
+    def __init__(self, artifacts: ArtifactService, warehouse: Warehouse) -> None:
+        self._artifacts = artifacts
+        self._warehouse = warehouse
         self._handlers: dict[str, Handler] = {
             "list_tables": self._list_tables,
             "describe_table": self._describe_table,
@@ -291,29 +263,17 @@ class McpTools:
             return tool_error(f"tool '{name}' is not available to the {identity.agent} agent")
         try:
             payload = await handler(identity, arguments)
-        except (ToolError, sql.SqlError, ChartError) as exc:
+        except (ToolError, SqlError, ArtifactError) as exc:
             return tool_error(str(exc))
         return _text_result(json.dumps(payload, ensure_ascii=False))
 
     # -- helpers --------------------------------------------------------------------------------
 
-    async def _dataset(self, identity: McpIdentity, dataset_id: str) -> dict[str, Any]:
-        dataset = await self._artifacts.get_dataset(identity.user_id, dataset_id)
-        if dataset is None:
-            raise ToolError("dataset not found")
-        return dataset
-
     async def _store_dataset(
-        self, identity: McpIdentity, name: str | None, source_sql: str, result: sql.QueryResult
+        self, identity: McpIdentity, name: str | None, source_sql: str, result: QueryResult
     ) -> dict[str, Any]:
-        dataset_id = await self._artifacts.insert_dataset(
-            user_id=identity.user_id,
-            invocation_id=identity.invocation_id,
-            name=name,
-            source_sql=source_sql,
-            columns=result.columns,
-            rows=result.rows,
-            truncated=result.truncated,
+        dataset_id = await self._artifacts.store_dataset(
+            identity.user_id, identity.invocation_id, name, source_sql, result
         )
         return {
             "dataset_id": dataset_id,
@@ -327,58 +287,45 @@ class McpTools:
     # -- tools ----------------------------------------------------------------------------------
 
     async def _list_tables(self, identity: McpIdentity, args: dict[str, Any]) -> dict[str, Any]:
-        tables = await asyncio.to_thread(sql.warehouse_tables, self._warehouse_db, timeout_s=self._timeout_s)
-        return {"tables": tables}
+        return {"tables": await self._warehouse.tables()}
 
     async def _describe_table(self, identity: McpIdentity, args: dict[str, Any]) -> dict[str, Any]:
-        table = _required_str(args, "table")
-        return await asyncio.to_thread(sql.warehouse_describe, self._warehouse_db, table, timeout_s=self._timeout_s)
+        return await self._warehouse.describe(_required_str(args, "table"))
 
     async def _run_query(self, identity: McpIdentity, args: dict[str, Any]) -> dict[str, Any]:
         query = _required_str(args, "sql")
         name = _optional_str(args, "name")
-        result = await asyncio.to_thread(sql.warehouse_query, self._warehouse_db, query, timeout_s=self._timeout_s)
-        return await self._store_dataset(identity, name, query, result)
+        return await self._store_dataset(identity, name, query, await self._warehouse.query(query))
 
     async def _describe_dataset(self, identity: McpIdentity, args: dict[str, Any]) -> dict[str, Any]:
-        dataset = await self._dataset(identity, _required_str(args, "dataset_id"))
-        columns = await asyncio.to_thread(_column_stats, dataset)
-        return {
-            "dataset_id": dataset["id"],
-            "name": dataset["name"],
-            "row_count": dataset["row_count"],
-            "truncated": dataset["truncated"],
-            "source_sql": dataset["source_sql"],
-            "columns": columns,
-        }
+        described = await self._artifacts.describe_dataset(identity.user_id, _required_str(args, "dataset_id"))
+        if described is None:
+            raise ToolError("dataset not found")
+        return described
 
     async def _get_dataset_rows(self, identity: McpIdentity, args: dict[str, Any]) -> dict[str, Any]:
         dataset_id = _required_str(args, "dataset_id")
         offset = _int(args, "offset", 0, 0)
         limit = _int(args, "limit", DEFAULT_PAGE_ROWS, 1, MAX_PAGE_ROWS)
-        dataset = await self._dataset(identity, dataset_id)
+        page = await self._artifacts.dataset_page(identity.user_id, dataset_id, offset, limit)
+        if page is None:
+            raise ToolError("dataset not found")
         return {
-            "dataset_id": dataset["id"],
-            "columns": dataset["columns"],
-            "row_count": dataset["row_count"],
+            "dataset_id": page["id"],
+            "columns": page["columns"],
+            "row_count": page["row_count"],
             "offset": offset,
             "limit": limit,
-            "rows": dataset["rows"][offset : offset + limit],
+            "rows": page["rows"],
         }
 
     async def _query_datasets(self, identity: McpIdentity, args: dict[str, Any]) -> dict[str, Any]:
         query = _required_str(args, "sql")
         dataset_ids = list(dict.fromkeys(_str_list(args, "dataset_ids")))
         name = _optional_str(args, "name")
-        sql.check_select(query)
-        datasets: list[dict[str, Any]] = []
-        for dataset_id in dataset_ids:
-            dataset = await self._artifacts.get_dataset(identity.user_id, dataset_id)
-            if dataset is None:
-                raise ToolError(f"dataset not found: {dataset_id}")
-            datasets.append(dataset)
-        result = await asyncio.to_thread(sql.datasets_query, query, datasets, timeout_s=self._timeout_s)
-        return await self._store_dataset(identity, name, query, result)
+        check_select(query)
+        datasets = await self._artifacts.datasets(identity.user_id, dataset_ids)
+        return await self._store_dataset(identity, name, query, await self._warehouse.query_datasets(query, datasets))
 
     async def _create_chart(self, identity: McpIdentity, args: dict[str, Any]) -> dict[str, Any]:
         dataset_id = _required_str(args, "dataset_id")
@@ -386,15 +333,11 @@ class McpTools:
         x = _required_str(args, "x")
         y = _str_list(args, "y")
         title = _required_str(args, "title")
-        dataset = await self._dataset(identity, dataset_id)
-        spec = await asyncio.to_thread(build_chart_spec, dataset, kind, x, y, title)
-        chart_id = await self._artifacts.insert_chart(
-            user_id=identity.user_id,
-            invocation_id=identity.invocation_id,
-            dataset_id=dataset_id,
-            title=title,
-            spec=spec,
+        chart_id = await self._artifacts.create_chart(
+            identity.user_id, identity.invocation_id, dataset_id, kind, x, y, title
         )
+        if chart_id is None:
+            raise ToolError("dataset not found")
         return {
             "chart_id": chart_id,
             "title": title,
@@ -406,15 +349,5 @@ class McpTools:
     async def _save_report(self, identity: McpIdentity, args: dict[str, Any]) -> dict[str, Any]:
         title = _required_str(args, "title")
         markdown = _required_str(args, "markdown")
-        refs = {"chart": set[str](), "dataset": set[str]()}
-        for kind, artifact_id in _EMBED.findall(markdown):
-            refs[kind].add(artifact_id)
-        missing: set[str] = set()
-        for kind, table in (("chart", tables.charts), ("dataset", tables.datasets)):
-            missing |= refs[kind] - await self._artifacts.existing_ids(identity.user_id, table, refs[kind])
-        if missing:
-            raise ToolError(f"markdown references unknown ids: {', '.join(sorted(missing))}")
-        report_id = await self._artifacts.insert_report(
-            user_id=identity.user_id, invocation_id=identity.invocation_id, title=title, markdown=markdown
-        )
+        report_id = await self._artifacts.save_report(identity.user_id, identity.invocation_id, title, markdown)
         return {"report_id": report_id, "title": title}

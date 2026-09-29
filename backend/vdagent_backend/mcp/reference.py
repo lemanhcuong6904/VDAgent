@@ -8,7 +8,7 @@ from typing import Any
 import yaml
 
 from vdagent_backend.config import DEFAULT_CONFIG_PATH, PluginSpec, parse_plugins
-from vdagent_backend.mcp import sql
+from vdagent_backend.warehouse import MAX_ROWS, SQL_TIMEOUT_S
 from vdagent_backend.mcp.tools import DEFAULT_PAGE_ROWS, MAX_PAGE_ROWS, PREVIEW_ROWS, RESULT_FIELDS, TOOLS
 
 __all__: list[str] = []
@@ -62,8 +62,8 @@ Errors any tool can return:
 
 ## Limits
 
-- SQL runs for at most {sql.SQL_TIMEOUT_S:g} s: `error: query exceeded the {sql.SQL_TIMEOUT_S:g} s time limit`.
-- A query stores at most {sql.MAX_ROWS:,} rows; `truncated` is true when rows were dropped. Aggregate
+- SQL runs for at most {SQL_TIMEOUT_S:g} s: `error: query exceeded the {SQL_TIMEOUT_S:g} s time limit`.
+- A query stores at most {MAX_ROWS:,} rows; `truncated` is true when rows were dropped. Aggregate
   in SQL instead of fetching raw rows.
 - Dataset results show a preview of the first {PREVIEW_ROWS} rows. Read more with `get_dataset_rows`
   ({DEFAULT_PAGE_ROWS} rows by default, at most {MAX_PAGE_ROWS} per call).

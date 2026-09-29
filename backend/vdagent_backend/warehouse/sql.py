@@ -1,7 +1,9 @@
-"""Read-only SQL for the MCP tools (§6.2).
+"""Read-only SQL: statement checks and execution against the warehouse or in-memory datasets.
 
-Blocking sqlite3 code: callers run these functions in a worker thread. Every function opens its
-own connection, so nothing here is shared between threads.
+Blocking sqlite3 code, run in a worker thread by `Warehouse`. Every function opens its own
+connection, so nothing here is shared between threads. Guarantees: exactly one `SELECT` /
+`WITH … SELECT` statement, a read-only connection (`mode=ro` URI plus `query_only`), a deadline
+enforced by a progress handler, at most `MAX_ROWS` rows, and unique column names.
 """
 
 from __future__ import annotations

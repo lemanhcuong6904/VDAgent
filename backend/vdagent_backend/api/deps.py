@@ -9,6 +9,7 @@ from fastapi import Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from vdagent_backend.api.errors import ApiError
+from vdagent_backend.artifacts import ArtifactService
 from vdagent_backend.config import Config
 from vdagent_backend.conversations import Users
 from vdagent_backend.engine import Engine
@@ -21,6 +22,7 @@ class Services:
     db: AsyncEngine
     bus: EventBus
     engine: Engine
+    artifacts: ArtifactService
 
 
 def services(request: Request) -> Services:

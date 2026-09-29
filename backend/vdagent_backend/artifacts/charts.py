@@ -1,10 +1,12 @@
-"""Vega-Lite v5 specs for `create_chart` (§6.3)."""
+"""Vega-Lite v5 specs for charts built from a dataset."""
 
 from __future__ import annotations
 
 import re
 from datetime import datetime
 from typing import Any
+
+from vdagent_backend.artifacts.errors import ArtifactError
 
 VEGA_LITE_SCHEMA = "https://vega.github.io/schema/vega-lite/v5.json"
 CHART_KINDS = ("bar", "line", "pie")
@@ -13,8 +15,8 @@ _ISO_DATE_PREFIX = re.compile(r"\d{4}-\d{2}-\d{2}")
 _NUMERIC_TYPES = ("INTEGER", "REAL")
 
 
-class ChartError(Exception):
-    """A user-facing chart failure; its message becomes the tool error text."""
+class ChartError(ArtifactError):
+    """An invalid chart request; its message is the user-facing error text."""
 
 
 def _is_iso_date(value: str) -> bool:

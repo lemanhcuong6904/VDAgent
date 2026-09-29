@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 
 from vdagent_backend.api.deps import Svc, UserId
 from vdagent_backend.api.errors import ApiError, not_found
-from vdagent_backend.artifacts import Artifacts
 from vdagent_backend.conversations import TASK_STATUSES, Messages, Tasks, Users, invocation_dto, message_dto, task_dto, user_dto
 from vdagent_backend.engine import TaskFinishedError, TaskNotFoundError, UnknownAgentError
 
@@ -124,23 +123,23 @@ async def get_dataset(
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=1000)] = 200,
 ) -> dict[str, Any]:
-    ds = await Artifacts(svc.db).get_dataset(user_id, dataset_id)
-    if ds is None:
+    page = await svc.artifacts.dataset_page(user_id, dataset_id, offset, limit)
+    if page is None:
         raise not_found("dataset")
     return {
-        "id": ds["id"],
-        "name": ds["name"],
-        "columns": ds["columns"],
-        "row_count": ds["row_count"],
-        "truncated": ds["truncated"],
-        "source_sql": ds["source_sql"],
-        "rows": ds["rows"][offset : offset + limit],
+        "id": page["id"],
+        "name": page["name"],
+        "columns": page["columns"],
+        "row_count": page["row_count"],
+        "truncated": page["truncated"],
+        "source_sql": page["source_sql"],
+        "rows": page["rows"],
     }
 
 
 @router.get("/charts/{chart_id}")
 async def get_chart(svc: Svc, user_id: UserId, chart_id: str) -> dict[str, Any]:
-    chart = await Artifacts(svc.db).get_chart(user_id, chart_id)
+    chart = await svc.artifacts.get_chart(user_id, chart_id)
     if chart is None:
         raise not_found("chart")
     return chart
@@ -148,12 +147,12 @@ async def get_chart(svc: Svc, user_id: UserId, chart_id: str) -> dict[str, Any]:
 
 @router.get("/reports")
 async def list_reports(svc: Svc, user_id: UserId) -> list[dict[str, Any]]:
-    return await Artifacts(svc.db).list_reports(user_id)
+    return await svc.artifacts.list_reports(user_id)
 
 
 @router.get("/reports/{report_id}")
 async def get_report(svc: Svc, user_id: UserId, report_id: str) -> dict[str, Any]:
-    report = await Artifacts(svc.db).get_report(user_id, report_id)
+    report = await svc.artifacts.get_report(user_id, report_id)
     if report is None:
         raise not_found("report")
     return report

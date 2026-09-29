@@ -27,6 +27,7 @@ from starlette.responses import Response
 from vdagent_backend.api import rest, sse
 from vdagent_backend.api.deps import Services
 from vdagent_backend.api.errors import error_response, install_error_handlers
+from vdagent_backend.artifacts import ArtifactService
 from vdagent_backend.config import Config, PluginSpec, load_config
 from vdagent_backend.persistence import create_database, migrate, sqlite_url
 from vdagent_backend.engine import Engine
@@ -34,6 +35,7 @@ from vdagent_backend.core import EventBus
 from vdagent_backend.mcp.server import create_mcp
 from vdagent_backend.mcp.tools import TOOL_NAMES
 from vdagent_backend.plugins import PluginManager
+from vdagent_backend.warehouse import Warehouse
 from vdagent_backend.core import TokenRegistry
 
 
@@ -44,7 +46,8 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     bus = EventBus()
     url = sqlite_url(cfg.backend_db)
     db = create_database(url)
-    mcp = create_mcp(cfg, db, tokens)
+    artifacts = ArtifactService(db)
+    mcp = create_mcp(artifacts, Warehouse(cfg.warehouse_db), tokens)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -52,7 +55,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         plugins = PluginManager()
         registry = await plugins.load(cfg.plugins)
         engine = Engine(cfg, db, bus, tokens, registry)
-        app.state.services = Services(cfg=cfg, db=db, bus=bus, engine=engine)
+        app.state.services = Services(cfg=cfg, db=db, bus=bus, engine=engine, artifacts=artifacts)
         try:
             await engine.start()
             async with mcp.lifespan(registry):

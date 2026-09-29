@@ -22,13 +22,13 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.shared._httpx_utils import create_mcp_http_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from vdagent_backend.config import Config
 from conftest import NOW, migrated_database
-from vdagent_backend.artifacts import Artifacts
+from vdagent_backend.artifacts import Artifacts, ArtifactService
 from vdagent_backend.mcp.server import create_mcp
 from vdagent_backend.mcp.tools import RESULT_FIELDS, TOOLS
 from vdagent_backend.core.tokens import TokenRegistry
 from vdagent_backend.plugins import AgentRegistry, RegisteredAgent
+from vdagent_backend.warehouse import Warehouse
 
 ALICE, BOB = "u_000000000001", "u_000000000002"
 INVOCATION = {ALICE: "inv_00000000000a", BOB: "inv_00000000000b"}
@@ -104,14 +104,8 @@ async def env(tmp_path: Path) -> AsyncIterator[McpEnv]:
     build_warehouse(warehouse)
     db = await migrated_database(str(backend))
     seed_backend(backend)
-    cfg = Config(
-        backend_db=str(backend),
-        warehouse_db=str(warehouse),
-        mcp_public_url="",
-        frontend_dist=str(tmp_path / "dist"),
-    )
     tokens = TokenRegistry()
-    mcp = create_mcp(cfg, db, tokens, sql_timeout_s=SQL_TIMEOUT_S)
+    mcp = create_mcp(ArtifactService(db), Warehouse(str(warehouse), SQL_TIMEOUT_S), tokens)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
