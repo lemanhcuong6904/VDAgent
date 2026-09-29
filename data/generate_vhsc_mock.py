@@ -19,8 +19,13 @@ from statistics import median
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "mock" / "vhsc_20260630"
 CONTRACT = ROOT / "docs" / "data-warehouse-data-contract-v3.1.0.md"
-RNG = random.Random(25092026)
 SNAP = date(2026, 6, 30)
+PROJECT_KEY = 200
+PROJECT_ID = "PRJ-VHSC"
+UNIT_KEY_BASE = 200000
+TOTAL_UNITS = 3000
+LEGAL_FIXTURE_UNITS = 16
+NORMAL_UNITS = TOTAL_UNITS - LEGAL_FIXTURE_UNITS
 CAUSES = [
     "SEVERE_PHYSICAL_DEFECT", "EXTREME_THERMAL_EXPOSURE", "SECONDARY_ARBITRAGE",
     "LUMP_SUM_TICKET_BARRIER", "OVERPRICED_VS_PEER", "LOW_SALES_INCENTIVE",
@@ -69,6 +74,14 @@ def columns_from_contract() -> dict[str, list[str]]:
 
 
 def main() -> None:
+    rng = random.Random(25092026)
+    registry = json.loads((ROOT / "warehouse" / "id_registry.json").read_text(encoding="utf-8"))
+    project_contract = next(project for project in registry["projects"] if project["project_key"] == PROJECT_KEY)
+    if (project_contract["project_id"] != PROJECT_ID
+            or project_contract["unit_key_min"] > UNIT_KEY_BASE + 1
+            or project_contract["unit_key_max"] < UNIT_KEY_BASE + TOTAL_UNITS
+            or project_contract["unit_code_prefix"] != "SMC-U"):
+        raise ValueError("Smart City generator does not match id_registry.json")
     OUT.mkdir(parents=True, exist_ok=True)
     rows: dict[str, list[dict]] = {name: [] for name in columns_from_contract()}
     rows["snapshot_manifest"].append(dict(
@@ -104,61 +117,59 @@ def main() -> None:
         day += timedelta(days=1)
 
     infrastructure = [
-        (1, "INF-METRO-05", "Metro số 5", "URBAN_METRO", "PLANNING_APPROVED", 0),
-        (2, "INF-METRO-06", "Metro số 6", "URBAN_METRO", "PLANNING_APPROVED", 0),
-        (3, "INF-THANG-LONG", "Đại lộ Thăng Long", "EXPRESSWAY", "COMMERCIAL_OPERATION", 100),
-        (4, "INF-RING-ROAD-3.5", "Vành đai 3.5", "RING_ROAD", "UNDER_CONSTRUCTION", 50),
+        (2101, "INF-METRO-05", "Metro số 5", "URBAN_METRO", "PLANNING_APPROVED", 0),
+        (2102, "INF-METRO-06", "Metro số 6", "URBAN_METRO", "PLANNING_APPROVED", 0),
+        (2103, "INF-THANG-LONG", "Đại lộ Thăng Long", "EXPRESSWAY", "COMMERCIAL_OPERATION", 100),
+        (2104, "INF-RING-ROAD-3.5", "Vành đai 3.5", "RING_ROAD", "UNDER_CONSTRUCTION", 50),
     ]
     for key, ident, name, kind, stage, progress in infrastructure:
         rows["dim_infrastructure_assets"].append(dict(infra_key=key, infra_id=ident, infra_name=name,
              infra_type=kind, lifecycle_stage=stage, construction_progress_pct=dec(progress, 2),
              original_completion_year=None, revised_completion_year=None))
 
-    for project_key, project_id, name, legal in [
-        (1, "PRJ-VHSC-HN", "Vinhomes Smart City", True),
-        (2, "PRJ-VHSC-LEGAL-MOCK", "VHSC future phase — fictional legal test", False),
-    ]:
-        rows["dim_project_profile"].append(dict(
-            project_key=project_key, project_id=project_id, project_name=name,
+    rows["dim_project_profile"].append(dict(
+            project_key=PROJECT_KEY, project_id=PROJECT_ID, project_name="Vinhomes Smart City",
             market_id="MKT-WEST-HN", market_name="Tây Hà Nội", province_city="Hà Nội",
             district="Nam Từ Liêm", developer_name="Vinhomes (synthetic POC profile)",
             developer_tier="TIER_1", developer_origin="DOMESTIC", segment="MID",
-            construction_status="HANDED_OVER" if legal else "FOUNDATION",
-            construction_progress_pct="100.00" if legal else "10.00",
-            is_sales_permit_issued=legal, is_bank_guarantee_issued=legal,
+            construction_status="HANDED_OVER",
+            construction_progress_pct="100.00",
+            is_sales_permit_issued=True, is_bank_guarantee_issued=True,
             max_foreign_quota_exceeded=False, primary_infra_id="INF-THANG-LONG",
             distance_to_primary_infra_m=500, partner_bank_name=None, expected_handover_date=None,
         ))
     zone_labels = ["S1.01", "S1.02", "S2.01", "S2.02", "S3.01", "S4.01", "MOCK-LGL-01"]
-    for zone_key, label in enumerate(zone_labels, 1):
-        project_key = 1 if zone_key <= 6 else 2
+    for zone_number, label in enumerate(zone_labels, 1):
+        zone_key = 200 + zone_number
         rows["dim_zone_master"].append(dict(
-            zone_key=zone_key, zone_id=f"ZN-VHSC-{label.replace('.', '')}", project_key=project_key,
+            zone_key=zone_key, zone_id=f"ZN-VHSC-{label.replace('.', '')}", project_key=PROJECT_KEY,
             zone_name=label, zone_type="HIGH_RISE_TOWER", total_floors=35, basement_floors=1,
-            units_per_floor=19 if zone_key <= 4 else 30, passenger_elevators=6,
-            elevator_ratio=dec(Decimal(19 if zone_key <= 4 else 30) / 6, 1),
+            units_per_floor=19 if zone_number <= 4 else 30, passenger_elevators=6,
+            elevator_ratio=dec(Decimal(19 if zone_number <= 4 else 30) / 6, 1),
             handover_standard="BASIC_FINISH",
         ))
     for key in range(1, 9):
-        rows["dim_sales_channel"].append(dict(channel_key=key, channel_id=f"MOCK-AGENCY-{key:02d}",
+        rows["dim_sales_channel"].append(dict(channel_key=2000 + key, channel_id=f"MOCK-AGENCY-{key:02d}",
             channel_name=f"Synthetic sales channel {key:02d}",
             channel_tier="INHOUSE" if key == 1 else "TIER_2_GENERAL",
             active_brokers_count=8 + key * 3))
 
-    target_order = list(range(1, 1201))
-    RNG.shuffle(target_order)
-    sold_keys = set(target_order[:816])
-    booked_keys = set(target_order[816:900])
-    overdue_keys = target_order[900:1020]
+    target_order = list(range(UNIT_KEY_BASE + 1, UNIT_KEY_BASE + NORMAL_UNITS + 1))
+    rng.shuffle(target_order)
+    sold_keys = set(target_order[:2040])
+    booked_keys = set(target_order[2040:2250])
+    overdue_keys = target_order[2250:2550]
     edge_overdue_key = overdue_keys[0]       # DOM = 91, included in diagnostics.
-    edge_not_overdue_key = target_order[1020] # DOM = 90, excluded from diagnostics.
+    edge_not_overdue_key = target_order[2550] # DOM = 90, excluded from diagnostics.
     cause_by_key = {key: CAUSES[i % len(CAUSES)] for i, key in enumerate(overdue_keys)}
     all_units = []
     inventory = []
-    for unit_key in range(1, 1217):
-        project_key = 1 if unit_key <= 1200 else 2
-        zone_key = ((unit_key - 1) // 200) + 1 if project_key == 1 else 7
-        cause = cause_by_key.get(unit_key, "LEGAL_PERMIT_BARRIER" if project_key == 2 else None)
+    for unit_number in range(1, TOTAL_UNITS + 1):
+        unit_key = UNIT_KEY_BASE + unit_number
+        legal_fixture = unit_number > NORMAL_UNITS
+        zone_number = 7 if legal_fixture else min((unit_number - 1) // 500 + 1, 6)
+        zone_key = 200 + zone_number
+        cause = cause_by_key.get(unit_key, "LEGAL_PERMIT_BARRIER" if legal_fixture else None)
         unit_type = ("STUDIO", "1PN", "2PN", "3PN")[unit_key % 4]
         if cause in {"SEVERE_PHYSICAL_DEFECT", "EXTREME_THERMAL_EXPOSURE", "SECONDARY_ARBITRAGE",
                      "OVERPRICED_VS_PEER", "DEEP_FUNNEL_DROP_OFF", "LEGAL_PERMIT_BARRIER"}:
@@ -169,7 +180,7 @@ def main() -> None:
             unit_type = "1PN"
         ranges = {"STUDIO": (28, 35), "1PN": (38, 48), "2PN": (55, 70), "3PN": (80, 95)}
         lo, hi = ranges[unit_type]
-        area = Decimal(str(RNG.uniform(lo, hi))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        area = Decimal(str(rng.uniform(lo, hi))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if cause == "LUMP_SUM_TICKET_BARRIER":
             area = Decimal("94.00")
         gross = (area / Decimal("0.85")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -180,10 +191,11 @@ def main() -> None:
             orientation = "W"
         trash = "1.5" if cause == "SEVERE_PHYSICAL_DEFECT" else "12.0"
         exposure = "0.80" if cause == "EXTREME_THERMAL_EXPOSURE" else ("0.45" if orientation in {"W", "SW", "NW"} else "0.05")
-        unit_code = f"{zone_labels[zone_key-1]}-{floor:02d}.{(unit_key % 30) + 1:02d}"
+        tower_unit_label = f"{zone_labels[zone_number-1]}-{floor:02d}.{(unit_number % 30) + 1:02d}"
+        unit_code = f"SMC-U{unit_number:05d}"
         unit = dict(
-            unit_key=unit_key, unit_id=f"VHSC-U-{unit_key:05d}", unit_code=unit_code,
-            project_key=project_key, zone_key=zone_key, unit_type=unit_type,
+            unit_key=unit_key, unit_id=unit_code, unit_code=unit_code,
+            project_key=PROJECT_KEY, zone_key=zone_key, unit_type=unit_type,
             bedroom_count={"STUDIO": 0, "1PN": 1, "2PN": 2, "3PN": 3}[unit_type],
             bathroom_count=1 if unit_type in {"STUDIO", "1PN"} else 2,
             net_area_m2=str(area), gross_area_m2=str(gross), floor_number=floor,
@@ -192,7 +204,10 @@ def main() -> None:
             efficiency_ratio=dec(area / gross, 3), distance_to_trash_room_m=trash,
             is_adjacent_elevator=False, dark_bedroom_count=0, west_facing_exposure_pct=exposure,
             view_obstruction_distance_m="50.0", taboo_view_type="NONE", is_taboo_floor=floor in {4, 7, 13, 14},
-            ext_attributes=json.dumps({"data_origin": "synthetic", "reference": "Vinhomes Smart City"}),
+            ext_attributes=json.dumps({"data_origin": "synthetic", "reference": "Vinhomes Smart City",
+                                       "tower_unit_label": tower_unit_label,
+                                       "fictional_phase_fixture": legal_fixture,
+                                       "phase_sales_permit_issued": False if legal_fixture else None}),
         )
         rows["dim_unit_master"].append(unit)
         all_units.append(unit)
@@ -221,8 +236,9 @@ def main() -> None:
         net = money(Decimal(asking) * (1 - Decimal(discount) / 100) - concession)
         commission = "1.20" if cause == "LOW_SALES_INCENTIVE" or (cause and unit_key % 6 == 0) else "2.50"
         inv = dict(
-            snapshot_date_key=date_key(SNAP), unit_key=unit_key, project_key=project_key,
-            zone_key=zone_key, channel_key=1 + unit_key % 8, launch_batch_id="VHSC-2026-01",
+            snapshot_date_key=date_key(SNAP), unit_key=unit_key, project_key=PROJECT_KEY,
+            zone_key=zone_key, channel_key=2001 + unit_number % 8,
+            launch_batch_id="MOCK-LGL-01" if legal_fixture else "VHSC-2026-01",
             release_date=release, inventory_status=status, sold_date=sold_date,
             unsold_days_dom=dom, is_overdue_flag=status == "AVAILABLE" and dom > 90,
             asking_price_vnd=asking, discount_pct=discount, concession_value_vnd=concession,
@@ -260,7 +276,7 @@ def main() -> None:
     funnel_totals = defaultdict(lambda: [0, 0, 0, 0])
     for inv in inventory:
         key = inv["unit_key"]
-        cause = cause_by_key.get(key, "LEGAL_PERMIT_BARRIER" if key > 1200 else None)
+        cause = cause_by_key.get(key, "LEGAL_PERMIT_BARRIER" if key > UNIT_KEY_BASE + NORMAL_UNITS else None)
         release = inv["release_date"]
         last_day = inv["sold_date"] or SNAP
         span = max(1, (last_day - release).days)
@@ -285,7 +301,7 @@ def main() -> None:
             totals[1] += visits
             totals[2] += booking
             totals[3] += cancelled
-        if key <= 480:
+        if key <= UNIT_KEY_BASE + 1200:
             effective = min(last_day, release + timedelta(days=10))
             new_price = inv["asking_price_vnd"]
             old_price = new_price - 50_000_000
@@ -334,11 +350,11 @@ def main() -> None:
         booking = funnel_totals[key][2]
         dropoff = dec(Decimal(funnel_totals[key][3]) * 100 / booking, 2) if booking else None
         pir = dec(Decimal(inv["net_price_vnd"]) / 150_000_000, 1)
-        diagnostic_id = f"DIAG-20260630-{key:05d}"
+        diagnostic_id = f"DIAG-20260630-{key:06d}"
         rows["dm_unit_friction_diagnostics"].append(dict(
             diagnostic_id=diagnostic_id, snapshot_date_key=date_key(SNAP), unit_key=key,
-            unit_code=unit["unit_code"], project_name="Vinhomes Smart City" if key <= 1200 else "VHSC fictional legal phase",
-            zone_name=zone_labels[unit["zone_key"] - 1], unsold_days_dom=inv["unsold_days_dom"],
+            unit_code=unit["unit_code"], project_name="Vinhomes Smart City",
+            zone_name=zone_labels[unit["zone_key"] - 201], unsold_days_dom=inv["unsold_days_dom"],
             price_spread_vs_peer_pct=peer_spread, ticket_size_vs_income_ratio=pir,
             physical_defect_penalty=physical, thermal_view_penalty=thermal,
             secondary_price_gap_pct=secondary_gap, funnel_dropoff_rate_pct=dropoff,
@@ -360,7 +376,7 @@ def main() -> None:
                 snapshot_date_key=date_key(SNAP), severity_rank=rank,
                 attribution_score=score, evidence_artifact_id=None,
             ))
-        scenarios.append(dict(unit_id=unit["unit_id"], project_id="PRJ-VHSC-HN" if key <= 1200 else "PRJ-VHSC-LEGAL-MOCK",
+        scenarios.append(dict(unit_id=unit["unit_id"], project_id=PROJECT_ID,
                               diagnostic_id=diagnostic_id, expected_primary_cause=cause,
                               expected_causes=ranked))
 
@@ -380,11 +396,27 @@ def main() -> None:
                                  "" if value is None else value.isoformat() if isinstance(value, date) else value
                                  for key, value in record.items()})
     (OUT / "expected_scenarios.json").write_text(json.dumps(scenarios, ensure_ascii=False, indent=2), encoding="utf-8")
+    provisional_causes = {scenario["expected_primary_cause"]: scenario for scenario in scenarios}
+    tc_assumptions = {
+        "TC-13": {
+            "status": "PROVISIONAL_PENDING_BA",
+            "assumption": "A fictional phase-level permit barrier is represented by unit ext_attributes, not the project's legal status.",
+            "unit_id": provisional_causes["LEGAL_PERMIT_BARRIER"]["unit_id"],
+            "expected_primary_cause": "LEGAL_PERMIT_BARRIER",
+        },
+        "TC-15": {
+            "status": "PROVISIONAL_PENDING_BA",
+            "assumption": "A high-view, high-booking-cancellation unit has deep funnel drop-off.",
+            "unit_id": provisional_causes["DEEP_FUNNEL_DROP_OFF"]["unit_id"],
+            "expected_primary_cause": "DEEP_FUNNEL_DROP_OFF",
+        },
+    }
+    (OUT / "tc_assumptions.json").write_text(json.dumps(tc_assumptions, ensure_ascii=False, indent=2), encoding="utf-8")
     controls = {
-        "sold_not_diagnosed": "VHSC-U-00001",
-        "booked_not_diagnosed": "VHSC-U-00007",
-        "available_dom_90_not_diagnosed": f"VHSC-U-{edge_not_overdue_key:05d}",
-        "available_dom_91_diagnosed": f"VHSC-U-{edge_overdue_key:05d}",
+        "sold_not_diagnosed": f"SMC-U{min(sold_keys) - UNIT_KEY_BASE:05d}",
+        "booked_not_diagnosed": f"SMC-U{min(booked_keys) - UNIT_KEY_BASE:05d}",
+        "available_dom_90_not_diagnosed": f"SMC-U{edge_not_overdue_key - UNIT_KEY_BASE:05d}",
+        "available_dom_91_diagnosed": f"SMC-U{edge_overdue_key - UNIT_KEY_BASE:05d}",
     }
     (OUT / "negative_controls.json").write_text(json.dumps(controls, indent=2), encoding="utf-8")
     exemplars = {}
@@ -404,7 +436,8 @@ def main() -> None:
             ground_truth_causes=scenario["expected_causes"], difficulty_level="MEDIUM",
             unit_id=unit_id, project_id=scenario["project_id"], snapshot_id="SNAP-20260630-01",
         ))
-    for index, unit_id in enumerate(("VHSC-U-00001", "VHSC-U-00007", controls["available_dom_90_not_diagnosed"]), 9):
+    for index, unit_id in enumerate((controls["sold_not_diagnosed"], controls["booked_not_diagnosed"],
+                                    controls["available_dom_90_not_diagnosed"]), 9):
         eval_cases.append(dict(
             test_case_id=f"vhsc_20260630_{index:02d}", testset_id="ts_vhsc_slowmoving_20260630",
             prompt_input=f"Căn {unit_id} có cần chẩn đoán bán chậm tại snapshot 30/06/2026 không?",
@@ -414,7 +447,7 @@ def main() -> None:
                                 f"WHERE u.unit_id = '{unit_id}' AND c.snapshot_date_key = 20260630 "
                                 "ORDER BY c.severity_rank;"),
             ground_truth_causes=[], difficulty_level="EDGE_CASE", unit_id=unit_id,
-            project_id="PRJ-VHSC-HN", snapshot_id="SNAP-20260630-01",
+            project_id=PROJECT_ID, snapshot_id="SNAP-20260630-01",
         ))
     (OUT / "eval_test_cases.json").write_text(json.dumps(eval_cases, ensure_ascii=False, indent=2), encoding="utf-8")
     counts = {table: len(records) for table, records in rows.items()}
@@ -426,6 +459,13 @@ def main() -> None:
         "fact_sales_funnel_daily", "fact_unit_inventory_snapshot", "fact_sales_channel_performance",
         "dm_unit_friction_diagnostics", "unit_diagnostic_causes",
     ]
+    pack_manifest = {
+        "pack_id": "vhsc_20260630", "project_key": PROJECT_KEY, "project_id": PROJECT_ID,
+        "snapshot_id": "SNAP-20260630-01", "snapshot_date": SNAP.isoformat(),
+        "dataset_version": "3.1.0", "registry_version": registry["registry_version"],
+        "synthetic": True, "format": "csv", "table_order": load_order, "row_counts": counts,
+    }
+    (OUT / "pack_manifest.json").write_text(json.dumps(pack_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     load_lines = [
         "-- Synthetic POC data only. Run only against the dedicated vdagent_dw_dev database.",
         "BEGIN;",
