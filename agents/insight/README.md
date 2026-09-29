@@ -2,7 +2,9 @@
 
 Interprets results — trends, anomalies, drivers — each finding backed by a dataset id; may ask data or compare.
 
-A Backend plugin (see [`agents/_template`](../_template/README.md) and the `vdagent_sdk` docstring):
+A Backend plugin: the Backend imports this package at startup and runs the agent's turns in its own
+process; the agent reports every step through the `ctx` it receives (to build one, see
+[`agents/_template`](../_template/README.md)).
 `vdagent_insight/__init__.py` exports `setup(api, opts)`, which registers the agent. The brain is a
 LangChain 1.x agent (`create_agent`) with its own long-term memory:
 
@@ -18,7 +20,7 @@ LangChain 1.x agent (`create_agent`) with its own long-term memory:
 Prompts: role `prompts/system.md`, summariser `prompts/compact.md`, memory extraction
 `prompts/extract.md`.
 
-MCP tools granted by the Backend (`backend/vdagent_backend/mcp/tools.py`): `query_datasets`, `describe_dataset`, `get_dataset_rows`;
+MCP tools granted by `mcp_tools` in `backend/config.yaml`: `query_datasets`, `describe_dataset`, `get_dataset_rows`;
 plus `send_to_agent` to reach the other agents.
 
 ## Run

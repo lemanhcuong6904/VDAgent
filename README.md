@@ -6,11 +6,14 @@ each other through the Backend, which also serves the React UI and an MCP tool s
 are **plugins**: the Backend imports the modules listed in `backend/config.yaml` at startup, calls
 their `setup(api, opts)` (like Neovim / lazy.nvim), and runs their turns in its own process.
 
-- Design: [`docs/superpowers/specs/2026-09-24-vdagent-design.md`](docs/superpowers/specs/2026-09-24-vdagent-design.md)
-- Agent template design: [`docs/superpowers/specs/2026-09-24-agent-template-design.md`](docs/superpowers/specs/2026-09-24-agent-template-design.md)
-- Agents as plugins: [`docs/superpowers/specs/2026-09-26-agent-plugins-design.md`](docs/superpowers/specs/2026-09-26-agent-plugins-design.md)
-- Agents beyond a ReAct loop: [`docs/superpowers/specs/2026-09-28-agent-freedom-design.md`](docs/superpowers/specs/2026-09-28-agent-freedom-design.md)
-- Building an agent plugin: [`agents/_template/README.md`](agents/_template/README.md)
+- Building an agent plugin: [`agents/_template/README.md`](agents/_template/README.md); full agent
+  developer reference (SDK and MCP tools): `make sdk-docs-serve`, then http://127.0.0.1:8080
+
+Design history (dated specs; the code and the references above are current):
+[`vdagent`](docs/superpowers/specs/2026-09-24-vdagent-design.md),
+[agent template](docs/superpowers/specs/2026-09-24-agent-template-design.md),
+[agents as plugins](docs/superpowers/specs/2026-09-26-agent-plugins-design.md),
+[agents beyond a ReAct loop](docs/superpowers/specs/2026-09-28-agent-freedom-design.md).
 
 ## Prerequisites
 
@@ -42,16 +45,30 @@ plugins:
   member under `agents/`) whose top-level module exports `setup(api, opts)`. `setup` registers one
   or more agents (`api.register_agent(name=…, description=…, agent=…)`) and optional shutdown hooks.
 - Plugins depend only on `vdagent_sdk` (`sdk/`), which defines the interface the Backend expects:
-  `Agent` (`invoke(ctx)`, `compact(...)`), `InvocationContext`, `PluginAPI`, and the turn rules
-  R1–R11 in its docstring. How an agent thinks (framework, model, tool loop, MCP client, memory) is
-  up to the plugin; see [Agents are different programs](#agents-are-different-programs).
+  `Agent` (`invoke(ctx)`, `compact(...)`), `InvocationContext` and `PluginAPI`. How an agent thinks
+  (framework, model, tool loop, MCP client, memory) is up to the plugin; see
+  [Agents are different programs](#agents-are-different-programs).
+- A turn reports every model step through `ctx`: the step (`emit_assistant`), then exactly one
+  result per tool call (`emit_tool_result`; `call_agent` first for a `send_to_agent` call), and it
+  ends with a step without tool calls, which is the answer. The Backend checks this order and fails
+  the turn with `contract violation: …` when it is broken.
 - **A plugin that fails to load** (import error, missing setting, bad registration) is logged as
   `plugin <module> failed: …` and skipped; the Backend starts with the others. Its agent is absent
   from the UI and from every other agent's peer list.
-- Plugins share the Backend's process and event loop: a plugin must not block the loop (R10) and
-  must not write `os.environ` (R11).
-- To add one: copy `agents/_template` (see its README), add the folder to the workspace in the
-  root `pyproject.toml`, `uv sync`, and list its module under `plugins:`.
+- Plugins share the Backend's process and event loop: a plugin must not block the loop, must not
+  write `os.environ`, and must keep per-user state in `ctx.memory`, not in the agent object.
+- To add one:
+  1. Copy `agents/_template` to `agents/<name>` and rename `agent_template/` to `vdagent_<name>/`;
+     set the package name in its `pyproject.toml`.
+  2. Root `pyproject.toml`: add the folder to `[tool.uv.workspace].members` and
+     `[tool.basedpyright].extraPaths`, `vdagent-<name>` to `dependencies` and to
+     `[tool.uv.sources]` (`{ workspace = true }`); run `uv sync`.
+  3. List `- module: vdagent_<name>` under `plugins:` in `backend/config.yaml` and
+     `backend/config.compose.yaml`.
+  4. Grant MCP tools on the same plugin entries with `mcp_tools: [<tool>, …]`; an entry without
+     `mcp_tools` sees no MCP tools.
+  5. For Docker: copy its `pyproject.toml` in `Dockerfile.python` and mount its `.env` in
+     `docker-compose.yml`, like the other agents.
 
 ## Agents are different programs
 
@@ -66,7 +83,7 @@ team's choice. Three agents are plain ReAct loops, two are not:
 
 Agent memory lives in `backend.db` (`memories`, keyword search via FTS5, vector search via
 sqlite-vec), scoped to one user and one agent. The Backend stores and ranks notes; the agent
-computes the embeddings and decides what to save and recall (`ctx.memory`, SDK rule R1).
+computes the embeddings and decides what to save and recall (`ctx.memory`).
 
 ## Environment variables
 
@@ -124,6 +141,8 @@ interface the HTTP server (UI, API, MCP) binds to.
 | `make` / `make help` | Lists the targets. |
 | `make backend` | Starts the backend (API, SSE, MCP, built UI) on http://localhost:8000 with the agent plugins listed in `backend/config.yaml`. `HOST=0.0.0.0` serves HTTP to other machines. |
 | `make reset-db` | Deletes `var/backend.db` and `var/warehouse.db` and reseeds them (demo users Alice and Bob, the deterministic warehouse). |
+| `make sdk-docs` | Builds the agent developer reference (the `vdagent_sdk` contract and the MCP tools page) into `docs/sdk/` (gitignored). |
+| `make sdk-docs-serve` | Serves the same reference on http://127.0.0.1:8080 and rebuilds it when a docstring changes. |
 
 A typical local session:
 

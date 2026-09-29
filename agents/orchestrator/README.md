@@ -2,12 +2,14 @@
 
 Talks to the user, plans, delegates to the other agents with `send_to_agent`, and writes the final answer citing artifact ids. Never writes SQL.
 
-A Backend plugin (see [`agents/_template`](../_template/README.md) and the `vdagent_sdk` docstring):
+A Backend plugin: the Backend imports this package at startup and runs the agent's turns in its own
+process; the agent reports every step through the `ctx` it receives (to build one, see
+[`agents/_template`](../_template/README.md)).
 `vdagent_orchestrator/__init__.py` exports `setup(api, opts)`, which registers the agent. The brain is a thin
 tool-calling loop over LiteLLM (`agent.py`, `llm.py`, `mcp_client.py`); its role prompt is
 `vdagent_orchestrator/prompts/system.md`, the summariser prompt `prompts/compact.md`.
 
-MCP tools granted by the Backend (`backend/vdagent_backend/mcp/tools.py`): `describe_dataset`, `get_dataset_rows`;
+MCP tools granted by `mcp_tools` in `backend/config.yaml`: `describe_dataset`, `get_dataset_rows`;
 plus `send_to_agent` to reach the other agents.
 
 ## Run

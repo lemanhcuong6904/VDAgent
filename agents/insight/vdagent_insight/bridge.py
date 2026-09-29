@@ -1,11 +1,12 @@
 """`CtxBridge`: maps LangChain's agent loop onto the vdagent turn contract.
 
-- every model call: at most `ctx.max_steps` of them get tools (R7); the last is tool-free, and a
-  model that still asks for tools gets `STEP_LIMIT_TEXT` instead (R5). Missing tool-call ids are
-  filled in (the contract needs unique ones). A timeout becomes `AgentTimeoutError` (R6).
-- after every model call: `ctx.emit_assistant` (R2).
+- every model call: at most `ctx.max_steps` of them get tools (the step budget); the last is
+  tool-free, and a model that still asks for tools gets `STEP_LIMIT_TEXT` instead, so the turn
+  ends with an answer. Missing tool-call ids are filled in (the contract needs unique ones). A
+  timeout becomes `AgentTimeoutError`.
+- after every model call: `ctx.emit_assistant`, before any of its tool calls run.
 - every tool call: `send_to_agent` goes through `ctx.call_agent`; failures become `error: …`
-  content (R6); the result is reported with `ctx.emit_tool_result` (R3).
+  content so the turn continues; the result is reported with `ctx.emit_tool_result`.
 
 One instance per turn: it counts that turn's steps.
 """
