@@ -7,7 +7,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // REST + SSE (/api/events) go to the backend; the proxy streams SSE unbuffered.
-      "/api": { target: "http://localhost:3000", changeOrigin: true },
+      "/api": { target: "http://localhost:8000", changeOrigin: true },
     },
   },
   build: {

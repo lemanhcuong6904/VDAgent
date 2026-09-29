@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useApi, useUsers } from "../api/queries";
 
 interface Props {
@@ -70,6 +70,7 @@ export function UserPicker({ userId, onSelect }: Props) {
       {(creating || list?.length === 0) && (
         <form className="user-create" onSubmit={submit}>
           <input
+            autoFocus
             placeholder="New user name"
             value={name}
             onChange={(e) => setName(e.target.value)}
