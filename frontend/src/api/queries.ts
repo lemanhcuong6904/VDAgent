@@ -1,6 +1,10 @@
-import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQuery,
+} from "@tanstack/react-query";
 import { createContext, useContext } from "react";
-import { ApiClient, ApiError } from "./client";
+import { ApiClient } from "./client";
 import { queryKeys } from "./keys";
 
 export const ApiContext = createContext<ApiClient>(new ApiClient(null));
@@ -18,11 +22,7 @@ export function useUsers() {
 
 export function useAgents() {
   const api = useApi();
-  return useQuery({
-    queryKey: queryKeys.agents,
-    queryFn: () => api.listAgents(),
-    refetchInterval: 10_000,
-  });
+  return useQuery({ queryKey: queryKeys.agents, queryFn: () => api.listAgents() });
 }
 
 /** Newest page first; `fetchNextPage` loads the next older page via `before_seq`. */
@@ -37,17 +37,12 @@ export function useMessages(agent: string) {
       const first = oldest.messages[0];
       return first && first.seq > 1 ? first.seq : undefined;
     },
-    refetchInterval: 5_000,
   });
 }
 
 export function useTasks() {
   const api = useApi();
-  return useQuery({
-    queryKey: queryKeys.tasks,
-    queryFn: () => api.listTasks(),
-    refetchInterval: 5_000,
-  });
+  return useQuery({ queryKey: queryKeys.tasks, queryFn: () => api.listTasks() });
 }
 
 export function useTask(id: string | null) {
@@ -56,7 +51,6 @@ export function useTask(id: string | null) {
     queryKey: queryKeys.task(id ?? ""),
     queryFn: () => api.getTask(id as string),
     enabled: id !== null,
-    refetchInterval: (query) => (query.state.data?.task.status === "running" ? 3_000 : false),
   });
 }
 
@@ -81,11 +75,7 @@ export function useChart(id: string) {
 
 export function useReports() {
   const api = useApi();
-  return useQuery({
-    queryKey: queryKeys.reports,
-    queryFn: () => api.listReports(),
-    refetchInterval: 5_000,
-  });
+  return useQuery({ queryKey: queryKeys.reports, queryFn: () => api.listReports() });
 }
 
 export function useReport(id: string) {
@@ -94,33 +84,5 @@ export function useReport(id: string) {
     queryKey: queryKeys.report(id),
     queryFn: () => api.getReport(id),
     staleTime: Infinity,
-  });
-}
-
-/** A 404 is an answer ("no run for this task"), not a transient failure worth retrying. */
-function retryUnlessNotFound(failureCount: number, error: Error): boolean {
-  return !(error instanceof ApiError && error.status === 404) && failureCount < 3;
-}
-
-export function useTaskRun(taskId: string | null) {
-  const api = useApi();
-  return useQuery({
-    queryKey: queryKeys.taskRun(taskId ?? ""),
-    queryFn: () => api.getTaskRun(taskId as string),
-    enabled: taskId !== null,
-    staleTime: Infinity,
-    retry: retryUnlessNotFound,
-  });
-}
-
-export function useRunView(runId: string | null) {
-  const api = useApi();
-  return useQuery({
-    queryKey: queryKeys.runView(runId ?? ""),
-    queryFn: () => api.getRunView(runId as string),
-    enabled: runId !== null,
-    retry: retryUnlessNotFound,
-    refetchInterval: (query) =>
-      query.state.data && !query.state.data.run.terminal ? 3_000 : false,
   });
 }

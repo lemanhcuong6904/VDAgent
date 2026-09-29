@@ -72,9 +72,7 @@ function ToolCallChip({ call, result }: { call: ToolCallDTO; result: MessageDTO 
             <div key={key} className="tool-arg">
               <div className="tool-arg-key">{key}</div>
               <pre className="tool-arg-value">
-                <ArtifactText
-                  text={typeof value === "string" ? value : JSON.stringify(value, null, 2)}
-                />
+                <ArtifactText text={typeof value === "string" ? value : JSON.stringify(value, null, 2)} />
               </pre>
             </div>
           ))}
@@ -93,15 +91,10 @@ function ToolResult({ message, call }: { message: MessageDTO; call: ToolCallDTO 
 
   return (
     <div className={`tool-result${failed ? " failed" : ""}`}>
-      <button
-        type="button"
-        className="tool-result-head"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span className="caret-btn" aria-hidden="true">
+      <div className="tool-result-head" onClick={() => setOpen((v) => !v)}>
+        <button type="button" className="caret-btn" aria-expanded={open}>
           {open ? "▾" : "▸"}
-        </span>
+        </button>
         <span className="tool-result-label">
           {agent ? (
             <>
@@ -118,7 +111,7 @@ function ToolResult({ message, call }: { message: MessageDTO; call: ToolCallDTO 
             <ArtifactText text={truncate(message.content, 140)} />
           </span>
         )}
-      </button>
+      </div>
       {open &&
         (isAgentReply && !failed ? (
           <MarkdownText text={message.content} className="tool-result-body" />
@@ -154,10 +147,7 @@ export function MessageItem({ message, agent, toolCalls, toolResults }: MessageI
   if (message.role === "user") {
     const sender = message.sender ?? "user";
     return (
-      <div
-        className={`${cls}${sender === "user" ? " from-human" : " from-agent"}`}
-        data-seq={message.seq}
-      >
+      <div className={`${cls}${sender === "user" ? " from-human" : " from-agent"}`} data-seq={message.seq}>
         <div className="msg-head">
           <SenderBadge name={sender} />
           {time}
