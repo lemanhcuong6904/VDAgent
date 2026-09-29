@@ -1,4 +1,7 @@
-"""MCP tool catalog, per-agent permission matrix and handlers (§6.1).
+"""MCP tool catalog and handlers.
+
+Which agent may call which tool is not decided here: grants come from each plugin entry's
+`mcp_tools` (see `AgentRegistry.tools_for`).
 
 Handlers return a JSON-able payload (sent as text content) or raise a user-facing error that
 becomes an MCP tool error result `error: …`. Blocking sqlite3 work runs in a worker thread.
@@ -18,26 +21,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from vdagent_backend.db import artifacts
 from vdagent_backend.mcp import sql
 from vdagent_backend.mcp.charts import CHART_KINDS, ChartError, build_chart_spec
-from vdagent_backend.tokens import McpIdentity
+from vdagent_backend.core import McpIdentity
 
 PREVIEW_ROWS = 20
 DEFAULT_PAGE_ROWS = 50
 MAX_PAGE_ROWS = 200
 _EMBED = re.compile(r"\{\{\s*(chart|dataset)\s*:\s*([^}\s]+)\s*\}\}")
-
-ALL_AGENTS = frozenset({"orchestrator", "data", "compare", "insight", "report"})
-
-# §6.1 permission matrix: tool → agents that see it in tools/list and may call it.
-PERMISSIONS: dict[str, frozenset[str]] = {
-    "list_tables": frozenset({"data"}),
-    "describe_table": frozenset({"data"}),
-    "run_query": frozenset({"data"}),
-    "describe_dataset": ALL_AGENTS,
-    "get_dataset_rows": ALL_AGENTS,
-    "query_datasets": frozenset({"data", "compare", "insight"}),
-    "create_chart": frozenset({"report"}),
-    "save_report": frozenset({"report"}),
-}
 
 _DATASET_RESULT = (
     ' Returns {"dataset_id", "name", "columns": [{"name", "type"}], "row_count", "truncated", "preview"}'
@@ -148,6 +137,8 @@ TOOLS: list[types.Tool] = [
         ),
     ),
 ]
+
+TOOL_NAMES = frozenset(tool.name for tool in TOOLS)
 
 _DATASET_FIELDS: dict[str, str] = {
     "dataset_id": "Id of the new dataset (`ds_…`); pass it to other tools or to another agent.",
@@ -288,14 +279,14 @@ class McpTools:
             "save_report": self._save_report,
         }
 
-    def list_for(self, agent: str) -> list[types.Tool]:
-        return [tool for tool in TOOLS if agent in PERMISSIONS[tool.name]]
-
-    async def call(self, identity: McpIdentity, name: str, arguments: dict[str, Any]) -> types.CallToolResult:
+    async def call(
+        self, identity: McpIdentity, granted: frozenset[str], name: str, arguments: dict[str, Any]
+    ) -> types.CallToolResult:
+        """Run tool `name` for `identity`, whose agent may call the `granted` tools."""
         handler = self._handlers.get(name)
         if handler is None:
             return tool_error(f"unknown tool '{name}'")
-        if identity.agent not in PERMISSIONS[name]:
+        if name not in granted:
             return tool_error(f"tool '{name}' is not available to the {identity.agent} agent")
         try:
             payload = await handler(identity, arguments)

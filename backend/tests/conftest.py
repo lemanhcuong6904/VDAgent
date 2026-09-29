@@ -23,9 +23,9 @@ from vdagent_backend.config import Config, PluginSpec
 from vdagent_backend.db import repo
 from vdagent_backend.db.database import create_db
 from vdagent_backend.engine import Engine
-from vdagent_backend.events import EventBus
+from vdagent_backend.core.events import EventBus
 from vdagent_backend.plugins import AgentRegistry, RegisteredAgent
-from vdagent_backend.tokens import TokenRegistry
+from vdagent_backend.core.tokens import TokenRegistry
 from vdagent_sdk import InvocationContext, Message, PluginAPI, ToolCall
 
 ALICE, BOB = "u_000000000001", "u_000000000002"

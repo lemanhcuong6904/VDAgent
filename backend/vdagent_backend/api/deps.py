@@ -12,7 +12,7 @@ from vdagent_backend.api.errors import ApiError
 from vdagent_backend.config import Config
 from vdagent_backend.db import repo
 from vdagent_backend.engine import Engine
-from vdagent_backend.events import EventBus
+from vdagent_backend.core import EventBus
 
 
 @dataclass

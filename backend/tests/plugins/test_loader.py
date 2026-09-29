@@ -79,6 +79,24 @@ async def test_plugins_load_in_order_with_sync_or_async_setup_and_a_copy_of_opts
     assert opts == {"model": "m"}  # the spec's opts were not handed out by reference
 
 
+async def test_every_agent_of_a_plugin_gets_its_entry_s_mcp_tools(make_plugin: MakePlugin) -> None:
+    make_plugin(
+        "p_two",
+        """
+        def setup(api, opts):
+            api.register_agent(name="a", description="A agent", agent=Agent("a"))
+            api.register_agent(name="b", description="B agent", agent=Agent("b"))
+        """,
+    )
+    make_plugin("p_bare", 'def setup(api, opts):\n    api.register_agent(name="c", description="C", agent=Agent("c"))\n')
+    tools = frozenset({"run_query", "describe_dataset"})
+    registry = await PluginManager().load([PluginSpec("p_two", mcp_tools=tools), PluginSpec("p_bare")])
+
+    assert registry.tools_for("a") == registry.tools_for("b") == tools
+    assert registry.tools_for("c") == frozenset()
+    assert registry.tools_for("unknown") == frozenset()
+
+
 async def test_a_failing_setup_registers_nothing_and_later_plugins_still_load(
     make_plugin: MakePlugin, caplog: pytest.LogCaptureFixture
 ) -> None:

@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from vdagent_backend.ids import new_id
+from vdagent_backend.core import new_id
 
 
 async def insert_dataset(

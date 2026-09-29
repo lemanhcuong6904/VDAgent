@@ -32,10 +32,8 @@ from vdagent_backend.db import repo
 from vdagent_backend.db.memory import ScopedMemory
 from vdagent_backend.engine.context import Call, Emit, Ended, Event, ToolResult, TurnContext
 from vdagent_backend.engine.waitgraph import WaitGraph
-from vdagent_backend.events import EventBus
-from vdagent_backend.ids import new_id
+from vdagent_backend.core import EventBus, TokenRegistry, describe, new_id
 from vdagent_backend.plugins import AgentRegistry
-from vdagent_backend.tokens import TokenRegistry
 from vdagent_sdk import SEND_TO_AGENT, AgentTimeoutError, ContractViolation, McpEndpoint, Message, Peer
 
 log = logging.getLogger(__name__)
@@ -148,13 +146,6 @@ def _find_timeout(exc: BaseException) -> AgentTimeoutError | None:
         if current.__cause__ is not None:
             stack.append(current.__cause__)
     return None
-
-
-def _describe(exc: BaseException) -> str:
-    while isinstance(exc, BaseExceptionGroup) and exc.exceptions:  # pyright: ignore[reportUnknownMemberType]
-        exc = exc.exceptions[0]  # pyright: ignore[reportUnknownVariableType]
-    text = str(exc)
-    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
 
 
 class Engine:
@@ -580,7 +571,7 @@ class Engine:
             log.warning("invocation %s (%s): model timed out: %s", run.id, run.agent, timeout)
             return _TurnFailed(f"DEADLINE_EXCEEDED: {timeout}")
         log.error("invocation %s (%s): invoke raised", run.id, run.agent, exc_info=error)
-        return _TurnFailed(f"INTERNAL: {_describe(error)}")
+        return _TurnFailed(f"INTERNAL: {describe(error)}")
 
     # ------------------------------------------------------------------ child results
 
@@ -682,7 +673,7 @@ class Engine:
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            reason = f"no summary within {self.compact_timeout_s:g}s" if isinstance(e, TimeoutError) else _describe(e)
+            reason = f"no summary within {self.compact_timeout_s:g}s" if isinstance(e, TimeoutError) else describe(e)
             log.warning("compaction of stack (%s, %s) failed, continuing: %s", run.user_id, run.agent, reason)
             return
         finally:

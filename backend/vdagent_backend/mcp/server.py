@@ -1,14 +1,14 @@
 """MCP server at `/mcp` (§6): streamable HTTP via the official SDK's low-level `Server`.
 
 The low-level `Server` lets `tools/list` and `tools/call` see the per-request caller identity, so
-the tool list is filtered per agent. The SDK session manager runs stateless: every HTTP request is
+the tool list is filtered by the caller agent's grants (`AgentRegistry.tools_for`). The SDK session manager runs stateless: every HTTP request is
 self-contained and authenticated on its own, so a revoked token stops working immediately.
 
 Usage (FastAPI app lifespan):
 
     mcp = create_mcp(cfg, db, tokens)
     mcp.install(app)
-    async with mcp.lifespan():
+    async with mcp.lifespan(registry):
         yield
 """
 
@@ -31,8 +31,9 @@ from starlette.types import Receive, Scope, Send
 from vdagent_backend.config import Config
 from vdagent_backend.mcp.auth import BearerAuth, current_identity
 from vdagent_backend.mcp.sql import SQL_TIMEOUT_S
-from vdagent_backend.mcp.tools import McpTools, tool_error
-from vdagent_backend.tokens import TokenRegistry
+from vdagent_backend.mcp.tools import TOOLS, McpTools, tool_error
+from vdagent_backend.plugins import AgentRegistry
+from vdagent_backend.core import TokenRegistry, error_body
 
 MCP_PATHS = ("/mcp", "/mcp/")
 
@@ -48,41 +49,41 @@ class McpServer:
             on_call_tool=self._call_tool,
         )
         self._manager: StreamableHTTPSessionManager | None = None
+        self._registry = AgentRegistry()
         self._endpoint = BearerAuth(tokens, self._handle)
 
     async def _list_tools(
         self, ctx: ServerRequestContext[Any], params: types.PaginatedRequestParams | None
     ) -> types.ListToolsResult:
         identity = current_identity.get()
-        return types.ListToolsResult(tools=self._tools.list_for(identity.agent) if identity else [])
+        granted = self._registry.tools_for(identity.agent) if identity else frozenset()
+        return types.ListToolsResult(tools=[tool for tool in TOOLS if tool.name in granted])
 
     async def _call_tool(self, ctx: ServerRequestContext[Any], params: types.CallToolRequestParams) -> types.CallToolResult:
         identity = current_identity.get()
         if identity is None:
             return tool_error("unauthenticated")
-        return await self._tools.call(identity, params.name, params.arguments or {})
+        return await self._tools.call(identity, self._registry.tools_for(identity.agent), params.name, params.arguments or {})
 
     async def _handle(self, scope: Scope, receive: Receive, send: Send) -> None:
         manager = self._manager
         if manager is None:
-            response = JSONResponse(
-                {"error": {"code": "mcp_unavailable", "message": "MCP server is not running"}}, status_code=503
-            )
+            response = JSONResponse(error_body("mcp_unavailable", "MCP server is not running"), status_code=503)
             await response(scope, receive, send)
             return
         await manager.handle_request(scope, receive, send)
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
-        """Run the SDK session manager; the FastAPI app lifespan MUST enter this."""
+    async def lifespan(self, registry: AgentRegistry) -> AsyncIterator[None]:
+        """Serve `/mcp` with the grants of `registry`; the FastAPI app lifespan MUST enter this."""
         # A session manager runs once; a fresh one per lifespan keeps this re-enterable.
         manager = StreamableHTTPSessionManager(app=self._server, stateless=True)
         async with manager.run():
-            self._manager = manager
+            self._manager, self._registry = manager, registry
             try:
                 yield
             finally:
-                self._manager = None
+                self._manager, self._registry = None, AgentRegistry()
 
     def install(self, app: FastAPI) -> None:
         """Route exactly `/mcp` and `/mcp/` (no slash redirect) ahead of any catch-all route."""

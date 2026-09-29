@@ -26,8 +26,9 @@ from vdagent_backend.config import Config
 from vdagent_backend.db import artifacts
 from vdagent_backend.db.database import create_db
 from vdagent_backend.mcp.server import create_mcp
-from vdagent_backend.mcp.tools import PERMISSIONS, RESULT_FIELDS, TOOLS
-from vdagent_backend.tokens import TokenRegistry
+from vdagent_backend.mcp.tools import RESULT_FIELDS, TOOLS
+from vdagent_backend.core.tokens import TokenRegistry
+from vdagent_backend.plugins import AgentRegistry, RegisteredAgent
 
 ALICE, BOB = "u_000000000001", "u_000000000002"
 INVOCATION = {ALICE: "inv_00000000000a", BOB: "inv_00000000000b"}
@@ -42,14 +43,22 @@ SALES = [
     ("South", 2025, 60.0),
     ("East", 2025, 45.5),
 ]
-# §6.1 permission matrix, stated independently of the implementation.
+# The test registry's grants (each agent's plugin entry `mcp_tools`); `echo` has none.
 EXPECTED_TOOLS = {
     "orchestrator": {"describe_dataset", "get_dataset_rows"},
     "data": {"list_tables", "describe_table", "run_query", "describe_dataset", "get_dataset_rows", "query_datasets"},
     "compare": {"describe_dataset", "get_dataset_rows", "query_datasets"},
     "insight": {"describe_dataset", "get_dataset_rows", "query_datasets"},
     "report": {"describe_dataset", "get_dataset_rows", "create_chart", "save_report"},
+    "echo": set(),
 }
+
+
+def granted_registry() -> AgentRegistry:
+    return AgentRegistry(
+        RegisteredAgent(name, f"{name} agent", object(), f"p_{name}", frozenset(tools))  # type: ignore[arg-type]
+        for name, tools in EXPECTED_TOOLS.items()
+    )
 
 
 def build_warehouse(path: Path) -> None:
@@ -106,7 +115,7 @@ async def env(tmp_path: Path) -> AsyncIterator[McpEnv]:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        async with mcp.lifespan():
+        async with mcp.lifespan(granted_registry()):
             yield
 
     app = FastAPI(lifespan=lifespan)
@@ -188,6 +197,14 @@ async def test_tools_call_rejects_non_permitted_tool(env: McpEnv, agent: str, to
     assert is_error
     assert text.startswith("error:") and tool in text
     assert await dataset_count(env) == 0
+
+
+async def test_an_agent_without_grants_is_refused_with_the_documented_text(env: McpEnv) -> None:
+    ds_args = {"dataset_id": "ds_000000000000"}
+    assert await call(env, "echo", "describe_dataset", ds_args) == (
+        True,
+        "error: tool 'describe_dataset' is not available to the echo agent",
+    )
 
 
 @pytest.mark.parametrize(
@@ -291,10 +308,8 @@ async def test_invalid_or_revoked_token_gets_401(env: McpEnv, path: str) -> None
             assert response.json()["error"]["code"] == "invalid_token"
 
 
-def test_every_tool_has_permissions_and_documented_result_fields() -> None:
-    names = {t.name for t in TOOLS}
-    assert set(PERMISSIONS) == names
-    assert set(RESULT_FIELDS) == names
+def test_every_tool_has_documented_result_fields() -> None:
+    assert set(RESULT_FIELDS) == {t.name for t in TOOLS}
 
 
 @pytest.mark.parametrize("tool", [t.name for t in TOOLS])

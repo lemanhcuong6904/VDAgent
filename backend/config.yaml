@@ -6,11 +6,18 @@ max_depth: 4
 max_steps: 12
 # Agent plugins, loaded in this order at startup. Each module must export setup(api, opts) and is
 # configured by its own agents/<name>/.env. A plugin that fails to load is logged and skipped.
+# mcp_tools: the Backend MCP tools every agent of that plugin may list and call (none if omitted).
 plugins:
   - module: vdagent_orchestrator
+    mcp_tools: [describe_dataset, get_dataset_rows]
   - module: vdagent_data
+    mcp_tools: [list_tables, describe_table, run_query, query_datasets, describe_dataset, get_dataset_rows]
   - module: vdagent_compare
+    mcp_tools: [query_datasets, describe_dataset, get_dataset_rows]
   - module: vdagent_insight
+    mcp_tools: [query_datasets, describe_dataset, get_dataset_rows]
   - module: vdagent_report
+    mcp_tools: [create_chart, save_report, describe_dataset, get_dataset_rows]
   # - module: agent_template   # echo agent; copy agents/_template to start a new plugin
   #   opts: {name: echo}
+  #   mcp_tools: []

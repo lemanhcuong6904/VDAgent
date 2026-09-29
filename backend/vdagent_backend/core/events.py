@@ -1,9 +1,8 @@
-"""Per-user SSE fan-out (§10).
+"""Per-user SSE fan-out.
 
-`EventBus.publish(user_id, event, data)` delivers to that user's subscribers;
-`EventBus.broadcast(event, data)` delivers to every subscriber (health changes).
-Each subscriber has a bounded queue (1000); on overflow the subscriber is closed and its
-stream ends (the FE reconnects and refetches). No replay.
+`EventBus.publish(user_id, event, data)` delivers to that user's subscribers only. Each subscriber
+has a bounded queue (`QUEUE_MAX`); on overflow the subscriber is closed and its stream ends (the
+frontend reconnects and refetches). There is no replay.
 """
 
 from __future__ import annotations
@@ -17,6 +16,8 @@ QUEUE_MAX = 1000
 
 @dataclass(frozen=True)
 class Event:
+    """One SSE event: its name (`task.updated`, …) and JSON payload."""
+
     event: str
     data: dict[str, Any]
 
@@ -26,6 +27,8 @@ _CLOSED = Event("__closed__", {})
 
 @dataclass(eq=False)
 class Subscriber:
+    """One open SSE stream of one user."""
+
     user_id: str
     queue: asyncio.Queue[Event] = field(default_factory=lambda: asyncio.Queue(QUEUE_MAX + 1))
     closed: bool = False
@@ -39,6 +42,8 @@ class Subscriber:
 
 
 class EventBus:
+    """Subscribers by user; `publish` never blocks."""
+
     def __init__(self) -> None:
         self._subs: dict[str, set[Subscriber]] = {}
 
@@ -54,17 +59,10 @@ class EventBus:
             if not subs:
                 del self._subs[sub.user_id]
 
-    def user_ids(self) -> list[str]:
-        return list(self._subs)
-
     def publish(self, user_id: str, event: str, data: dict[str, Any]) -> None:
+        """Queue `event` for every subscriber of `user_id`; a full subscriber is closed instead."""
         for sub in list(self._subs.get(user_id, ())):
             self._offer(sub, Event(event, data))
-
-    def broadcast(self, event: str, data: dict[str, Any]) -> None:
-        for subs in list(self._subs.values()):
-            for sub in list(subs):
-                self._offer(sub, Event(event, data))
 
     def _offer(self, sub: Subscriber, ev: Event) -> None:
         if sub.closed:

@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from vdagent_backend.ids import new_id, now_iso
+from vdagent_backend.core import iso_ms, new_id, utcnow
 
 Row = dict[str, Any]
 
@@ -90,7 +90,7 @@ async def create_user(db: AsyncEngine, name: str) -> Row:
     async with db.begin() as conn:
         res = await conn.execute(
             text("INSERT INTO users (id, name, created_at) VALUES (:id, :name, :now) RETURNING *"),
-            {"id": new_id("u"), "name": name, "now": now_iso()},
+            {"id": new_id("u"), "name": name, "now": iso_ms(utcnow())},
         )
         return dict(res.mappings().one())
 
@@ -100,7 +100,7 @@ async def create_user(db: AsyncEngine, name: str) -> Row:
 
 async def create_task(db: AsyncEngine, user_id: str, root_agent: str, inbound_text: str) -> tuple[Row, Row]:
     """Human trigger (§4.1 step 1): a running task and its queued root invocation, atomically."""
-    now = now_iso()
+    now = iso_ms(utcnow())
     task_id, inv_id = new_id("t"), new_id("inv")
     async with db.begin() as conn:
         task = await conn.execute(
@@ -145,7 +145,7 @@ async def finish_task(db: AsyncEngine, task_id: str, status: str) -> Row | None:
                 "UPDATE tasks SET status = :status, finished_at = :now "
                 "WHERE id = :id AND status = 'running' RETURNING *"
             ),
-            {"id": task_id, "status": status, "now": now_iso()},
+            {"id": task_id, "status": status, "now": iso_ms(utcnow())},
         )
         row = res.mappings().one_or_none()
         return dict(row) if row else None
@@ -156,7 +156,7 @@ async def fail_running_tasks(db: AsyncEngine) -> list[Row]:
     async with db.begin() as conn:
         res = await conn.execute(
             text("UPDATE tasks SET status = 'failed', finished_at = :now WHERE status = 'running' RETURNING *"),
-            {"now": now_iso()},
+            {"now": iso_ms(utcnow())},
         )
         return [dict(r) for r in res.mappings().all()]
 
@@ -179,7 +179,7 @@ async def insert_invocation(
     status: str,
     error: str | None = None,
 ) -> Row:
-    now = now_iso()
+    now = iso_ms(utcnow())
     async with db.begin() as conn:
         res = await conn.execute(
             text(
@@ -215,7 +215,7 @@ async def mark_invocation_running(db: AsyncEngine, invocation_id: str) -> Row:
     async with db.begin() as conn:
         res = await conn.execute(
             text("UPDATE invocations SET status = 'running', started_at = :now WHERE id = :id RETURNING *"),
-            {"id": invocation_id, "now": now_iso()},
+            {"id": invocation_id, "now": iso_ms(utcnow())},
         )
         return dict(res.mappings().one())
 
@@ -235,7 +235,7 @@ async def finish_invocation(
                 "UPDATE invocations SET status = :status, result_text = :result_text, error = :error, "
                 "finished_at = :now WHERE id = :id AND status IN ('queued', 'running') RETURNING *"
             ),
-            {"id": invocation_id, "status": status, "result_text": result_text, "error": error, "now": now_iso()},
+            {"id": invocation_id, "status": status, "result_text": result_text, "error": error, "now": iso_ms(utcnow())},
         )
         row = res.mappings().one_or_none()
         return dict(row) if row else None
@@ -249,7 +249,7 @@ async def cancel_task_invocations(db: AsyncEngine, task_id: str) -> list[Row]:
                 "UPDATE invocations SET status = 'cancelled', finished_at = :now "
                 "WHERE task_id = :task_id AND status IN ('queued', 'running') RETURNING *"
             ),
-            {"task_id": task_id, "now": now_iso()},
+            {"task_id": task_id, "now": iso_ms(utcnow())},
         )
         return [dict(r) for r in res.mappings().all()]
 
@@ -300,7 +300,7 @@ async def append_message(
                 "content": content,
                 "tool_calls_json": json.dumps([dict(tc) for tc in tool_calls]) if tool_calls else None,
                 "tool_call_id": tool_call_id,
-                "now": now_iso(),
+                "now": iso_ms(utcnow()),
             },
         )
         return dict(res.mappings().one())
@@ -340,7 +340,7 @@ async def apply_compaction(
                 "INSERT INTO stack_summaries (user_id, agent, summary, updated_at) VALUES (:user_id, :agent, :summary, :now) "
                 "ON CONFLICT (user_id, agent) DO UPDATE SET summary = excluded.summary, updated_at = excluded.updated_at"
             ),
-            {"user_id": user_id, "agent": agent, "summary": summary, "now": now_iso()},
+            {"user_id": user_id, "agent": agent, "summary": summary, "now": iso_ms(utcnow())},
         )
         await conn.execute(
             text("UPDATE messages SET compacted = 1 WHERE id IN :ids").bindparams(bindparam("ids", expanding=True)),

@@ -13,7 +13,7 @@ from contextvars import ContextVar
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from vdagent_backend.tokens import McpIdentity, TokenRegistry
+from vdagent_backend.core import McpIdentity, TokenRegistry, error_body
 
 current_identity: ContextVar[McpIdentity | None] = ContextVar("vdagent_mcp_identity", default=None)
 
@@ -39,7 +39,7 @@ class BearerAuth:
         identity = self._tokens.resolve(token) if token else None
         if identity is None:
             response = JSONResponse(
-                {"error": {"code": "invalid_token", "message": "missing, unknown or revoked MCP token"}},
+                error_body("invalid_token", "missing, unknown or revoked MCP token"),
                 status_code=401,
                 headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
             )

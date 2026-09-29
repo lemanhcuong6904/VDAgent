@@ -13,7 +13,7 @@ directory exists.
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -26,17 +26,19 @@ from starlette.responses import Response
 from vdagent_backend.api import rest, sse
 from vdagent_backend.api.deps import Services
 from vdagent_backend.api.errors import error_response, install_error_handlers
-from vdagent_backend.config import Config, load_config
+from vdagent_backend.config import Config, PluginSpec, load_config
 from vdagent_backend.db.database import create_db
 from vdagent_backend.engine import Engine
-from vdagent_backend.events import EventBus
+from vdagent_backend.core import EventBus
 from vdagent_backend.mcp.server import create_mcp
+from vdagent_backend.mcp.tools import TOOL_NAMES
 from vdagent_backend.plugins import PluginManager
-from vdagent_backend.tokens import TokenRegistry
+from vdagent_backend.core import TokenRegistry
 
 
 def create_app(cfg: Config | None = None) -> FastAPI:
     cfg = cfg or load_config()
+    _check_grants(cfg.plugins)
     tokens = TokenRegistry()
     bus = EventBus()
     db = create_db(cfg.backend_db)
@@ -50,7 +52,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         app.state.services = Services(cfg=cfg, db=db, bus=bus, engine=engine)
         try:
             await engine.start()
-            async with mcp.lifespan():
+            async with mcp.lifespan(registry):
                 yield
         finally:
             await engine.stop()
@@ -64,6 +66,15 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     mcp.install(app)
     _serve_frontend(app, Path(cfg.frontend_dist))
     return app
+
+
+def _check_grants(specs: Sequence[PluginSpec]) -> None:
+    """Every tool an enabled plugin entry grants must exist in the MCP catalog."""
+    for spec in specs:
+        unknown = sorted(spec.mcp_tools - TOOL_NAMES) if spec.enabled else []
+        if unknown:
+            names = ", ".join(f"'{name}'" for name in unknown)
+            raise ValueError(f"plugin {spec.module}: mcp_tools names unknown MCP tools: {names}")
 
 
 def _serve_frontend(app: FastAPI, dist: Path) -> None:

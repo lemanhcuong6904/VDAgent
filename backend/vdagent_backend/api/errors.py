@@ -7,6 +7,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from vdagent_backend.core import error_body
+
 
 class ApiError(Exception):
     def __init__(self, status: int, code: str, message: str) -> None:
@@ -17,7 +19,7 @@ class ApiError(Exception):
 
 
 def error_response(status: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse({"error": {"code": code, "message": message}}, status_code=status)
+    return JSONResponse(error_body(code, message), status_code=status)
 
 
 def not_found(what: str) -> ApiError:

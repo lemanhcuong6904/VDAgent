@@ -5,20 +5,13 @@ from __future__ import annotations
 
 from typing import Any
 
+import yaml
+
+from vdagent_backend.config import DEFAULT_CONFIG_PATH, PluginSpec, parse_plugins
 from vdagent_backend.mcp import sql
-from vdagent_backend.mcp.tools import (
-    ALL_AGENTS,
-    DEFAULT_PAGE_ROWS,
-    MAX_PAGE_ROWS,
-    PERMISSIONS,
-    PREVIEW_ROWS,
-    RESULT_FIELDS,
-    TOOLS,
-)
+from vdagent_backend.mcp.tools import DEFAULT_PAGE_ROWS, MAX_PAGE_ROWS, PREVIEW_ROWS, RESULT_FIELDS, TOOLS
 
 __all__: list[str] = []
-
-_AGENT_ORDER = ("orchestrator", "data", "compare", "insight", "report")
 
 _INTRO = f"""\
 # MCP tools
@@ -35,7 +28,7 @@ Inside `invoke(ctx)`:
 - **Auth:** send the header `Authorization: Bearer <ctx.mcp.token>`.
 - **When:** the token works only while this turn runs. Open the session inside `invoke` and close it
   before returning; a later request gets HTTP 401 `invalid_token`.
-- **Which tools:** `tools/list` returns only the tools your agent may call (see
+- **Which tools:** `tools/list` returns only the tools your plugin entry grants (see
   [Who can call what](#who-can-call-what)). Give your model exactly those: their names,
   descriptions and input schemas are written for it.
 
@@ -63,7 +56,7 @@ Errors any tool can return:
 | Text | Cause | Fix |
 |---|---|---|
 | `error: unknown tool '<name>'` | The name is not in the catalog. | Only offer names from `tools/list`. |
-| `error: tool '<name>' is not available to the <agent> agent` | Your agent has no permission for it. | Ask a peer that has it, or grant it in `vdagent_backend/mcp/tools.py` (`ALL_AGENTS` or `PERMISSIONS`). |
+| `error: tool '<name>' is not available to the <agent> agent` | Your plugin entry does not grant it. | Ask a peer that has it, or add it to your entry's `mcp_tools` in `backend/config.yaml`. |
 | `error: '<arg>' is required and must be a non-empty string` (or `must be an integer`, `must be between …`, `must be a non-empty array of strings`) | A bad argument. | Follow the tool's input schema. |
 | `error: dataset not found` | Wrong id, or the dataset belongs to another user. | Use an id created in this user's tasks. |
 
@@ -90,9 +83,10 @@ Errors any tool can return:
 """
 
 
-def _agents() -> list[str]:
-    known = [a for a in _AGENT_ORDER if a in ALL_AGENTS]
-    return known + sorted(ALL_AGENTS - set(known))
+def _bundled_plugins() -> list[PluginSpec]:
+    """The enabled entries of the bundled `backend/config.yaml`, read directly (no env overrides)."""
+    raw = yaml.safe_load(DEFAULT_CONFIG_PATH.read_text()) or {}
+    return [spec for spec in parse_plugins(raw.get("plugins")) if spec.enabled]
 
 
 def _cell(text: str) -> str:
@@ -105,18 +99,25 @@ def _plain(text: str) -> str:
 
 
 def _matrix() -> str:
-    agents = _agents()
+    plugins = _bundled_plugins()
     lines = [
         "## Who can call what",
         "",
-        "An agent that is not listed here sees no MCP tools. Grant tools in `vdagent_backend/mcp/tools.py`:"
-        " add the agent to `ALL_AGENTS` for the tools every agent gets, and to `PERMISSIONS` for the others.",
+        "Each plugin entry in `backend/config.yaml` grants tools with `mcp_tools`; every agent that plugin"
+        " registers may list and call exactly those. An entry without `mcp_tools` grants none. The table"
+        " shows the bundled plugins:",
         "",
-        "| Tool | " + " | ".join(agents) + " |",
-        "|---|" + "|".join(":-:" for _ in agents) + "|",
+        "```yaml",
+        "plugins:",
+        "  - module: vdagent_<name>",
+        "    mcp_tools: [describe_dataset, get_dataset_rows]",
+        "```",
+        "",
+        "| Tool | " + " | ".join(f"`{p.module}`" for p in plugins) + " |",
+        "|---|" + "|".join(":-:" for _ in plugins) + "|",
     ]
     for tool in TOOLS:
-        marks = " | ".join("✓" if a in PERMISSIONS[tool.name] else "" for a in agents)
+        marks = " | ".join("✓" if tool.name in p.mcp_tools else "" for p in plugins)
         lines.append(f"| [`{tool.name}`](#{tool.name}) | {marks} |")
     return "\n".join(lines)
 
@@ -162,11 +163,11 @@ def _returns(tool: str) -> str:
 
 
 def _tool_section(tool: Any) -> str:
-    agents = ", ".join(a for a in _agents() if a in PERMISSIONS[tool.name])
+    granted = ", ".join(f"`{p.module}`" for p in _bundled_plugins() if tool.name in p.mcp_tools) or "no bundled plugin"
     return "\n\n".join(
         [
             f"### `{tool.name}`",
-            f"**Available to:** {agents}.",
+            f"**Granted to:** {granted}.",
             _plain(tool.description),
             _arguments(tool.input_schema),
             _returns(tool.name),
