@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://agent-platform.internal/schemas/analytics/compare-output.json",
+  "title": "Comparison Analysis Output",
+  "description": "Output schema for comparison behavior",
+  "type": "object",
+  "properties": {
+    "comparison": {
+      "type": "string",
+      "description": "Comparison analysis result"
+    },
+    "error": {
+      "type": "string",
+      "description": "Error message if comparison failed"
+    }
+  },
+  "additionalProperties": false
+}
