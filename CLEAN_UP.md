@@ -23,4 +23,4 @@
 1. `TC-13/15` trong pack là giả định tạm vì chưa có ma trận test/BA; không đánh dấu là đạt TC chính thức.
 2. `pack_manifest.json` là giao diện xuất đề xuất cho N2; cần Dũng xác nhận `assemble_dataset(pack_dir)` khi N2 xuất hiện.
 3. PostgreSQL là nơi kiểm contract 16 bảng; bản chiếu SQLite chỉ chứng minh MCP SQL của backend đọc được dữ liệu. Backend mặc định và prompt Data Agent vẫn là demo bán lẻ; owner backend/Data cần quyết định cấu hình và kiểm hội thoại agent bất động sản.
-4. PR N4 chỉ nên đưa các file ở nhóm N4, hợp đồng cần thiết và báo cáo/cleanup liên quan; tự rà `git diff origin/DATA` trước khi push. Không đẩy nhánh backup hoặc file `.env`/DB local.
+4. Đã rà diff với `DATA` và mở [draft PR #6](https://github.com/HOANGQUANGMINH371195/Team_6_cAi/pull/6) chỉ gồm 40 file N4, hợp đồng và báo cáo/cleanup; không có mã nền tảng cũ trong diff. Nhánh backup và file `.env`/DB local không được push. PR còn ở dạng draft để nhóm review các phụ thuộc trên.
