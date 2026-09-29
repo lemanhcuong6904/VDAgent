@@ -118,11 +118,20 @@ datasets = Table(
     Column("name", Text),
     Column("source_sql", Text, nullable=False),
     Column("columns_json", Json, nullable=False),  # [{"name", "type"}]
-    Column("rows_json", Json, nullable=False),  # [[…], …], at most 10 000 rows
     Column("row_count", Integer, nullable=False),
     Column("truncated", Boolean(create_constraint=True), nullable=False, server_default=false(), default=False),
     _created_at(),
     Index("ix_ds_user", "user_id"),
+)
+
+# One row per dataset row (at most 10 000 per dataset), so a page reads only its rows.
+dataset_rows = Table(
+    "dataset_rows",
+    metadata,
+    Column("dataset_id", Text, ForeignKey("datasets.id"), nullable=False),
+    Column("idx", Integer, nullable=False),  # 0-based position in the query result
+    Column("row", Json, nullable=False),  # the row's values in column order
+    PrimaryKeyConstraint("dataset_id", "idx"),
 )
 
 charts = Table(

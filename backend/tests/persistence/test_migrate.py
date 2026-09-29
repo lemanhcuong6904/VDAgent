@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -10,7 +11,7 @@ from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 
-from conftest import ALICE, LEGACY_TASK, build_legacy_db
+from conftest import ALICE, LEGACY_DATASET, LEGACY_TASK, build_legacy_db
 from vdagent_backend.persistence import sqlite_url
 from vdagent_backend.persistence.migrate import alembic_config, include_name, migrate
 from vdagent_backend.persistence.tables import metadata
@@ -66,4 +67,27 @@ def test_a_pre_alembic_database_is_adopted_in_place_keeping_its_data(tmp_path: P
         assert conn.execute("SELECT COUNT(*) FROM messages WHERE user_id = ?", (ALICE,)).fetchone() == (4,)
         match = "SELECT m.text FROM memories_fts JOIN memories m ON m.id = memories_fts.rowid WHERE memories_fts MATCH 'west'"
         assert conn.execute(match).fetchall() == [("west revenue fell",)]
+    conn.close()
+
+
+def test_dataset_rows_move_out_of_rows_json_in_order(tmp_path: Path) -> None:
+    path = tmp_path / "backend.db"
+    build_legacy_db(str(path))
+    rows = [["b", 2, None], ["a", 1.5, "x"], ["c", 3, "y"]]
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            "INSERT INTO datasets (id, user_id, invocation_id, source_sql, columns_json, rows_json, row_count)"
+            " VALUES ('ds_three000001', ?, 'inv_legacy0001', 'SELECT 1', '[]', ?, 3)",
+            (ALICE, json.dumps(rows)),
+        )
+    conn.close()
+
+    migrate(sqlite_url(str(path)))
+
+    with sqlite3.connect(path) as conn:
+        moved = conn.execute("SELECT idx, row FROM dataset_rows WHERE dataset_id = 'ds_three000001' ORDER BY idx")
+        assert [(idx, json.loads(row)) for idx, row in moved] == list(enumerate(rows))
+        legacy = conn.execute("SELECT row FROM dataset_rows WHERE dataset_id = ? ORDER BY idx", (LEGACY_DATASET,))
+        assert [json.loads(r) for (r,) in legacy] == [[0], [1], [2]]
+        assert "rows_json" not in {c[1] for c in conn.execute("PRAGMA table_info(datasets)")}
     conn.close()
