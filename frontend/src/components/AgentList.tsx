@@ -8,7 +8,7 @@ interface Props {
   error: Error | null;
 }
 
-/** Agents with health dot, busy spinner and this user's queue length; click selects the chat. */
+/** Agents with busy spinner and this user's queue length; click selects the chat. */
 export function AgentList({ agents, selected, error }: Props) {
   const { selectAgent } = useUi();
   return (
@@ -22,15 +22,14 @@ export function AgentList({ agents, selected, error }: Props) {
             <button
               type="button"
               className={`agent-item${a.name === selected ? " selected" : ""}`}
-              title={`${a.description}\n${a.healthy ? "healthy" : "unavailable"}`}
+              title={a.description}
               onClick={() => selectAgent(a.name)}
             >
-              <span className={`health-dot ${a.healthy ? "ok" : "down"}`} />
               <span className="agent-name" style={{ color: agentColor(a.name) }}>
                 {a.name}
               </span>
               <span className="agent-meta">
-                {a.busy && <span className="spinner" role="status" aria-label="Agent is busy" />}
+                {a.busy && <span className="spinner" aria-label="busy" />}
                 {a.queue_len > 0 && (
                   <span className="queue-badge" title={`${a.queue_len} queued`}>
                     {a.queue_len}

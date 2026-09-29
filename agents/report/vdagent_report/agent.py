@@ -1,0 +1,159 @@
+"""This agent's brain: a hand-built LangGraph graph with a Jev quality gate (see graph.py).
+
+Per turn: open an MCP session, offer its tools plus `send_to_agent`, and run the graph. Tool-call
+steps are reported through `ctx` as they happen; the final answer only after Jev accepted it (or
+the one revision was spent).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Any
+
+import openai
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage, convert_to_messages
+from pydantic import SecretStr
+from langchain_openai import ChatOpenAI
+from vdagent_sdk import SEND_TO_AGENT, Agent, AgentTimeoutError, InvocationContext, Message, Peer
+
+from .graph import STEP_LIMIT_TEXT, ReportTurn
+from .judge import JevJudge, Judge
+from .mcp_client import McpSessionFactory, open_mcp_session, openai_tool_schema
+from .settings import DEFAULT_LLM_TIMEOUT_S, load_settings
+
+__all__ = ["DESCRIPTION", "NAME", "STEP_LIMIT_TEXT", "LangGraphAgent", "build_agent"]
+
+NAME = "report"
+DESCRIPTION = "Builds formatted reports with charts."
+
+PROMPTS_DIR = Path(__file__).parent / "prompts"
+SUMMARY_HEADING = "## Summary of earlier work with this user"
+COMPACT_TOOL_TEXT_CHARS = 2_000
+
+
+def load_prompt(name: str) -> str:
+    return (PROMPTS_DIR / f"{name}.md").read_text(encoding="utf-8").strip()
+
+
+def build_system_prompt(prompt: str, summary: str) -> str:
+    if not summary.strip():
+        return prompt
+    return f"{prompt}\n\n{SUMMARY_HEADING}\n{summary.strip()}"
+
+
+def send_to_agent_tool(peers: Sequence[Peer]) -> dict[str, Any]:
+    roster = "\n".join(f"- {p.name}: {p.description}" for p in peers)
+    return {
+        "type": "function",
+        "function": {
+            "name": SEND_TO_AGENT,
+            "description": (
+                "Send a message to another agent and wait for its reply. "
+                f"The reply is returned as this tool's result. Agents:\n{roster}"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "agent": {"type": "string", "enum": [p.name for p in peers]},
+                    "message": {
+                        "type": "string",
+                        "description": "Self-contained request, including any dataset ids it needs.",
+                    },
+                },
+                "required": ["agent", "message"],
+            },
+        },
+    }
+
+
+def render_for_compaction(previous_summary: str, messages: Sequence[Message]) -> str:
+    lines = ["Previous summary:", previous_summary.strip() or "(none)", "", "Messages to fold in:"]
+    for msg in messages:
+        if msg["role"] == "user":
+            lines.append(f"[inbound] {msg['content']}")
+        elif msg["role"] == "assistant":
+            if msg.get("content"):
+                lines.append(f"[you] {msg['content']}")
+            for tc in msg.get("tool_calls") or []:
+                lines.append(f"[you called {tc['function']['name']}] {tc['function']['arguments']}")
+        elif msg["role"] == "tool":
+            content = msg["content"]
+            if len(content) > COMPACT_TOOL_TEXT_CHARS:
+                content = content[:COMPACT_TOOL_TEXT_CHARS] + "…[truncated]"
+            lines.append(f"[tool result] {content}")
+    return "\n".join(lines)
+
+
+class LangGraphAgent:
+    def __init__(
+        self,
+        *,
+        model: BaseChatModel,
+        judge: Judge,
+        mcp_session_factory: McpSessionFactory = open_mcp_session,
+        system_prompt: str,
+        compact_prompt: str,
+        timeout_s: float = DEFAULT_LLM_TIMEOUT_S,
+    ) -> None:
+        self._model = model
+        self._judge = judge
+        self._mcp_session_factory = mcp_session_factory
+        self._system_prompt = system_prompt
+        self._compact_prompt = compact_prompt
+        self._timeout_s = timeout_s
+
+    async def invoke(self, ctx: InvocationContext) -> None:
+        async with self._mcp_session_factory(ctx.mcp.url, ctx.mcp.token) as mcp:
+            mcp_tools = [t for t in await mcp.list_tools() if t.name != SEND_TO_AGENT]
+            tools = [openai_tool_schema(t) for t in mcp_tools]
+            if ctx.peers:
+                tools.append(send_to_agent_tool(ctx.peers))
+            turn = ReportTurn(
+                ctx=ctx,
+                mcp=mcp,
+                model=self._model,
+                tools=tools,
+                mcp_tool_names={t.name for t in mcp_tools},
+                judge=self._judge,
+                system_prompt=build_system_prompt(self._system_prompt, ctx.summary),
+                timeout_s=self._timeout_s,
+            )
+            state = {"messages": convert_to_messages(ctx.history)}
+            await turn.graph().ainvoke(state, {"recursion_limit": 3 * ctx.max_steps + 10})
+
+    async def compact(self, previous_summary: str, messages: list[Message]) -> str:
+        prompt = [
+            SystemMessage(self._compact_prompt),
+            HumanMessage(render_for_compaction(previous_summary, messages)),
+        ]
+        try:
+            async with asyncio.timeout(self._timeout_s):
+                reply = await self._model.ainvoke(prompt)
+        except (TimeoutError, openai.APITimeoutError) as exc:
+            raise AgentTimeoutError(f"model call timed out after {self._timeout_s:g}s") from exc
+        return reply.text.strip()
+
+
+def build_agent(env: Mapping[str, str]) -> Agent:
+    """Raises `PluginConfigError` naming the missing or invalid setting."""
+    settings = load_settings(env)
+    for noisy in ("httpx", "openai"):  # per-request INFO lines drown out agent logs
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+    model = ChatOpenAI(
+        model=settings.llm_model,
+        base_url=settings.openai_base_url,
+        api_key=SecretStr(settings.openai_api_key),
+        timeout=settings.llm_timeout_s,
+    )
+    judge = JevJudge(url=settings.jev_decisions_url, api_key=settings.openai_api_key, model=settings.judge_model)
+    return LangGraphAgent(
+        model=model,
+        judge=judge,
+        system_prompt=load_prompt("system"),
+        compact_prompt=load_prompt("compact"),
+        timeout_s=settings.llm_timeout_s,
+    )

@@ -1,0 +1,15 @@
+# docker-compose variant of config.yaml. Agents run inside the backend container as plugins, so
+# their MCP clients reach this Backend on localhost. Relative paths resolve from the container
+# working dir (/app).
+backend_db: ./var/backend.db
+warehouse_db: ./var/warehouse.db
+mcp_public_url: http://localhost:8000/mcp       # URL plugins' MCP clients use
+frontend_dist: ./frontend/dist                  # served at / if present
+max_depth: 4
+max_steps: 12
+plugins:
+  - module: vdagent_orchestrator
+  - module: vdagent_data
+  - module: vdagent_compare
+  - module: vdagent_insight
+  - module: vdagent_report

@@ -1,0 +1,16 @@
+backend_db: ./var/backend.db
+warehouse_db: ./var/warehouse.db
+mcp_public_url: http://localhost:8000/mcp       # URL plugins' MCP clients use (this Backend's own /mcp)
+frontend_dist: ./frontend/dist                  # served at / if present
+max_depth: 4
+max_steps: 12
+# Agent plugins, loaded in this order at startup. Each module must export setup(api, opts) and is
+# configured by its own agents/<name>/.env. A plugin that fails to load is logged and skipped.
+plugins:
+  - module: vdagent_orchestrator
+  - module: vdagent_data
+  - module: vdagent_compare
+  - module: vdagent_insight
+  - module: vdagent_report
+  # - module: agent_template   # echo agent; copy agents/_template to start a new plugin
+  #   opts: {name: echo}
