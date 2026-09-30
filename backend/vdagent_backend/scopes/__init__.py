@@ -6,6 +6,6 @@ A row grants a whole project (`zone_id` NULL) or one zone of it; an unknown user
 May import: `core`, `persistence`.
 """
 
-from vdagent_backend.scopes.scopes import DEMO_SCOPES, UserScopes, seed_demo_scopes, seed_missing_demo_scopes
+from vdagent_backend.scopes.scopes import DEMO_SCOPES, REAL_SCOPES, UserScopes, seed_demo_scopes, seed_missing_demo_scopes
 
-__all__ = ["DEMO_SCOPES", "UserScopes", "seed_demo_scopes", "seed_missing_demo_scopes"]
+__all__ = ["DEMO_SCOPES", "REAL_SCOPES", "UserScopes", "seed_demo_scopes", "seed_missing_demo_scopes"]

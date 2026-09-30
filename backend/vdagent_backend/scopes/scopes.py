@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 
 from sqlalchemy import select
@@ -14,6 +15,13 @@ from vdagent_contracts.scope import AuthorizedScope, UserContext
 DEMO_SCOPES: list[tuple[str, str, str | None]] = [
     ("u_000000000001", "PRJ-X", None),
     ("u_000000000002", "PRJ-Y", None),
+]
+
+# The DATA team's real warehouse (Postgres, projects 100-500): selected with VDAGENT_SCOPE_PROFILE=real.
+REAL_SCOPES: list[tuple[str, str, str | None]] = [
+    ("u_000000000001", "100", None),
+    ("u_000000000001", "400", None),
+    ("u_000000000002", "200", None),
 ]
 
 _scopes = tables.user_scopes
@@ -45,14 +53,21 @@ def seed_demo_scopes(path: str) -> None:
     conn.close()
 
 
+def _profile_scopes() -> list[tuple[str, str, str | None]]:
+    profile = os.environ.get("VDAGENT_SCOPE_PROFILE", "demo")
+    if profile not in ("demo", "real"):
+        raise ValueError(f"VDAGENT_SCOPE_PROFILE must be 'demo' or 'real'; got {profile!r}")
+    return REAL_SCOPES if profile == "real" else DEMO_SCOPES
+
+
 def seed_missing_demo_scopes(path: str) -> list[str]:
-    """Give each existing demo user its `DEMO_SCOPES` grants only if it has no scope row at all (B-10).
+    """Give each existing demo user its grants (`DEMO_SCOPES`, or `REAL_SCOPES` with VDAGENT_SCOPE_PROFILE=real) only if it has no scope row at all (B-10).
 
     A user that already has any scope row (a customised or production grant) is left exactly as it is, unknown users get
     nothing, and no global grant exists. Returns the users that were seeded (`[]` on a second run).
     """
     grants: dict[str, list[tuple[str, str | None]]] = {}
-    for user_id, project_id, zone_id in DEMO_SCOPES:
+    for user_id, project_id, zone_id in _profile_scopes():
         grants.setdefault(user_id, []).append((project_id, zone_id))
     seeded: list[str] = []
     with sqlite3.connect(path) as conn:
