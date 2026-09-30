@@ -57,6 +57,15 @@ async def get_chart_spec(svc: Svc, user_id: UserId, artifact_id: str, version: i
     return chart
 
 
+@router.get("/artifacts/{artifact_id}/{version}")
+async def get_artifact(svc: Svc, user_id: UserId, artifact_id: str, version: int) -> dict[str, Any]:
+    """A pinned shared Artifact Store envelope, including non-chart artifacts."""
+    envelope = await svc.artifacts.get_envelope(user_id, artifact_id, version)
+    if envelope is None:
+        raise not_found("artifact")
+    return envelope.model_dump(mode="json")
+
+
 @router.get("/reports")
 async def list_reports(svc: Svc, user_id: UserId) -> list[dict[str, Any]]:
     """The caller's reports, newest first."""

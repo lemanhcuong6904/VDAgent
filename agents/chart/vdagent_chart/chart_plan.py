@@ -93,10 +93,12 @@ def validate_presentation_plan(
     title = str(raw.get("title") or default_title)
     subtitle = str(raw.get("subtitle") or default_subtitle)
     annotations = raw.get("annotations")
+    legend = raw.get("legend")
     return build_presentation(
         title,
         subtitle,
         annotations if isinstance(annotations, list) else None,
         axes=dict(axes) if axes else None,
+        legend=dict(legend) if isinstance(legend, Mapping) else None,
         theme_ref=str(raw.get("theme_ref") or "dashboard/default"),
     )

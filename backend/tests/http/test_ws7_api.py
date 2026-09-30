@@ -77,6 +77,27 @@ async def test_chart_spec_delivery_is_owner_scoped(client: httpx.AsyncClient) ->
     assert (await client.get(f"/api/chart-specs/{stored.artifact_id}/2", headers=A)).status_code == 404
 
 
+async def test_generic_artifact_envelope_delivery_is_owner_scoped(client: httpx.AsyncClient) -> None:
+    task_id = (await client.post("/api/agents/data/messages", json={"content": "x"}, headers=A)).json()["task_id"]
+    await wait_for(lambda: _task_status(client, task_id))
+    app = client.app  # type: ignore[attr-defined]
+    stored = await app.state.services.artifacts.put_envelope(ALICE, task_id, task_id, ArtifactDraft.model_validate({
+        "artifact_type": "comparison", "schema_version": "comparison@1", "status": "VALID",
+        "producer": {"agent": "compare", "agent_version": "test"}, "snapshot_refs": ["SNAP-2026-09-28"],
+        "semantic_config_version": "sc-1",
+        "payload": {"target": "A12-08", "metrics": [{"name": "dom", "target": 138, "peer_median": 61}]},
+    }))
+
+    url = f"/api/artifacts/{stored.artifact_id}/{stored.version}"
+    body = (await client.get(url, headers=A)).json()
+    assert body["artifact_id"] == stored.artifact_id
+    assert body["version"] == stored.version
+    assert body["artifact_type"] == "comparison"
+    assert body["producer"]["agent"] == "compare"
+    assert body["payload"]["target"] == "A12-08"
+    assert (await client.get(url, headers=B)).status_code == 404
+
+
 @pytest.mark.parametrize(("kind", "y"), [("bar", ["dom"]), ("line", ["dom"]), ("pie", ["dom"]), ("bar", ["dom", "price"])])
 def test_create_chart_emits_renderable_vega_lite_v6(kind: str, y: list[str]) -> None:  # WS7 F-09
     from vdagent_backend.artifacts.charts import build_chart_spec

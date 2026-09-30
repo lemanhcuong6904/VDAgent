@@ -18,6 +18,7 @@ def build_presentation(
     subtitle: str | None = None,
     annotations: list[dict[str, Any]] | None = None,
     axes: dict[str, dict[str, Any]] | None = None,
+    legend: dict[str, Any] | None = None,
     theme_ref: str = "dashboard/default",
 ) -> dict[str, Any]:
     if _CAUSAL.search(title) or (subtitle and _CAUSAL.search(subtitle)):
@@ -51,4 +52,17 @@ def build_presentation(
             for annotation in annotations
             if isinstance(annotation, dict)
         ]
+    if legend:
+        clean_legend: dict[str, Any] = {}
+        if legend.get("title"):
+            clean_legend["title"] = sanitize_text(_HTML.sub("", str(legend["title"])))
+        items = legend.get("items")
+        if isinstance(items, Mapping):
+            clean_legend["items"] = {
+                str(key): sanitize_text(_HTML.sub("", str(value)))
+                for key, value in items.items()
+                if str(value).strip()
+            }
+        if clean_legend:
+            presentation["legend"] = clean_legend
     return presentation

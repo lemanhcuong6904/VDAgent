@@ -714,6 +714,10 @@ pre {
   background: #fdf2f8;
   color: #be185d;
 }
+.artifact-envelope {
+  background: #fff7ed;
+  color: #c2410c;
+}
 .artifact-report {
   background: #f5f3ff;
   color: #6d28d9;
@@ -860,6 +864,77 @@ pre {
 .dataset-name,
 .chart-title {
   font-weight: 600;
+}
+.envelope-view {
+  margin: 6px 0;
+  color: var(--text);
+}
+.envelope-view-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.envelope-view-head h3 {
+  margin: 3px 0 0;
+  font-size: 15px;
+}
+.status-pill {
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #ecfdf5;
+  color: #047857;
+}
+.status-partial {
+  background: #fffbeb;
+  color: #b45309;
+}
+.status-invalid {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+.artifact-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.artifact-meta div {
+  min-width: 0;
+}
+.artifact-meta dt {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.artifact-meta dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+.artifact-limitations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.artifact-limitations span {
+  border-radius: 10px;
+  padding: 2px 8px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 11px;
+}
+.artifact-json {
+  max-height: 520px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #f8fafc;
+  font-size: 12px;
 }
 .dataset-sql {
   margin-bottom: 6px;

@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { ARTIFACT_EXACT, ARTIFACT_SPLIT, artifactIds, artifactKind } from "./artifacts";
 
 describe("artifact id helpers", () => {
-  it("recognizes shared-store art ids as chart artifacts for chart_spec previews", () => {
+  it("recognizes shared-store art ids as generic artifact envelopes", () => {
     expect("Biểu đồ: art_bfcf653b9f09".split(ARTIFACT_SPLIT)).toEqual(["Biểu đồ: ", "art_bfcf653b9f09", ""]);
     expect(ARTIFACT_EXACT.test("art_bfcf653b9f09")).toBe(true);
-    expect(artifactKind("art_bfcf653b9f09")).toBe("chart");
+    expect(artifactKind("art_bfcf653b9f09")).toBe("envelope");
   });
 
   it("extracts distinct artifact ids from task text", () => {

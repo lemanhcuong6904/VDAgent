@@ -197,7 +197,33 @@ async def test_stepspec_path_uses_chart_llm_for_presentation(alice: McpPort, tmp
     assert price["payload"]["title"] == "A12-08 lệch giá so với nhóm tương đồng"
     assert price["payload"]["plotly"]["layout"]["title"]["text"] == "A12-08 lệch giá so với nhóm tương đồng"
     assert price["payload"]["plotly"]["layout"]["xaxis"]["title"]["text"] == "Căn hộ / benchmark"
-    assert price["payload"]["plotly"]["layout"]["yaxis"]["title"]["text"] == "$P_{net}/m^2$"
+    assert price["payload"]["plotly"]["layout"]["yaxis"]["title"]["text"] == "Giá ròng/m² (VND)"
+
+
+async def test_integrated_charts_have_business_titles_and_axes_without_llm(alice: McpPort, tmp_path: Path) -> None:
+    up = await upstream(alice, tmp_path)
+    report = await run_step(chart_step([up["comparison"], up["peer_definition"]]), alice.as_agent("chart"))
+    specs = await charts(alice, report)
+
+    forbidden = {"Target vs peer", "Relationship", "Label", "$P_{net}/m^2$"}
+    for spec in specs:
+        layout = spec["payload"]["plotly"]["layout"]
+        labels = [layout["title"]["text"]]
+        if "xaxis" in layout:
+            labels.append(layout["xaxis"]["title"]["text"])
+        if "yaxis" in layout:
+            labels.append(layout["yaxis"]["title"]["text"])
+        assert not forbidden.intersection(labels)
+
+    price = next(s for s in specs if s["payload"]["dataset"].get("comparison_metric") == "net_asking_price_per_m2")
+    assert price["payload"]["plotly"]["layout"]["title"]["text"] == "Giá ròng/m² của A12-08 so với trung vị 5 căn tương đồng"
+    assert price["payload"]["plotly"]["layout"]["xaxis"]["title"]["text"] == "Căn hộ / benchmark"
+    assert price["payload"]["plotly"]["layout"]["yaxis"]["title"]["text"] == "Giá ròng/m² (VND)"
+
+    scatter = next(s for s in specs if s["payload"]["visual_question"] == "relationship")
+    assert scatter["payload"]["plotly"]["layout"]["title"]["text"] == "Giá ròng/m² và DOM trong nhóm tương đồng"
+    assert scatter["payload"]["plotly"]["layout"]["xaxis"]["title"]["text"] == "Giá ròng/m² (VND)"
+    assert scatter["payload"]["plotly"]["layout"]["yaxis"]["title"]["text"] == "Thời gian trên thị trường (ngày)"
 
 
 async def test_limitations_are_carried_and_nulls_never_charted(alice: McpPort, tmp_path: Path) -> None:

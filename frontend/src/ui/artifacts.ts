@@ -4,11 +4,12 @@ export const ARTIFACT_SPLIT = /(\b(?:ds|ch|rp|art)_[0-9a-f]{12}\b)/;
 
 export const ARTIFACT_EXACT = /^(?:ds|ch|rp|art)_[0-9a-f]{12}$/;
 
-export type ArtifactKind = "dataset" | "chart" | "report";
+export type ArtifactKind = "dataset" | "chart" | "report" | "envelope";
 
 export function artifactKind(id: string): ArtifactKind {
   if (id.startsWith("ds_")) return "dataset";
-  if (id.startsWith("ch_") || id.startsWith("art_")) return "chart";
+  if (id.startsWith("ch_")) return "chart";
+  if (id.startsWith("art_")) return "envelope";
   return "report";
 }
 

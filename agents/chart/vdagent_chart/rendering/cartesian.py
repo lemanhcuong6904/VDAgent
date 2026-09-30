@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from .common import cartesian_layout, encoding, field, figure, records
+from .common import apply_legend, cartesian_layout, encoding, field, figure, legend_label, presentation, records
 from .theme import resolve_theme
 
 
@@ -12,12 +12,13 @@ def _xy_trace(chart_type: str, spec: Mapping[str, Any]) -> tuple[dict[str, Any],
     spec_records = records(spec)
     x_field = field(spec_encoding, "x", "label")
     y_field = field(spec_encoding, "y", "value")
+    spec_presentation = presentation(spec)
     trace_type = "scatter" if chart_type in {"line", "area", "scatter"} else "bar"
     trace: dict[str, Any] = {
         "type": trace_type,
         "x": [record.get(x_field) for record in spec_records],
         "y": [record.get(y_field) for record in spec_records],
-        "name": y_field,
+        "name": legend_label(spec_presentation, y_field, y_field),
         "hovertemplate": f"{x_field}: %{{x}}<br>{y_field}: %{{y}}<extra></extra>",
     }
     if trace_type == "bar":
@@ -53,6 +54,7 @@ def _xy_trace(chart_type: str, spec: Mapping[str, Any]) -> tuple[dict[str, Any],
 def render_xy(chart_type: str, spec: Mapping[str, Any]) -> dict[str, Any]:
     trace, x_field, y_field = _xy_trace(chart_type, spec)
     rendered_layout = cartesian_layout(spec, x_field, y_field)
+    apply_legend(rendered_layout, presentation(spec), 1)
     if chart_type == "bar":
         rendered_layout["bargap"] = 0.32
     return figure([trace], rendered_layout)
@@ -73,12 +75,13 @@ def _render_series_bar(spec: Mapping[str, Any], barmode: str) -> dict[str, Any]:
     x_field = field(spec_encoding, "x", "label")
     y_field = field(spec_encoding, "y", "value")
     series_field = field(spec_encoding, "series", "series")
+    spec_presentation = presentation(spec)
     series_values = list(dict.fromkeys(record.get(series_field) for record in spec_records))
     palette = list(theme["palette"])
     traces = [
         {
             "type": "bar",
-            "name": str(series),
+            "name": legend_label(spec_presentation, series, str(series)),
             "x": [record.get(x_field) for record in spec_records if record.get(series_field) == series],
             "y": [record.get(y_field) for record in spec_records if record.get(series_field) == series],
             "marker": {
@@ -93,4 +96,5 @@ def _render_series_bar(spec: Mapping[str, Any], barmode: str) -> dict[str, Any]:
     rendered_layout["barmode"] = barmode
     rendered_layout["bargap"] = 0.28
     rendered_layout["bargroupgap"] = 0.08
+    apply_legend(rendered_layout, spec_presentation, len(traces))
     return figure(traces, rendered_layout)
