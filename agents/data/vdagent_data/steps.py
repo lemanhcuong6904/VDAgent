@@ -44,7 +44,7 @@ AGENT_VERSION = "0.2.0"
 FUNNEL_WINDOW_DAYS = 30
 PAGE_ROWS = 200
 MAX_TRACED_LIMITATIONS = 8  # limitation codes named in the trace of one artifact
-CONFIG_KEYS = ("peer_area_tolerance_pct", "min_group_size", "overdue_threshold_days")
+CONFIG_KEYS = ("peer_area_tolerance_pct", "min_group_size", "min_peer_count", "overdue_threshold_days")  # min_peer_count: the real DW's name
 
 # Error code → the class the Orchestrator acts on (contracts/vdagent_contracts/errors.py).
 DATA_ERROR_CLASSES: dict[str, ErrorClass] = {
@@ -185,6 +185,22 @@ def _day(date_key: int) -> date:
     return date(date_key // 10000, date_key // 100 % 100, date_key % 100)
 
 
+def _exact(value: Any) -> Any:
+    """A float the warehouse tool returned becomes the Decimal that prints as it was written: artifacts hold no floats."""
+    return Decimal(repr(value)) if isinstance(value, float) else value
+
+
+def _source_labels(run: _Run) -> list[str]:
+    """What the reader must know about the source. The mock DW holds a synthetic `net_area_m2` (B-3); the real DW's snapshot
+    manifest carries no approval column, so its APPROVED status is assumed by the read layer and said so."""
+    return ["SYNTHETIC_SOURCE:net_area_m2"] if run.profile == "mock" else ["SNAPSHOT_STATUS_ASSUMED"]
+
+
+def _project_labels(run: _Run) -> list[str]:
+    """D2b (segment mapping to the Insight enum) is a question about the mock's segments only."""
+    return ["BLOCKED:D2b_segment_mapping"] if run.profile == "mock" else []
+
+
 def _pct(part: int, total: int) -> str:
     return str((Decimal(part) * 100 / Decimal(total)).quantize(Decimal("0.01"))) if total else "0.00"
 
@@ -200,6 +216,7 @@ class _Run:
     queries: list[dict[str, Any]] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
     trace: Tracer = field(default_factory=Tracer)
+    profile: str = "mock"  # what the warehouse is: "mock" (the synthetic DW) or "real" (the DATA team's; DATA_DW_PROFILE)
 
     async def select(self, table: str, sql: str, why: str) -> list[dict[str, Any]]:
         """All rows of one scoped SELECT (paged), recorded by SQL hash; a truncated result is an error, not data.
@@ -228,7 +245,7 @@ class _Run:
         self.queries.append({"table": table, "sql_sha256": _sha(sql), "row_count": len(rows)})
         if f"re:{table}" not in self.sources:
             self.sources.append(f"re:{table}")
-        return [dict(zip(columns, r, strict=True)) for r in rows]
+        return [{c: _exact(v) for c, v in zip(columns, r, strict=True)} for r in rows]
 
     async def put(self, kind: ArtifactType, schema: str, payload: dict[str, Any], limitations: Sequence[str],
                   inputs: Sequence[ArtifactRef] = (), *, partial: bool = False) -> tuple[ArtifactRef, str]:
@@ -263,7 +280,7 @@ class _Run:
 # ---- entry point -------------------------------------------------------------------------------------------------
 
 
-async def run_step(step: StepSpec, tools: Tools, observer: Observer | None = None) -> AgentReport:
+async def run_step(step: StepSpec, tools: Tools, observer: Observer | None = None, *, profile: str = "mock") -> AgentReport:
     """Answer one StepSpec; every failure becomes a structured AgentReport, never an exception.
 
     `observer` (optional) is told what the step really does, as `vdagent_data.trace.TraceEvent`s; it never changes the
@@ -271,7 +288,7 @@ async def run_step(step: StepSpec, tools: Tools, observer: Observer | None = Non
     """
     tracer = Tracer(observer)
     try:
-        report = await _run(step, tools, tracer)
+        report = await _run(step, tools, tracer, profile)
     except StepError as exc:
         report = _report(step, exc.state, error=ReportError(code=exc.code, message=exc.message,
                                                            retryable=DATA_ERROR_CLASSES[exc.code] is ErrorClass.TRANSIENT),
@@ -314,8 +331,8 @@ def _report(step: StepSpec, state: str, *, error: ReportError | None = None, que
     })
 
 
-async def _run(step: StepSpec, tools: Tools, tracer: Tracer) -> AgentReport:
-    run = _Run(step, tools, trace=tracer)
+async def _run(step: StepSpec, tools: Tools, tracer: Tracer, profile: str = "mock") -> AgentReport:
+    run = _Run(step, tools, trace=tracer, profile=profile)
     tracer.enter("intake")
     await tracer.note("intake", "Nhận phiếu giao việc và kiểm tra hợp lệ trước khi đọc kho dữ liệu", operation=step.operation,
                       original_question=step.original_question, snapshot_id=step.snapshot_id,
@@ -492,9 +509,9 @@ async def _fetch_units(run: _Run, spec: FetchUnitsSpec, config: dict[str, Any], 
     dq, dq_limits = _dq(run, considered, inventory, coverage)
     await _check_note(run, dq, dq_limits)
 
-    dataset_limits = [*limitations, "SYNTHETIC_SOURCE:net_area_m2"]  # B-3: mock value = area_m2 × 0.92
+    dataset_limits = [*limitations, *_source_labels(run)]  # B-3: on the mock, net_area_m2 = area_m2 × 0.92
     if projects:
-        dataset_limits.append("BLOCKED:D2b_segment_mapping")  # raw DW segment kept; no enum mapping
+        dataset_limits += _project_labels(run)  # raw DW segment kept; no enum mapping
     dataset = {
         "snapshot": _snapshot_block(run),
         "population": {"rule": spec.population, "subject_unit_key": subject["unit_key"],
@@ -652,7 +669,7 @@ async def _aggregate(run: _Run, spec: AggregateSpec, config: dict[str, Any], lim
         "semantic_config": config,
         "queries": run.queries,
     }
-    dataset_limits = [*limitations, "SYNTHETIC_SOURCE:net_area_m2"]
+    dataset_limits = [*limitations, *_source_labels(run)]
     dataset_ref, _ = await run.put(ArtifactType.DATASET, "re_dataset@1", dataset, dataset_limits)
 
     groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
