@@ -86,10 +86,11 @@ StepSpec@1 (operation compare_to_peers, spec {subject, comparisonMode, metricsRe
 ```
 
 - **Model chỉ diễn đạt, không tính, không nằm trong artifact.** `_narrate` dùng lại `phrasing.phrase`
-  (`check_phrase`, viết lại 1 lần, hạn 15 s `PHRASE_TIMEOUT_S`); câu giới hạn `dataSufficiency.summary` do **code**
-  đặt trước câu của model. Không có model / `COMPARE_LLM=off` / model lỗi / hết giờ → summary mẫu "So sánh X với N
-  căn tương đồng @ snapshot", vẫn đủ hai artifact. INSUFFICIENT, `clarification` và lỗi → không gọi model.
-  Artifact giữ tất định (cùng input → cùng `content_hash`).
+  (`check_phrase`, viết lại 1 lần, hạn 15 s `PHRASE_TIMEOUT_S`). Bộ kiểm chặn số lạ, gán sai giá trị trực tiếp
+  của căn và các từ đánh giá giá; lỗi render/model chỉ bỏ câu model, vẫn trả hai artifact. Câu giới hạn
+  `dataSufficiency.summary` do **code** đặt đầu summary khi LIMITED/INSUFFICIENT, kể cả khi không có model,
+  model lỗi hoặc hết giờ. INSUFFICIENT, `clarification` và lỗi → không gọi model. Artifact giữ tất định
+  (cùng input → cùng `content_hash`); hủy tác vụ từ Orchestrator vẫn được truyền ra ngoài.
 - **Quyết định 30/09:** tester yêu cầu Compare dùng model trên pipeline (trước đó đường này là code thuần nên
   "không khác gì không có agent"). Runbook `docs/integration/DEMO_RUNBOOK_4_HAPPY_CASES.md` dòng ~288 vẫn ghi
   "Compare là deterministic" — **đã lỗi thời**, báo người tích hợp sửa. Stack offline/test đặt `COMPARE_LLM=off`
@@ -173,7 +174,7 @@ Vi phạm = sai, kể cả khi test "có vẻ" pass.
 11. **Fail transparently:** không đủ điều kiện → `status` + `reason_code` rõ ràng, không bịa kết quả thay.
 12. Câu mô tả chỉ dùng *cao hơn / thấp hơn / chênh / xếp thứ*; giá không bao giờ `better/worse`. Cấm nhân quả,
     cấm khuyến nghị. `check_phrase` chặn các từ `vì, do, bởi, khiến, dẫn đến, nguyên nhân, nên, hãy, khuyến nghị,
-    đề xuất, cần phải` và (từ 30/09) `đắt, rẻ, tốt hơn, xấu hơn` — theo *Quy định đầu ra 6 agent*.
+    đề xuất, cần phải` và `đắt, rẻ, tốt, xấu` — theo *Quy định đầu ra 6 agent*.
 13. **Trung vị khi số căn chẵn** = trung bình 2 số giữa, làm tròn 2 chữ số (SQL của Data đang làm tròn xuống
     số nguyên — điểm lệch đã báo Data, xem mục 9).
 

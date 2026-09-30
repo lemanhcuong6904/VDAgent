@@ -235,6 +235,12 @@ def test_unintelligible_question_gets_help_not_a_guess():
     ("Giá của A12-08 đắt hơn trung vị 16%.", False),  # price: only "cao hơn"/"thấp hơn" (output rules, Compare)
     ("Giá của A12-08 rẻ hơn A12-11.", False),
     ("Giá 72.500.000 là mức tốt hơn nhóm.", False),
+    ("Giá của A12-08 rất tốt.", False),
+    ("Giá của A12-08 rất xấu.", False),
+    ("A12-08 có DOM 48 ngày.", False),
+    ("Giá của A12-08 là 62.500.000 VND.", False),
+    ("Giá của A12-08 là 72.500.000 VND.", True),
+    ("Trung vị DOM của nhóm là 48 ngày.", True),
     ("DOM 138 ngày, xấu hơn trung vị.", False),
     ("Căn đắt nhất nhóm.", False),
     ("Giá cao hơn trung vị 16%; không dùng từ chẻ hơn.", True),  # "rẻ" only as a whole word
