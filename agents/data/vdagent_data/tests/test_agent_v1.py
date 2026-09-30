@@ -90,3 +90,16 @@ async def test_a_question_is_narrated_as_a_question_and_not_as_a_failure(mcp_too
     closing = content.split("```json")[0]
     assert "chọn" in closing and "Không hoàn thành" not in closing and "INPUT_REQUIRED" not in closing
     assert "Landmark" in closing  # says what it asks about
+
+
+async def test_the_warehouse_profile_also_reaches_the_older_stepspec_path(mcp_tools: McpTools) -> None:
+    from vdagent_contracts.reports import AgentReport, parse_agent_report  # noqa: PLC0415
+    from vdagent_data.tests.test_steps import step  # noqa: PLC0415
+
+    data = DataAgent(llm=None, mcp_session_factory=factory(mcp_tools), system_prompt="x", compact_prompt="y", profile="real")
+    ctx = BaseCtx(step(spec={"subject_unit_code": "A12-08"}).model_dump_json())
+    await data.invoke(ctx)
+    report = parse_agent_report(ctx.steps[-1][0])
+    assert isinstance(report, AgentReport) and report.state == "completed"
+    assert "SNAPSHOT_STATUS_ASSUMED" in report.warnings
+    assert not any(w.startswith(("SYNTHETIC_SOURCE", "BLOCKED:D2b")) for w in report.warnings)

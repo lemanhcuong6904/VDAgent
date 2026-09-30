@@ -18,4 +18,3 @@ Hãy viết lại `ban_nhap` cho tự nhiên và đúng nhiệm vụ.
 4. Ngôi thứ nhất ("mình"), tối đa 2 câu và dưới 300 ký tự, giọng đơn giản, gắn với câu hỏi gốc khi hợp lý. Không dùng tính từ đánh giá ("đặc biệt", "quan trọng").
 5. Không nhận xét dữ liệu đã đủ hay chưa đủ cho việc phân tích; chỉ nêu đúng các hạn chế, dữ liệu thiếu và ngưỡng chưa duyệt có trong sự kiện.
 6. Chỉ văn bản thuần: không markdown, không khối mã, không JSON, không danh sách.
-7. Nếu bước dừng vì cần người dùng chọn (`input_required`), nói rõ mình đang chờ người dùng chọn, không gọi đó là lỗi và không nói "không thể phân tích".

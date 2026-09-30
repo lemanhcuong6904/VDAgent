@@ -341,10 +341,10 @@ class DataAgent(LiteLLMAgent):
         async with self._mcp_session_factory(ctx.mcp.url, ctx.mcp.token) as mcp:
             tools = SessionTools(mcp)
             if not self._narrate:
-                return await run_step(step, tools), ""
+                return await run_step(step, tools, profile=self._profile), ""
             stream = NarrationStream(self._narrator(), _CtxSink(ctx))
             try:
-                report = await run_step(step, tools, observer=stream)
+                report = await run_step(step, tools, observer=stream, profile=self._profile)
                 return report, await stream.close()
             finally:
                 await stream.abort()
