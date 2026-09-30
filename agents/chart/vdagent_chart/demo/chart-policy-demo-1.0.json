@@ -1,0 +1,29 @@
+{
+  "ruleset_version": "chart-policy/demo-1.0",
+  "allowed_chart_types": [
+    "kpi_card",
+    "line",
+    "area",
+    "bar",
+    "grouped_bar",
+    "stacked_bar",
+    "pie",
+    "scatter",
+    "histogram",
+    "box_plot",
+    "heatmap",
+    "map",
+    "funnel",
+    "waterfall",
+    "treemap",
+    "bullet",
+    "table"
+  ],
+  "limits": { "max_categories": 20, "max_series": 6, "max_points": 120 },
+  "global": {
+    "allow_dual_axis": false,
+    "allow_imputation": false,
+    "allow_silent_truncation": false
+  },
+  "fallback_chart_type": "table"
+}

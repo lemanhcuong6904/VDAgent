@@ -20,11 +20,16 @@ import secrets
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
+from pydantic import ValidationError
+from vdagent_agentkit.mcp_client import JsonTools, McpSessionFactory, open_mcp_session
+from vdagent_contracts.messages import ContractMessage, StepSpec, parse_incoming
+from vdagent_contracts.reports import AgentReport, ReportError, render_agent_report
 from vdagent_sdk import InvocationContext, Message, ToolCall
 
 from . import phrasing, planner
 from .llm import JsonLLM, LLMUnavailableError
 from .vh_chat import HELP, parse_request, render
+from .stepspec import run_step as run_stepspec
 from .vh_service import CompareService
 
 log = logging.getLogger(__name__)
@@ -71,9 +76,28 @@ def _evidence(result: dict) -> str:
 class CompareAgent:
     """One instance serves concurrent turns (SDK R8): per-turn state stays in `_Turn`."""
 
-    def __init__(self, *, llm: JsonLLM | None = None, service: CompareService | None = None) -> None:
+    def __init__(self, *, llm: JsonLLM | None = None, service: CompareService | None = None,
+                 mcp_session_factory: McpSessionFactory = open_mcp_session) -> None:
         self._llm = llm
         self._service = service or CompareService()
+        self._mcp_session_factory = mcp_session_factory
+
+    async def _contract(self, ctx: InvocationContext, message: ContractMessage) -> None:
+        """StepSpec@1 (WS3): canonical Data artifacts through MCP → peer_definition + comparison → AgentReport@1."""
+        if message.contract != "StepSpec@1":
+            text = f"compare accepts StepSpec@1, not {message.contract}"
+            report = AgentReport(state="rejected", summary=text, error=ReportError(code="UNSUPPORTED_CONTRACT", message=text))
+        else:
+            try:
+                step = StepSpec.model_validate(message.data)
+            except ValidationError as exc:
+                report = AgentReport(state="rejected", summary="invalid StepSpec@1",
+                                     error=ReportError(code="INVALID_STEPSPEC", message=f"{exc.error_count()} error(s)"))
+            else:
+                async with self._mcp_session_factory(ctx.mcp.url, ctx.mcp.token) as mcp:
+                    report = await run_stepspec(step, JsonTools(mcp))
+        head = f"Compare: {report.state}" + (f" ({report.error.code})" if report.error else "")
+        await ctx.emit_assistant(render_agent_report(head, report))
 
     @property
     def has_model(self) -> bool:
@@ -84,6 +108,13 @@ class CompareAgent:
         return tuple(getattr(self._llm, "models", ()))
 
     async def invoke(self, ctx: InvocationContext) -> None:
+        try:
+            incoming = parse_incoming(_text(ctx.history[-1])) if ctx.history else None
+        except ValueError:
+            incoming = None  # JSON without `contract`: a legacy engine request, handled by the turn as before
+        if isinstance(incoming, ContractMessage):
+            await self._contract(ctx, incoming)
+            return
         await _Turn(ctx, self._llm, self._service).run()
 
     async def compact(self, previous_summary: str, messages: list[Message]) -> str:

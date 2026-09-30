@@ -1,0 +1,71 @@
+{
+  "agent": "insight",
+  "contract_version": "1.0.0",
+  "catalog_version": "2.1.0",
+  "operations": [
+    {
+      "operation": "explain_unit",
+      "description": "Giải thích căn/tòa/dự án từ dataset/metric/dq của Data (pipeline TEMPLATE/LLM) → insight (insight.v2).",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "intent",
+          "tasks",
+          "analysis_scope"
+        ]
+      },
+      "input_fields": {
+        "dataset": "input_refs",
+        "metric": "input_refs",
+        "dq": "input_refs"
+      },
+      "requires": [
+        "dataset",
+        "metric",
+        "dq"
+      ],
+      "produces": [
+        "insight"
+      ],
+      "outputs": [
+        "CHAT_ANSWER"
+      ],
+      "serves": [
+        "EXPLAIN"
+      ],
+      "deadline_s": 90,
+      "error_codes": {
+        "E02": "WRONG_RESULT",
+        "E03": "SPEC_ISSUE",
+        "E04": "NO_ACCESS",
+        "INPUT_HASH_MISMATCH": "WRONG_RESULT",
+        "INPUT_HASH_REQUIRED": "SPEC_ISSUE",
+        "INPUT_INVALID": "DATA_QUALITY",
+        "INPUT_NOT_FOUND": "NO_DATA",
+        "INPUT_SCHEMA_UNSUPPORTED": "SPEC_ISSUE",
+        "INPUT_TYPE_MISMATCH": "WRONG_RESULT",
+        "INPUT_TYPE_UNSUPPORTED": "SPEC_ISSUE",
+        "INTERNAL_ERROR": "FATAL",
+        "INVALID_SPEC": "SPEC_ISSUE",
+        "LINEAGE_MISMATCH": "WRONG_RESULT",
+        "MISSING_INPUT": "SPEC_ISSUE",
+        "SCOPE_VIOLATION": "NO_ACCESS",
+        "SEMANTIC_CONFIG_UNKNOWN": "SPEC_ISSUE",
+        "SEMANTIC_VERSION_MISMATCH": "SPEC_ISSUE",
+        "SEMANTIC_VERSION_REQUIRED": "SPEC_ISSUE",
+        "SNAPSHOT_MISMATCH": "SPEC_ISSUE",
+        "SNAPSHOT_REQUIRED": "SPEC_ISSUE",
+        "TOOL_FAILED": "TRANSIENT",
+        "UNKNOWN_OPERATION": "SPEC_ISSUE",
+        "USER_CONTEXT_MISMATCH": "NO_ACCESS"
+      }
+    }
+  ],
+  "vocabulary": {
+    "metrics": [],
+    "dimensions": [],
+    "filters": [],
+    "attributes": []
+  },
+  "fixture": false
+}

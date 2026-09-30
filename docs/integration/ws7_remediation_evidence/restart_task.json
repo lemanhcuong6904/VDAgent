@@ -1,0 +1,44 @@
+{
+  "task": {
+    "id": "t_4912f1a9fa13",
+    "root_agent": "orchestrator",
+    "status": "failed",
+    "outcome": "interrupted",
+    "created_at": "2026-09-30T02:10:45.541Z",
+    "finished_at": "2026-09-30T02:10:51.836Z"
+  },
+  "invocations": [
+    {
+      "id": "inv_1ab89e4ae6ed",
+      "task_id": "t_4912f1a9fa13",
+      "agent": "orchestrator",
+      "caller": "user",
+      "parent_id": null,
+      "tool_call_id": null,
+      "depth": 0,
+      "inbound_text": "Vì sao căn A12-08 bán chậm? So sánh với các căn tương đồng, vẽ biểu đồ và xuất báo cáo.",
+      "status": "failed",
+      "result_text": null,
+      "error": "backend restarted",
+      "created_at": "2026-09-30T02:10:45.541Z",
+      "started_at": "2026-09-30T02:10:45.544Z",
+      "finished_at": "2026-09-30T02:10:51.831Z"
+    },
+    {
+      "id": "inv_e5d403960b4b",
+      "task_id": "t_4912f1a9fa13",
+      "agent": "data",
+      "caller": "orchestrator",
+      "parent_id": "inv_1ab89e4ae6ed",
+      "tool_call_id": "call_B1_a10ff4f7",
+      "depth": 1,
+      "inbound_text": "{\"contract\": \"StepSpec@1\", \"run_id\": \"t_4912f1a9fa13\", \"plan_id\": \"pl_dfd57abd2cfa\", \"step_id\": \"B1\", \"idempotency_key\": \"pl_dfd57abd2cfa:B1\", \"operation\": \"fetch_units\", \"spec\": {\"subject_unit_code\": \"A12-08\", \"population\": \"peer_candidates\"}, \"user_context\": {\"user_id\": \"u_000000000001\", \"authorized_scope\": {\"project_ids\": [\"PRJ-X\"], \"zone_ids\": []}}, \"snapshot_id\": \"SNAP-2026-09-28\", \"semantic_config_version\": \"sc-1\", \"input_refs\": [], \"deadline_s\": 60, \"original_question\": \"Vì sao căn A12-08 bán chậm? So sánh với các căn tương đồng, vẽ biểu đồ và xuất báo cáo.\"}",
+      "status": "failed",
+      "result_text": null,
+      "error": "backend restarted",
+      "created_at": "2026-09-30T02:10:45.580Z",
+      "started_at": "2026-09-30T02:10:45.582Z",
+      "finished_at": "2026-09-30T02:10:51.835Z"
+    }
+  ]
+}

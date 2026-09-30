@@ -1,0 +1,9 @@
+backend-offline-1  | 2026-09-30 02:47:44,222 INFO vdagent_backend.plugins: plugin vdagent_orchestrator loaded: orchestrator
+backend-offline-1  | 2026-09-30 02:47:44,236 INFO vdagent_backend.plugins: plugin vdagent_data loaded: data
+backend-offline-1  | 2026-09-30 02:47:44,281 INFO vdagent_backend.plugins: plugin vdagent_compare loaded: compare
+backend-offline-1  | 2026-09-30 02:47:44,885 INFO vdagent.plugin.vdagent_insight: insight: data source fixtures, LLM on
+backend-offline-1  | 2026-09-30 02:47:44,888 INFO vdagent_backend.plugins: plugin vdagent_insight loaded: insight
+backend-offline-1  | 2026-09-30 02:47:45,948 INFO vdagent_backend.plugins: plugin vdagent_report loaded: report
+backend-offline-1  | 2026-09-30 02:47:45,972 INFO vdagent_backend.plugins: plugin vdagent_chart loaded: chart
+backend-offline-1  | INFO:     172.20.0.1:50932 - "POST /api/agents/orchestrator/messages HTTP/1.1" 202 Accepted
+backend-offline-1  | INFO:     172.20.0.1:50948 - "POST /api/agents/orchestrator/messages HTTP/1.1" 200 OK

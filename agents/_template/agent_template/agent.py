@@ -1,7 +1,7 @@
 """This agent's brain. EDIT THIS FILE (and add any modules it needs).
 
-Implement `vdagent_sdk.Agent` (see the SDK's docstring for the types and rules R1–R11) with any
-framework, and register it from `setup()` in `__init__.py`.
+Implement `vdagent_sdk.Agent` (`invoke` and `compact`; the package docstring describes the types and
+the turn requirements) with any framework, and register it from `setup()` in `__init__.py`.
 
 This stub echoes the inbound message and keeps a naive summary; it needs no LLM.
 """

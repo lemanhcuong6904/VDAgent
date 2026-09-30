@@ -2,7 +2,9 @@
 
 Builds charts (`create_chart`) and a saved markdown report (`save_report`) from the findings and datasets it is given; replies with the report id.
 
-A Backend plugin (see [`agents/_template`](../_template/README.md) and the `vdagent_sdk` docstring):
+A Backend plugin: the Backend imports this package at startup and runs the agent's turns in its own
+process; the agent reports every step through the `ctx` it receives (to build one, see
+[`agents/_template`](../_template/README.md)).
 `vdagent_report/__init__.py` exports `setup(api, opts)`, which registers the agent. The brain is a
 hand-built LangGraph `StateGraph` (`graph.py`) with a quality gate:
 
@@ -27,7 +29,7 @@ flowchart LR
 
 Prompts: role `prompts/system.md`, summariser `prompts/compact.md`.
 
-MCP tools granted by the Backend (`backend/vdagent_backend/mcp/tools.py`): `create_chart`, `save_report`, `describe_dataset`, `get_dataset_rows`;
+MCP tools granted by `mcp_tools` in `backend/config.yaml`: `create_chart`, `save_report`, `describe_dataset`, `get_dataset_rows`;
 plus `send_to_agent` to reach the other agents.
 
 ## Run

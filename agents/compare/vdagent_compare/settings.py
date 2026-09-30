@@ -1,8 +1,8 @@
 """Model settings: this plugin folder's `.env` over the Backend's process environment.
 
 Every plugin shares the Backend's process, so the `.env` is read with `dotenv_values()` into a
-mapping and `os.environ` is never modified (SDK rule R11). The model is optional: without
-`OPENAI_API_KEY` (or with `COMPARE_LLM=off`) Compare answers with rules and templates only.
+mapping and `os.environ` is never modified (it is shared with every other plugin). The model is optional:
+without `OPENAI_API_KEY` (or with `COMPARE_LLM=off`) Compare answers with rules and templates only.
 """
 
 from __future__ import annotations

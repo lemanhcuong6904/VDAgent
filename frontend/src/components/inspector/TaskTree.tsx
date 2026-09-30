@@ -5,6 +5,7 @@ import { useApi, useTask } from "../../api/queries";
 import type { InvocationDTO, TaskDetailDTO } from "../../api/types";
 import { agentColor } from "../../ui/artifacts";
 import { formatDuration, truncate } from "../../ui/format";
+import { taskStatusLabel } from "../../ui/taskStatus";
 import { useUi } from "../../ui/UiContext";
 import { ArtifactText } from "../ArtifactLink";
 import { StatusIcon } from "../StatusIcon";
@@ -50,7 +51,7 @@ export function TaskTree({ taskId }: { taskId: string }) {
       <div className="task-tree-head">
         <StatusIcon status={task.status} />
         <span className="mono">{task.id}</span>
-        <span className={`status-text status-${task.status}`}>{task.status}</span>
+        <span className={`status-text status-${task.status}`}>{taskStatusLabel(task)}</span>
         <span className="muted small">{formatDuration(task.created_at, task.finished_at)}</span>
         {task.status === "running" && (
           <button

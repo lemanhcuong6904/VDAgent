@@ -6,8 +6,11 @@ requires-python = "==3.12.*"
 members = [
     "vdagent",
     "vdagent-agent-template",
+    "vdagent-agentkit",
     "vdagent-backend",
+    "vdagent-chart",
     "vdagent-compare",
+    "vdagent-contracts",
     "vdagent-data",
     "vdagent-insight",
     "vdagent-orchestrator",
@@ -80,6 +83,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/4e/8a/64761f4005f17809769d23e518d915db74e6310474e733e3593cfc854ef1/aiosqlite-0.22.1.tar.gz", hash = "sha256:043e0bd78d32888c0a9ca90fc788b38796843360c855a7262a532813133a0650", size = 14821, upload-time = "2025-12-23T19:25:43.997Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/00/b7/e3bf5133d697a08128598c8d0abc5e16377b51465a33756de24fa7dee953/aiosqlite-0.22.1-py3-none-any.whl", hash = "sha256:21c002eb13823fad740196c5a2e9d8e62f6243bd9e7e4a1f87fb5e44ecb4fceb", size = 17405, upload-time = "2025-12-23T19:25:42.139Z" },
+]
+
+[[package]]
+name = "alembic"
+version = "1.20.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mako" },
+    { name = "sqlalchemy" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ed/aa/02910bdb8e2f1444f6654d5b296cd827d126f82209050ee7b1000f92ac4b/alembic-1.20.0.tar.gz", hash = "sha256:db505480647bc60386c5369402f4a57a506b7539c9e9ef5e270d45cbbe4939bf", size = 2093272, upload-time = "2026-09-11T19:09:11.126Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3f/27/78a89b55b0904d222183164e079b4ca56208e94eff1d35ad1f1ad5be9b06/alembic-1.20.0-py3-none-any.whl", hash = "sha256:77eb101048d95f982c0353e9233404889dcd7a6fc244c107836c0e2fc9cf7d9d", size = 268719, upload-time = "2026-09-11T19:09:12.88Z" },
 ]
 
 [[package]]
@@ -366,6 +383,45 @@ wheels = [
 ]
 
 [[package]]
+name = "google-auth"
+version = "2.59.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "pyasn1-modules" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3b/0b/9b4e806ebcd29701b5193a162dd9906c4c5a16cbde8476461622d2bfa70e/google_auth-2.59.0.tar.gz", hash = "sha256:eb32f44f89f6b577947ebee5887c1db46e6b1a278889ba369a88179643f32240", size = 381025, upload-time = "2026-09-28T21:49:59.047Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7d/fd/4208e3ac1d7df39f4e8b044a3943eb8a5a99aaf8699285bf780f614a0b30/google_auth-2.59.0-py3-none-any.whl", hash = "sha256:43e47b1d3067fb90d77bd9ba21f139bb0577b3f2b9f3e2516fc00f37435efcad", size = 262487, upload-time = "2026-09-28T21:49:57.428Z" },
+]
+
+[package.optional-dependencies]
+requests = [
+    { name = "requests" },
+]
+
+[[package]]
+name = "google-genai"
+version = "2.25.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "google-auth", extra = ["requests"] },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "requests" },
+    { name = "sniffio" },
+    { name = "tenacity" },
+    { name = "typing-extensions" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/62/0a/a3b7856ca840031d4393dbdd97b67fe811b20061315ed68b67b5c85ca80d/google_genai-2.25.0.tar.gz", hash = "sha256:ab603baa5eee0205926ad0f8d7f93e0400df6d67650e99c33e01ab228ea16ad6", size = 699564, upload-time = "2026-09-22T17:23:01.238Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5d/a8/178dbb9d1d6cac721b01592e291146a024bae5ee3224e36569348921dd6c/google_genai-2.25.0-py3-none-any.whl", hash = "sha256:2e8f3a5f76ed00d5ffc3153f6089bc7d3511054eed53ad9cfc6095a7dc59b028", size = 1159631, upload-time = "2026-09-22T17:22:59.291Z" },
+]
+
+[[package]]
 name = "greenlet"
 version = "3.5.6"
 source = { registry = "https://pypi.org/simple" }
@@ -636,20 +692,6 @@ wheels = [
 ]
 
 [[package]]
-name = "langchain"
-version = "1.4.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "langchain-core" },
-    { name = "langgraph" },
-    { name = "pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/1c/ff/670036674e669b81c0ddba77e1f012c099eda7b7d1251b973e5367d2824e/langchain-1.4.2.tar.gz", hash = "sha256:5b476418cacbfb8f0da6e63b3b263eefdcec13b48abd6117565a25728ec10b77", size = 735715, upload-time = "2026-09-18T17:31:11.42Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/85/86/cc13651cfda820d96ca8c612538166334935e8cf4331a31f5dd369d27760/langchain-1.4.2-py3-none-any.whl", hash = "sha256:30a27c34cfa0004bf659dcdef488b99a9b90acb08bcc514a5a74264755da536c", size = 163740, upload-time = "2026-09-18T17:31:10.056Z" },
-]
-
-[[package]]
 name = "langchain-core"
 version = "1.6.5"
 source = { registry = "https://pypi.org/simple" }
@@ -810,6 +852,27 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d6/86/74f6ad713dc63700d5c40828708d64118db105a62a2919c9cdecddd6b966/litellm-1.102.1-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:f7c4ffead69cf010fe3f551d2941bd6190bdaa816b98d5ebc85df67096724180", size = 26919523, upload-time = "2026-09-23T03:58:51.904Z" },
     { url = "https://files.pythonhosted.org/packages/86/09/ba63c28d3373389022d8686396f26b28ac89c1e324e2b1fa00b4578e9b63/litellm-1.102.1-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:c5fcfbe322e3052f96fa92409fc61ec9712a7b2b567e7760e057b17b7587d021", size = 27475133, upload-time = "2026-09-23T03:58:55.204Z" },
     { url = "https://files.pythonhosted.org/packages/69/e7/6a1613821f7cead31d17c4c84b1d1939b6c9a33226ba638a7e31610ce060/litellm-1.102.1-cp310-abi3-win_amd64.whl", hash = "sha256:b2c24cad24c637b20e91f6dd7b812971a5fa64ad2330213e517ff8f38d25c0d8", size = 27407273, upload-time = "2026-09-23T03:58:58.799Z" },
+]
+
+[[package]]
+name = "mako"
+version = "1.4.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "markupsafe" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5a/09/e07c4b5579a79f4b16f8d4f29f6c54514ac787c4ad506b8c4f28a0e6b0bf/mako-1.4.3.tar.gz", hash = "sha256:cd6537fe88d5fec315c55c2f8529bc4ce7a9a352ad7db3eeaa6a66e2dd4ec37a", size = 412799, upload-time = "2026-09-22T20:54:31.509Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6d/a0/053d6af3e8f871e0073b4a36732d9e65be77a72e5434c31b94f6af78a6bb/mako-1.4.3-py3-none-any.whl", hash = "sha256:723296007c870bfd6b3f0c3230dba7198096e5269297ebf5e4eff9e7ffa39d4f", size = 80164, upload-time = "2026-09-22T20:54:33.128Z" },
+]
+
+[[package]]
+name = "markdown2"
+version = "2.5.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/ae/07d4a5fcaa5509221287d289323d75ac8eda5a5a4ac9de2accf7bbcc2b88/markdown2-2.5.5.tar.gz", hash = "sha256:001547e68f6e7fcf0f1cb83f7e82f48aa7d48b2c6a321f0cd20a853a8a2d1664", size = 157249, upload-time = "2026-03-02T20:46:53.411Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/43/af/4b3891eb0a49d6cfd5cbf3e9bf514c943afc2b0f13e2c57cc57cd88ecc21/markdown2-2.5.5-py3-none-any.whl", hash = "sha256:be798587e09d1f52d2e4d96a649c4b82a778c75f9929aad52a2c95747fa26941", size = 56250, upload-time = "2026-03-02T20:46:52.032Z" },
 ]
 
 [[package]]
@@ -975,6 +1038,21 @@ wheels = [
 ]
 
 [[package]]
+name = "pdoc"
+version = "16.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jinja2" },
+    { name = "markdown2" },
+    { name = "markupsafe" },
+    { name = "pygments" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ac/fe/ab3f34a5fb08c6b698439a2c2643caf8fef0d61a86dd3fdcd5501c670ab8/pdoc-16.0.0.tar.gz", hash = "sha256:fdadc40cc717ec53919e3cd720390d4e3bcd40405cb51c4918c119447f913514", size = 111890, upload-time = "2025-10-27T16:02:16.345Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/16/a1/56a17b7f9e18c2bb8df73f3833345d97083b344708b97bab148fdd7e0b82/pdoc-16.0.0-py3-none-any.whl", hash = "sha256:070b51de2743b9b1a4e0ab193a06c9e6c12cf4151cf9137656eebb16e8556628", size = 100014, upload-time = "2025-10-27T16:02:15.007Z" },
+]
+
+[[package]]
 name = "pluggy"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1007,6 +1085,27 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/58/7b/6e8ef26f6d510a7916064fec68d55fcbfbdf7eb01e377480d66a122152d8/propcache-0.5.4-cp312-cp312-win_amd64.whl", hash = "sha256:98914de2c4d7f0f9f4a8c6ea4bf05841f4175796941e3ef7d47eb718f22311fb", size = 46190, upload-time = "2026-09-16T00:14:49.99Z" },
     { url = "https://files.pythonhosted.org/packages/08/b9/72028c5b56ced97f456de6aefa79435ca64d7f77af78ea8cf3c76fc5195f/propcache-0.5.4-cp312-cp312-win_arm64.whl", hash = "sha256:8876b39961e33d912afe3c1bee18ee564fdad0206f873cc15d522756b7f50737", size = 43075, upload-time = "2026-09-16T00:14:51.155Z" },
     { url = "https://files.pythonhosted.org/packages/f5/cd/785c64ed382f3f04201870267b02783f63b4678c2acfddc177a3ebcc2727/propcache-0.5.4-py3-none-any.whl", hash = "sha256:62c60aec739ed00124573cce1178138fd690c7676352d67a37328c1cf51d7468", size = 16338, upload-time = "2026-09-16T00:17:13.106Z" },
+]
+
+[[package]]
+name = "pyasn1"
+version = "0.6.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a4/9a/23310166d960def5897e91fe20e5b724601b02a22e84ba1f94232c0b7f67/pyasn1-0.6.4.tar.gz", hash = "sha256:9c447d8431c947fe4c8febc4ed9e760bc29011a5b01e5c74b67025bd9fb8ce81", size = 151262, upload-time = "2026-07-09T01:12:33.988Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9a/3b/6163796d69c3977d1e4287bea4a6979161cbbdd170ebb430511e8e1999ce/pyasn1-0.6.4-py3-none-any.whl", hash = "sha256:deda9277cfd454080ec40b207fb6df82206a3a2688735233cdcd8d3d565f088b", size = 84410, upload-time = "2026-07-09T01:12:32.92Z" },
+]
+
+[[package]]
+name = "pyasn1-modules"
+version = "0.4.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyasn1" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e9/e6/78ebbb10a8c8e4b61a59249394a4a594c1a7af95593dc933a349c8d00964/pyasn1_modules-0.4.2.tar.gz", hash = "sha256:677091de870a80aae844b1ca6134f54652fa2c8c5a52aa396440ac3106e941e6", size = 307892, upload-time = "2025-03-28T02:41:22.17Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/47/8d/d529b5d697919ba8c11ad626e835d4039be708a35b0d22de83a269a6682c/pyasn1_modules-0.4.2-py3-none-any.whl", hash = "sha256:29253a9207ce32b64c3ac6600edc75368f98473906e8fd1043bd6b5b1de2c14a", size = 181259, upload-time = "2025-03-28T02:41:19.028Z" },
 ]
 
 [[package]]
@@ -1539,8 +1638,11 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "vdagent-agent-template" },
+    { name = "vdagent-agentkit" },
     { name = "vdagent-backend" },
+    { name = "vdagent-chart" },
     { name = "vdagent-compare" },
+    { name = "vdagent-contracts" },
     { name = "vdagent-data" },
     { name = "vdagent-insight" },
     { name = "vdagent-orchestrator" },
@@ -1551,6 +1653,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "httpx" },
+    { name = "pdoc" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
@@ -1558,8 +1661,11 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "vdagent-agent-template", editable = "agents/_template" },
+    { name = "vdagent-agentkit", editable = "agents/_shared" },
     { name = "vdagent-backend", editable = "backend" },
+    { name = "vdagent-chart", editable = "agents/chart" },
     { name = "vdagent-compare", editable = "agents/compare" },
+    { name = "vdagent-contracts", editable = "contracts" },
     { name = "vdagent-data", editable = "agents/data" },
     { name = "vdagent-insight", editable = "agents/insight" },
     { name = "vdagent-orchestrator", editable = "agents/orchestrator" },
@@ -1570,6 +1676,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "httpx", specifier = ">=0.27" },
+    { name = "pdoc", specifier = ">=16.0.0" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
 ]
@@ -1590,11 +1697,35 @@ requires-dist = [
 ]
 
 [[package]]
+name = "vdagent-agentkit"
+version = "0.1.0"
+source = { editable = "agents/_shared" }
+dependencies = [
+    { name = "litellm" },
+    { name = "mcp" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "vdagent-contracts" },
+    { name = "vdagent-sdk" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "litellm", specifier = ">=1.50" },
+    { name = "mcp", specifier = ">=1.9" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "vdagent-contracts", editable = "contracts" },
+    { name = "vdagent-sdk", editable = "sdk" },
+]
+
+[[package]]
 name = "vdagent-backend"
 version = "0.1.0"
 source = { editable = "backend" }
 dependencies = [
     { name = "aiosqlite" },
+    { name = "alembic" },
     { name = "fastapi" },
     { name = "mcp" },
     { name = "python-dotenv" },
@@ -1603,12 +1734,14 @@ dependencies = [
     { name = "sqlite-vec" },
     { name = "sse-starlette" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "vdagent-contracts" },
     { name = "vdagent-sdk" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20" },
+    { name = "alembic", specifier = ">=1.13" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "mcp", specifier = ">=1.9" },
     { name = "python-dotenv", specifier = ">=1.0" },
@@ -1617,6 +1750,28 @@ requires-dist = [
     { name = "sqlite-vec", specifier = ">=0.1.6" },
     { name = "sse-starlette", specifier = ">=2.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
+    { name = "vdagent-contracts", editable = "contracts" },
+    { name = "vdagent-sdk", editable = "sdk" },
+]
+
+[[package]]
+name = "vdagent-chart"
+version = "0.1.0"
+source = { editable = "agents/chart" }
+dependencies = [
+    { name = "litellm" },
+    { name = "python-dotenv" },
+    { name = "vdagent-agentkit" },
+    { name = "vdagent-contracts" },
+    { name = "vdagent-sdk" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "litellm", specifier = ">=1.50" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "vdagent-agentkit", editable = "agents/_shared" },
+    { name = "vdagent-contracts", editable = "contracts" },
     { name = "vdagent-sdk", editable = "sdk" },
 ]
 
@@ -1628,6 +1783,8 @@ dependencies = [
     { name = "litellm" },
     { name = "mcp" },
     { name = "python-dotenv" },
+    { name = "vdagent-agentkit" },
+    { name = "vdagent-contracts" },
     { name = "vdagent-sdk" },
 ]
 
@@ -1636,8 +1793,21 @@ requires-dist = [
     { name = "litellm", specifier = ">=1.50" },
     { name = "mcp", specifier = ">=1.9" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "vdagent-agentkit", editable = "agents/_shared" },
+    { name = "vdagent-contracts", editable = "contracts" },
     { name = "vdagent-sdk", editable = "sdk" },
 ]
+
+[[package]]
+name = "vdagent-contracts"
+version = "0.1.0"
+source = { editable = "contracts" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.7" }]
 
 [[package]]
 name = "vdagent-data"
@@ -1647,6 +1817,7 @@ dependencies = [
     { name = "litellm" },
     { name = "mcp" },
     { name = "python-dotenv" },
+    { name = "vdagent-contracts" },
     { name = "vdagent-sdk" },
 ]
 
@@ -1655,6 +1826,7 @@ requires-dist = [
     { name = "litellm", specifier = ">=1.50" },
     { name = "mcp", specifier = ">=1.9" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "vdagent-contracts", editable = "contracts" },
     { name = "vdagent-sdk", editable = "sdk" },
 ]
 
@@ -1663,19 +1835,25 @@ name = "vdagent-insight"
 version = "0.1.0"
 source = { editable = "agents/insight" }
 dependencies = [
-    { name = "langchain" },
-    { name = "langchain-openai" },
-    { name = "mcp" },
+    { name = "google-genai" },
+    { name = "openai" },
+    { name = "pydantic" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
+    { name = "vdagent-agentkit" },
+    { name = "vdagent-contracts" },
     { name = "vdagent-sdk" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "langchain", specifier = ">=1.4" },
-    { name = "langchain-openai", specifier = ">=1.6" },
-    { name = "mcp", specifier = ">=1.9" },
+    { name = "google-genai", specifier = ">=1.0" },
+    { name = "openai", specifier = ">=1.60" },
+    { name = "pydantic", specifier = ">=2.7" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "vdagent-agentkit", editable = "agents/_shared" },
+    { name = "vdagent-contracts", editable = "contracts" },
     { name = "vdagent-sdk", editable = "sdk" },
 ]
 
@@ -1687,6 +1865,8 @@ dependencies = [
     { name = "litellm" },
     { name = "mcp" },
     { name = "python-dotenv" },
+    { name = "vdagent-agentkit" },
+    { name = "vdagent-contracts" },
     { name = "vdagent-sdk" },
 ]
 
@@ -1695,6 +1875,8 @@ requires-dist = [
     { name = "litellm", specifier = ">=1.50" },
     { name = "mcp", specifier = ">=1.9" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "vdagent-agentkit", editable = "agents/_shared" },
+    { name = "vdagent-contracts", editable = "contracts" },
     { name = "vdagent-sdk", editable = "sdk" },
 ]
 
@@ -1708,6 +1890,8 @@ dependencies = [
     { name = "langgraph" },
     { name = "mcp" },
     { name = "python-dotenv" },
+    { name = "vdagent-agentkit" },
+    { name = "vdagent-contracts" },
     { name = "vdagent-sdk" },
 ]
 
@@ -1718,6 +1902,8 @@ requires-dist = [
     { name = "langgraph", specifier = ">=1.2" },
     { name = "mcp", specifier = ">=1.9" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "vdagent-agentkit", editable = "agents/_shared" },
+    { name = "vdagent-contracts", editable = "contracts" },
     { name = "vdagent-sdk", editable = "sdk" },
 ]
 

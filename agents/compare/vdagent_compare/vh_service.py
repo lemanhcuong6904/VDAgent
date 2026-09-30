@@ -145,9 +145,11 @@ def _next_steps(subject: Unit, group: list[Unit]) -> list[dict]:
 
 
 class CompareService:
-    def __init__(self, root: Path | None = None):
+    def __init__(self, root: Path | None = None, package: DataPackage | None = None):
         # None: find the CSV pack on first CSV question (hero questions never need it).
         self.root = root
+        # WS3: a package built from canonical Data artifacts (stepspec.py); when set, no fixture or pack is loaded.
+        self._package = package
 
     def _env(self, package: DataPackage, raw: Mapping[str, Any], kind: str,
              status: str, limitations: list[str], sources: list[str] | None = None,
@@ -191,10 +193,10 @@ class CompareService:
                     for key in ("entityCode", "entityId") if subject_ref.get(key) is not None)
         )
         if not valid_subject:
-            package = load_hero_package()  # no subject → no pack to pick; ids only
+            package = self._package or load_hero_package()  # no subject → no pack to pick; ids only
             return self._invalid(package, raw, str(raw.get("comparisonMode") or "peer_group"),
                                  "INVALID_INPUT", "Thiếu subject.entityCode hoặc subject.entityId.")
-        package = load_package_for(subject_ref, self.root)
+        package = self._package or load_package_for(subject_ref, self.root)
         mode = str(raw.get("comparisonMode") or "peer_group")
         if mode not in VALID_MODES:
             return self._invalid(package, raw, mode, "INVALID_INPUT", "Loại so sánh không được hỗ trợ.")

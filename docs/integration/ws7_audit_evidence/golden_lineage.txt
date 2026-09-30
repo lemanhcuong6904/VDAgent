@@ -1,0 +1,24 @@
+task t_7eac4e6a6fe3 artifact versions 18
+recomputed content_hash mismatches: [('art_d73a669884c5', 1), ('art_d73a669884c5', 2), ('art_d73a669884c5', 3), ('art_d73a669884c5', 4), ('art_d73a669884c5', 5)]
+owners: {'u_000000000001'} | snapshots: {('SNAP-2026-09-28',)} | semantics: {'sc-1'}
+types: {'run_state': 1, 'dataset': 1, 'metric': 1, 'dq': 1, 'insight': 1, 'peer_definition': 1, 'comparison': 1, 'chart_spec': 5, 'report': 1}
+schemas: [('chart_spec', 'chart_spec@1', 'PARTIAL'), ('comparison', 'comparison@1', 'PARTIAL'), ('dataset', 're_dataset@1', 'VALID'), ('dq', 're_dq@1', 'PARTIAL'), ('insight', 'insight.v2', 'PARTIAL'), ('metric', 're_metric@1', 'PARTIAL'), ('peer_definition', 'peer_definition@1', 'PARTIAL'), ('report', 'report@1', 'PARTIAL'), ('run_state', 'run_state@1', 'VALID')]
+all non-run_state artifacts reach the one dataset: True
+dangling input refs: []
+chart bindings resolved: 18 / 18 | chart types: ['bar', 'bar', 'scatter', 'kpi_card', 'kpi_card']
+report statements resolved: 28 / 28 | missing source_ref: 0
+report sections: ['1. Bối cảnh', '2. Tóm tắt điều hành', '3. Chỉ số chính', '4. Phân tích & Insight', '5. Bằng chứng & Trực quan hóa', '6. Hạn chế & Chất lượng dữ liệu']
+report charts: 5 tables: 2 actions: 0 | note: Chỉ có 0 đề xuất được Insight hỗ trợ bằng bằng chứng; báo cáo không tự thêm đề xuất khác vì không có dữ liệu chứng minh.
+report status: PARTIAL | delivery: {'report_id': 'rp_df42da5b27f5'} | validation: {'chart_bindings_checked': 18, 'charts_checked': 5, 'result': 'pass', 'statements_checked': 28}
+rp row: {'id': 'rp_df42da5b27f5', 'user_id': 'u_000000000001', 'invocation_id': 'inv_cfb00543f10f'}
+comparison: {'net_asking_price_per_m2': (72500000, 64500000, 5, '12.4'), 'dom': (138, 61, 5, '126.23')}
+peers: ['A12-11', 'A10-02', 'A14-03', 'B09-05', 'B11-07'] | areaM2: 63.02 | tolerance: {'percent': '10.00', 'ratio': '0.10', 'source': 'semantic_config[sc-1].peer_area_tolerance_pct'}
+PRJ-Y in any non-dataset payload: False | D12-09: False | demo ids: False
+PRJ-Y in dataset payload: False | hidden_rows: {'dim_unit_master': 28}
+run_state art_d73a669884c5 v 6 partial [['B1'], ['B2', 'B3'], ['B4'], ['B5']]
+  B1 data     completed 01:14:47.952-01:14:48.294 in=0 out=3 err=None
+  B2 insight  completed 01:14:48.330-01:14:48.431 in=3 out=1 err=None
+  B3 compare  completed 01:14:48.330-01:14:48.446 in=3 out=2 err=None
+  B4 chart    completed 01:14:48.465-01:14:48.550 in=3 out=5 err=None
+  B5 report   completed 01:14:48.584-01:14:48.675 in=8 out=1 err=None
+B2.in == B3.in == B1.out: True

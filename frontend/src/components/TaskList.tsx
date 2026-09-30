@@ -1,6 +1,7 @@
 import { useTasks } from "../api/queries";
 import { agentColor } from "../ui/artifacts";
 import { formatRelative } from "../ui/format";
+import { taskStatusLabel } from "../ui/taskStatus";
 import { useUi } from "../ui/UiContext";
 import { StatusIcon } from "./StatusIcon";
 
@@ -20,7 +21,7 @@ export function TaskList({ activeTaskId }: { activeTaskId: string | null }) {
               type="button"
               className={`task-item${t.id === activeTaskId ? " selected" : ""}`}
               onClick={() => selectTask(t.id)}
-              title={`${t.id} · ${t.status}`}
+              title={`${t.id} · ${taskStatusLabel(t)}`}
             >
               <StatusIcon status={t.status} />
               <span className="task-id mono">{t.id}</span>

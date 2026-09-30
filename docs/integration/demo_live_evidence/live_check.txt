@@ -1,0 +1,9 @@
+backend:   http://localhost:8022
+ORCH_LLM               on
+ORCH_SNAPSHOT_ID       SNAP-2026-09-28
+ORCH_SEMANTIC_VERSION  sc-1
+ORCH_DAG_TIMEOUT_S     300
+health                 healthy
+agents                 orchestrator data compare insight report chart
+orchestrator: LLM planner on (model gpt-4o-mini), snapshot SNAP-2026-09-28, semantic sc-1
+insight: data source fixtures, LLM on

@@ -5,7 +5,7 @@
                           assess ──reject, budget left──▶ revise ──▶ agent   (at most once)
                           assess ──reject, no budget──▶ finalize
 
-Tool-call steps are emitted as they happen (R2/R3). A text reply is only a *draft*: Jev judges it
+Tool-call steps and their results are emitted as they happen. A text reply is only a *draft*: Jev judges it
 (judge.py) and only the draft that leaves `assess` is emitted, by `finalize`. The Backend never
 sees a rejected draft or the review.
 """

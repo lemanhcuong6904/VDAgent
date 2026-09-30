@@ -5,6 +5,7 @@ description = "vdagent Backend: FastAPI REST/SSE, invocation engine, MCP server"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "vdagent-sdk",
+  "vdagent-contracts",
   "fastapi>=0.115",
   "uvicorn[standard]>=0.30",
   "sse-starlette>=2.1",
@@ -14,10 +15,12 @@ dependencies = [
   "mcp>=1.9",
   "pyyaml>=6",
   "sqlite-vec>=0.1.6",
+  "alembic>=1.13",
 ]
 
 [tool.uv.sources]
 vdagent-sdk = { workspace = true }
+vdagent-contracts = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

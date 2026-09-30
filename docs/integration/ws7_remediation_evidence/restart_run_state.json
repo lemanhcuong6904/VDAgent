@@ -1,0 +1,10 @@
+{
+  "task": [
+    "failed",
+    "interrupted"
+  ],
+  "run_state_versions": [
+    "running",
+    "interrupted"
+  ]
+}

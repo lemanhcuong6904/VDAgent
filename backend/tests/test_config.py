@@ -1,4 +1,4 @@
-"""Backend configuration: the `plugins:` spec list (plugins spec §4.1) and `.env` loading."""
+"""Backend configuration: the `plugins:` entries (incl. `mcp_tools`), scalar overrides and `.env` loading."""
 
 from __future__ import annotations
 
@@ -84,3 +84,21 @@ def test_backend_env_file_is_loaded_but_process_env_wins(cfg_file: Path, monkeyp
     monkeypatch.setenv("VDAGENT_MCP_PUBLIC_URL", "http://from-process/mcp")
     cfg = load_config(cfg_file)
     assert (cfg.max_steps, cfg.mcp_public_url) == (7, "http://from-process/mcp")
+
+
+def test_mcp_tools_is_an_optional_set_of_tool_names(cfg_file: Path) -> None:
+    cfg = load_config(
+        _with(cfg_file, "plugins:\n  - module: a\n    mcp_tools: [run_query, list_tables, run_query]\n  - module: b\n")
+    )
+    assert cfg.plugins[0].mcp_tools == frozenset({"run_query", "list_tables"})
+    assert cfg.plugins[1].mcp_tools == frozenset()
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["run_query", "{run_query: true}", "[run_query, '']", "[run_query, 3]"],
+    ids=["string", "mapping", "empty-entry", "non-string-entry"],
+)
+def test_malformed_mcp_tools_are_rejected_naming_the_entry(cfg_file: Path, value: str) -> None:
+    with pytest.raises(ValueError, match=r"plugins\[1\]\.mcp_tools must be a list of non-empty strings"):
+        load_config(_with(cfg_file, f"plugins:\n  - module: a\n  - module: b\n    mcp_tools: {value}\n"))
