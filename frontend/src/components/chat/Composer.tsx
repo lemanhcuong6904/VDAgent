@@ -41,7 +41,7 @@ export function Composer({ agent }: { agent: AgentDTO }) {
     onSuccess: (res) => {
       setText("");
       setSubmittedTaskId(res.task_id);
-      selectTask(res.task_id);
+      selectTask(res.task_id, agent.name);
       void queryClient.invalidateQueries({ queryKey: queryKeys.tasks });
       void queryClient.invalidateQueries({ queryKey: queryKeys.messages(agent.name) });
     },

@@ -5,20 +5,20 @@ export type InspectorTab = "task" | "artifact";
 export interface UiState {
   /** Agent whose chat is shown; null → default (orchestrator). */
   agent: string | null;
-  /** Task shown in the Inspector; null → most recent task. */
+  /** Selected task shown in the Inspector and chat. */
   taskId: string | null;
   tab: InspectorTab;
   artifactId: string | null;
   /** Recently opened artifacts, most recent first. */
   recentArtifacts: string[];
-  /** Drawer state is used below the desktop breakpoint; desktop panels remain visible. */
+  /** Whether the inspector is open; initialized from the current viewport. */
   sidebarOpen: boolean;
   inspectorOpen: boolean;
 }
 
 export interface Ui extends UiState {
   selectAgent: (agent: string) => void;
-  selectTask: (taskId: string) => void;
+  selectTask: (taskId: string, agent: string) => void;
   openArtifact: (artifactId: string) => void;
   setTab: (tab: InspectorTab) => void;
   toggleSidebar: () => void;
@@ -28,7 +28,7 @@ export interface Ui extends UiState {
 
 type Action =
   | { type: "agent"; agent: string }
-  | { type: "task"; taskId: string }
+  | { type: "task"; taskId: string; agent: string }
   | { type: "artifact"; artifactId: string }
   | { type: "tab"; tab: InspectorTab }
   | { type: "sidebar" }
@@ -40,9 +40,9 @@ const RECENT_LIMIT = 8;
 export function uiReducer(state: UiState, action: Action): UiState {
   switch (action.type) {
     case "agent":
-      return { ...state, agent: action.agent, sidebarOpen: false };
+      return { ...state, agent: action.agent, taskId: null, sidebarOpen: false };
     case "task":
-      return { ...state, taskId: action.taskId, tab: "task", sidebarOpen: false, inspectorOpen: true };
+      return { ...state, agent: action.agent, taskId: action.taskId, tab: "task", sidebarOpen: false, inspectorOpen: true };
     case "artifact":
       return {
         ...state,
@@ -78,12 +78,18 @@ export const initialUiState: UiState = {
 const UiContext = createContext<Ui | null>(null);
 
 export function UiProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(uiReducer, initialUiState);
+  const [state, dispatch] = useReducer(uiReducer, initialUiState, (initialState) => ({
+    ...initialState,
+    inspectorOpen:
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(min-width: 1121px)").matches,
+  }));
   const value = useMemo<Ui>(
     () => ({
       ...state,
       selectAgent: (agent) => dispatch({ type: "agent", agent }),
-      selectTask: (taskId) => dispatch({ type: "task", taskId }),
+      selectTask: (taskId, agent) => dispatch({ type: "task", taskId, agent }),
       openArtifact: (artifactId) => dispatch({ type: "artifact", artifactId }),
       setTab: (tab) => dispatch({ type: "tab", tab }),
       toggleSidebar: () => dispatch({ type: "sidebar" }),

@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMessages } from "../../api/queries";
 import type { AgentDTO, MessageDTO, ToolCallDTO } from "../../api/types";
-import { agentColor } from "../../ui/artifacts";
 import { CompactedDivider } from "./CompactedDivider";
 import { Composer } from "./Composer";
 import { MessageItem, PendingItem } from "./MessageItem";
@@ -10,12 +9,13 @@ import { getChatPanelState } from "./chatState";
 /** Distance (px) from an edge that still counts as "at" that edge. */
 const EDGE_PX = 80;
 
-/** One agent's chat = view of the (user, agent) stack. Mount with `key={agent.name}`. */
-export function ChatPane({ agent }: { agent: AgentDTO }) {
+/** One agent's stack, optionally focused on a single task. */
+export function ChatPane({ agent, taskId }: { agent: AgentDTO; taskId: string | null }) {
   const query = useMessages(agent.name);
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
   const [showCompacted, setShowCompacted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const previousTaskId = useRef(taskId);
 
   const pages = query.data?.pages;
   const newest = pages?.[0];
@@ -25,11 +25,12 @@ export function ChatPane({ agent }: { agent: AgentDTO }) {
     // pages: newest first; each page ascending by seq.
     for (const page of [...(pages ?? [])].reverse()) for (const m of page.messages) byId.set(m.id, m);
     const sorted = [...byId.values()].sort((a, b) => a.seq - b.seq);
+    const visible = taskId ? sorted.filter((m) => m.task_id === taskId) : sorted;
     const calls = new Map<string, ToolCallDTO>();
     const results = new Map<string, MessageDTO>();
     const tasks = new Set<string>();
     let lastCompacted: number | null = null;
-    for (const m of sorted) {
+    for (const m of visible) {
       for (const c of m.tool_calls ?? []) calls.set(c.id, c);
       if (m.role === "tool" && m.tool_call_id) results.set(m.tool_call_id, m);
       if (m.compacted) {
@@ -38,16 +39,16 @@ export function ChatPane({ agent }: { agent: AgentDTO }) {
       }
     }
     return {
-      messages: sorted,
+      messages: visible,
       toolCalls: calls,
       toolResults: results,
       compactedTasks: tasks.size,
       lastCompactedSeq: lastCompacted,
     };
-  }, [pages]);
+  }, [pages, taskId]);
 
-  const summary = newest?.summary ?? null;
-  const pending = newest?.pending ?? [];
+  const summary = taskId ? null : newest?.summary ?? null;
+  const pending = taskId ? [] : newest?.pending ?? [];
   const hasDivider = lastCompactedSeq !== null || Boolean(summary);
   // While compacted history is collapsed, don't page through hidden (compacted) history.
   const canAutoLoad = showCompacted || !messages[0]?.compacted;
@@ -82,6 +83,15 @@ export function ChatPane({ agent }: { agent: AgentDTO }) {
     const el = scrollRef.current;
     if (!el || !query.data) return;
     const oldest = messages[0]?.seq;
+    if (previousTaskId.current !== taskId) {
+      previousTaskId.current = taskId;
+      el.scrollTop = el.scrollHeight;
+      initialized.current = true;
+      stickToBottom.current = true;
+      prevOldestSeq.current = oldest;
+      distanceFromBottom.current = el.scrollHeight - el.scrollTop;
+      return;
+    }
     if (!initialized.current) {
       el.scrollTop = el.scrollHeight;
       initialized.current = true;
@@ -99,7 +109,7 @@ export function ChatPane({ agent }: { agent: AgentDTO }) {
     const el = scrollRef.current;
     if (!el || !canAutoLoad || !hasNextPage || isFetchingNextPage) return;
     if (el.scrollHeight <= el.clientHeight + EDGE_PX) void fetchNextPage();
-  }, [messages.length, canAutoLoad, hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [messages.length, taskId, canAutoLoad, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const divider = (
     <CompactedDivider
@@ -131,20 +141,6 @@ export function ChatPane({ agent }: { agent: AgentDTO }) {
 
   return (
     <div className="chat-pane">
-      <header className="chat-header">
-        <h2 style={{ color: agentColor(agent.name) }}>{agent.name}</h2>
-        <span className="chat-desc muted">{agent.description}</span>
-        <span className="chat-status">
-          {agent.busy ? (
-            <span className="status-pill busy">
-              <span className="spinner small" /> busy
-              {agent.queue_len > 0 && ` (${agent.queue_len} queued)`}
-            </span>
-          ) : (
-            <span className="status-pill idle">idle</span>
-          )}
-        </span>
-      </header>
 
       <div className={`chat-scroll chat-state-${panelState}`} ref={scrollRef} onScroll={onScroll}>
         {hasNextPage && (
@@ -164,7 +160,7 @@ export function ChatPane({ agent }: { agent: AgentDTO }) {
         {query.isError && <div className="chat-empty error-text">{query.error.message}</div>}
         {query.isSuccess && messages.length === 0 && pending.length === 0 && !hasDivider && (
           <div className="chat-empty muted">
-            No messages yet. Ask <strong>{agent.name}</strong> something below.
+            {taskId ? "No chat messages for this task." : <>No messages yet. Ask <strong>{agent.name}</strong> something below.</>}
           </div>
         )}
         <div className="message-list">

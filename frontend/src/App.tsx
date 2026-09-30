@@ -59,18 +59,21 @@ function Shell({ userId, onSelectUser }: { userId: string | null; onSelectUser: 
   const stream = useEventStream(userId);
   const ui = useUi();
   return (
-    <div className={`app${ui.sidebarOpen || ui.inspectorOpen ? " drawer-active" : ""}`}>
+    <div className={`app${ui.sidebarOpen || ui.inspectorOpen ? " drawer-active" : ""}${ui.inspectorOpen ? "" : " inspector-hidden"}`}>
       <button className="drawer-backdrop" type="button" aria-label="Close open panel" onClick={ui.closePanels} />
       <aside className={`sidebar${ui.sidebarOpen ? " is-open" : ""}`} id="workspace-navigation">
-        <div className="brand">
-          vdagent <span className="muted small">analytics agents</span>
-        </div>
+        <div className="brand">vdagent</div>
         <button type="button" autoFocus={ui.sidebarOpen} className="icon-btn panel-close" onClick={ui.toggleSidebar} aria-label="Close navigation">
           Close
         </button>
         {userId && <SidebarLists />}
-        {userId && <StreamBadge state={stream} />}
-        <UserPicker userId={userId} onSelect={onSelectUser} />
+        <div className="sidebar-user">
+          <UserPicker
+            userId={userId}
+            onSelect={onSelectUser}
+            status={userId ? <StreamBadge state={stream} /> : null}
+          />
+        </div>
       </aside>
       {userId ? (
         <Workspace />
@@ -118,8 +121,20 @@ function Workspace() {
             <span className="eyebrow">Analysis workspace</span>
             <strong>{agent?.name ?? "Loading agents"}</strong>
           </div>
-          <button type="button" className="icon-btn mobile-control" aria-label="Open inspector" aria-expanded={ui.inspectorOpen} aria-controls="workspace-inspector" onClick={ui.toggleInspector}>
-            Inspect
+          <button
+            type="button"
+            className="icon-btn inspector-toggle"
+            aria-label={ui.inspectorOpen ? "Hide right sidebar" : "Show right sidebar"}
+            title={ui.inspectorOpen ? "Hide right sidebar" : "Show right sidebar"}
+            aria-expanded={ui.inspectorOpen}
+            aria-controls="workspace-inspector"
+            onClick={ui.toggleInspector}
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M15 4v16" />
+              <path d={ui.inspectorOpen ? "m11 9 3 3-3 3" : "m13 9-3 3 3 3"} />
+            </svg>
           </button>
         </header>
         {agents.isPending && (
@@ -146,7 +161,7 @@ function Workspace() {
           </section>
         )}
         {agent ? (
-          <ChatPane key={agent.name} agent={agent} />
+          <ChatPane key={agent.name} agent={agent} taskId={ui.taskId} />
         ) : (
           <div className="chat-empty muted">{agents.isError ? agents.error.message : "Loading agents…"}</div>
         )}
