@@ -1,557 +1,114 @@
 {
   "agent": "data",
   "contract_version": "1.0.0",
-  "catalog_version": "1.3.0",
+  "catalog_version": "1.4.0",
   "operations": [
     {
       "operation": "fetch_units",
-      "description": "Lấy danh sách căn theo phạm vi và bộ lọc, kèm chẩn đoán và nguyên nhân (unit_set)",
+      "description": "Đọc re_warehouse theo snapshot APPROVED: căn mục tiêu (và ứng viên cùng loại căn) → dataset/metric/dq (re_*@1).",
       "input_schema": {
         "type": "object",
-        "properties": {
-          "objective": {
-            "type": "string",
-            "maxLength": 300
-          },
-          "scope": {
-            "type": "object",
-            "properties": {
-              "mentions": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "text": {
-                      "type": "string"
-                    },
-                    "kind_hint": {
-                      "type": "string",
-                      "enum": [
-                        "PROJECT",
-                        "ZONE",
-                        "UNIT",
-                        "UNKNOWN"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "text",
-                    "kind_hint"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "scope_all": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "mentions",
-              "scope_all"
-            ],
-            "additionalProperties": false
-          },
-          "filters": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "available",
-                "released",
-                "slow_moving",
-                "sold"
-              ]
-            }
-          },
-          "extra_needs": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 300
-            }
-          },
-          "acceptance": {
-            "type": "object",
-            "properties": {
-              "grain": {
-                "type": "string"
-              },
-              "min_rows": {
-                "type": "integer"
-              }
-            },
-            "additionalProperties": false
-          },
-          "attributes": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "area_m2",
-                "asking_price_vnd",
-                "balcony_orientation",
-                "floor_band",
-                "inventory_status",
-                "launch_batch",
-                "net_price_per_m2",
-                "unit_code",
-                "unit_type",
-                "unsold_days_dom",
-                "view_primary_type",
-                "zone"
-              ]
-            }
-          }
-        },
         "required": [
-          "objective",
-          "scope"
+          "subject_unit_code"
         ],
-        "additionalProperties": false
+        "properties": {
+          "subject_unit_code": {
+            "type": "string"
+          },
+          "population": {
+            "enum": [
+              "subject",
+              "peer_candidates"
+            ]
+          },
+          "project_ids": {
+            "type": "array"
+          }
+        }
       },
-      "input_fields": {},
       "requires": [],
-      "uses_if_present": [],
       "produces": [
-        "unit_set",
-        "dq_report"
+        "dataset",
+        "metric",
+        "dq"
       ],
-      "outputs": [
-        "CHAT_ANSWER"
-      ],
+      "outputs": [],
       "serves": [
         "LOOKUP"
       ],
-      "deadline_s": 90,
+      "deadline_s": 60,
       "error_codes": {
-        "AMBIGUOUS_REQUEST": "NEED_INPUT",
-        "ENTITY_NOT_FOUND": "SPEC_ISSUE",
-        "SPEC_MISMATCH": "SPEC_ISSUE",
-        "OUT_OF_SCOPE": "NO_ACCESS",
-        "SIGNATURE_INVALID": "NO_ACCESS",
-        "DATA_UNAVAILABLE": "NO_DATA",
-        "DQ_BLOCKING": "DATA_QUALITY",
-        "BUDGET_EXCEEDED": "SPEC_ISSUE",
-        "LLM_UNAVAILABLE": "TRANSIENT",
-        "LLM_QUOTA_EXHAUSTED": "QUOTA_EXHAUSTED",
-        "INTERNAL_ERROR": "FATAL"
-      },
-      "retries_transient_internally": true
+        "EMPTY_POPULATION": "NO_DATA",
+        "INTERNAL_ERROR": "FATAL",
+        "INVALID_SPEC": "SPEC_ISSUE",
+        "INVALID_STEPSPEC": "SPEC_ISSUE",
+        "RESULT_TRUNCATED": "DATA_QUALITY",
+        "SEMANTIC_VERSION_MISMATCH": "SPEC_ISSUE",
+        "SEMANTIC_VERSION_REQUIRED": "SPEC_ISSUE",
+        "SNAPSHOT_NOT_APPROVED": "SPEC_ISSUE",
+        "SNAPSHOT_REQUIRED": "SPEC_ISSUE",
+        "SNAPSHOT_UNKNOWN": "SPEC_ISSUE",
+        "SUBJECT_AREA_UNAVAILABLE": "DATA_QUALITY",
+        "TOOL_FAILED": "TRANSIENT",
+        "UNIT_AMBIGUOUS": "NEED_INPUT",
+        "UNIT_NOT_FOUND": "NO_DATA",
+        "UNKNOWN_METRIC": "SPEC_ISSUE",
+        "UNKNOWN_OPERATION": "SPEC_ISSUE",
+        "UNSUPPORTED_CONTRACT": "SPEC_ISSUE",
+        "USER_CONTEXT_MISMATCH": "NO_ACCESS"
+      }
     },
     {
       "operation": "aggregate_metrics",
-      "description": "Tính metric theo nhóm (tử số, mẫu số, n, formula_id) trong phạm vi (metric_table)",
+      "description": "Trung vị metric theo nhóm trong scope (re_warehouse, snapshot APPROVED) → dataset/metric/dq.",
       "input_schema": {
         "type": "object",
-        "properties": {
-          "objective": {
-            "type": "string",
-            "maxLength": 300
-          },
-          "scope": {
-            "type": "object",
-            "properties": {
-              "mentions": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "text": {
-                      "type": "string"
-                    },
-                    "kind_hint": {
-                      "type": "string",
-                      "enum": [
-                        "PROJECT",
-                        "ZONE",
-                        "UNIT",
-                        "UNKNOWN"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "text",
-                    "kind_hint"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "scope_all": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "mentions",
-              "scope_all"
-            ],
-            "additionalProperties": false
-          },
-          "filters": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "available",
-                "released",
-                "slow_moving",
-                "sold"
-              ]
-            }
-          },
-          "extra_needs": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 300
-            }
-          },
-          "acceptance": {
-            "type": "object",
-            "properties": {
-              "grain": {
-                "type": "string"
-              },
-              "min_rows": {
-                "type": "integer"
-              }
-            },
-            "additionalProperties": false
-          },
-          "metrics": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "absorption_rate",
-                "avg_dom_unsold",
-                "avg_net_price_per_m2",
-                "slow_moving_count",
-                "slow_moving_rate",
-                "unit_count"
-              ]
-            },
-            "minItems": 1
-          },
-          "group_by": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "balcony_orientation",
-                "channel",
-                "floor_band",
-                "launch_batch",
-                "market",
-                "project",
-                "unit_type",
-                "view_primary_type",
-                "zone"
-              ]
-            }
-          }
-        },
         "required": [
-          "objective",
-          "scope",
           "metrics"
         ],
-        "additionalProperties": false
+        "properties": {
+          "metrics": {
+            "type": "array"
+          },
+          "group_by": {
+            "type": "array"
+          },
+          "filters": {
+            "type": "object"
+          }
+        }
       },
-      "input_fields": {},
       "requires": [],
-      "uses_if_present": [],
       "produces": [
-        "metric_table",
-        "dq_report"
+        "dataset",
+        "metric",
+        "dq"
       ],
-      "outputs": [
-        "CHAT_ANSWER"
-      ],
+      "outputs": [],
       "serves": [
         "LOOKUP"
       ],
-      "deadline_s": 90,
+      "deadline_s": 60,
       "error_codes": {
-        "AMBIGUOUS_REQUEST": "NEED_INPUT",
-        "ENTITY_NOT_FOUND": "SPEC_ISSUE",
-        "SPEC_MISMATCH": "SPEC_ISSUE",
-        "OUT_OF_SCOPE": "NO_ACCESS",
-        "SIGNATURE_INVALID": "NO_ACCESS",
-        "DATA_UNAVAILABLE": "NO_DATA",
-        "DQ_BLOCKING": "DATA_QUALITY",
-        "BUDGET_EXCEEDED": "SPEC_ISSUE",
-        "LLM_UNAVAILABLE": "TRANSIENT",
-        "LLM_QUOTA_EXHAUSTED": "QUOTA_EXHAUSTED",
-        "INTERNAL_ERROR": "FATAL"
-      },
-      "retries_transient_internally": true
-    },
-    {
-      "operation": "fetch_peer_candidates",
-      "description": "Lấy tập căn ứng viên tương đồng cho một căn mục tiêu (peer_candidates)",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "objective": {
-            "type": "string",
-            "maxLength": 300
-          },
-          "scope": {
-            "type": "object",
-            "properties": {
-              "mentions": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "text": {
-                      "type": "string"
-                    },
-                    "kind_hint": {
-                      "type": "string",
-                      "enum": [
-                        "PROJECT",
-                        "ZONE",
-                        "UNIT",
-                        "UNKNOWN"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "text",
-                    "kind_hint"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "scope_all": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "mentions",
-              "scope_all"
-            ],
-            "additionalProperties": false
-          },
-          "filters": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "available",
-                "released",
-                "slow_moving",
-                "sold"
-              ]
-            }
-          },
-          "extra_needs": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 300
-            }
-          },
-          "acceptance": {
-            "type": "object",
-            "properties": {
-              "grain": {
-                "type": "string"
-              },
-              "min_rows": {
-                "type": "integer"
-              }
-            },
-            "additionalProperties": false
-          },
-          "target_unit": {
-            "type": "object",
-            "properties": {
-              "text": {
-                "type": "string"
-              },
-              "kind_hint": {
-                "type": "string",
-                "enum": [
-                  "PROJECT",
-                  "ZONE",
-                  "UNIT",
-                  "UNKNOWN"
-                ]
-              }
-            },
-            "required": [
-              "text",
-              "kind_hint"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "required": [
-          "objective",
-          "scope",
-          "target_unit"
-        ],
-        "additionalProperties": false
-      },
-      "input_fields": {},
-      "requires": [],
-      "uses_if_present": [],
-      "produces": [
-        "peer_candidates",
-        "dq_report"
-      ],
-      "outputs": [],
-      "serves": [],
-      "deadline_s": 90,
-      "error_codes": {
-        "AMBIGUOUS_REQUEST": "NEED_INPUT",
-        "ENTITY_NOT_FOUND": "SPEC_ISSUE",
-        "SPEC_MISMATCH": "SPEC_ISSUE",
-        "OUT_OF_SCOPE": "NO_ACCESS",
-        "SIGNATURE_INVALID": "NO_ACCESS",
-        "DATA_UNAVAILABLE": "NO_DATA",
-        "DQ_BLOCKING": "DATA_QUALITY",
-        "BUDGET_EXCEEDED": "SPEC_ISSUE",
-        "LLM_UNAVAILABLE": "TRANSIENT",
-        "LLM_QUOTA_EXHAUSTED": "QUOTA_EXHAUSTED",
-        "INTERNAL_ERROR": "FATAL"
-      },
-      "retries_transient_internally": true
-    },
-    {
-      "operation": "fetch_unit_context",
-      "description": "Lấy lịch sử giá, phễu, thứ cấp, vĩ mô, hạ tầng cho một tập căn (unit_context)",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "objective": {
-            "type": "string",
-            "maxLength": 300
-          },
-          "scope": {
-            "type": "object",
-            "properties": {
-              "mentions": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "text": {
-                      "type": "string"
-                    },
-                    "kind_hint": {
-                      "type": "string",
-                      "enum": [
-                        "PROJECT",
-                        "ZONE",
-                        "UNIT",
-                        "UNKNOWN"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "text",
-                    "kind_hint"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "scope_all": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "mentions",
-              "scope_all"
-            ],
-            "additionalProperties": false
-          },
-          "filters": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "available",
-                "released",
-                "slow_moving",
-                "sold"
-              ]
-            }
-          },
-          "extra_needs": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 300
-            }
-          },
-          "acceptance": {
-            "type": "object",
-            "properties": {
-              "grain": {
-                "type": "string"
-              },
-              "min_rows": {
-                "type": "integer"
-              }
-            },
-            "additionalProperties": false
-          },
-          "unit_set_package_id": {
-            "type": "string"
-          },
-          "contexts": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "price_history",
-                "funnel",
-                "secondary_comps",
-                "macro",
-                "infrastructure"
-              ]
-            }
-          }
-        },
-        "required": [
-          "objective",
-          "scope",
-          "unit_set_package_id",
-          "contexts"
-        ],
-        "additionalProperties": false
-      },
-      "input_fields": {
-        "unit_set": "unit_set_package_id"
-      },
-      "requires": [
-        "unit_set"
-      ],
-      "uses_if_present": [],
-      "produces": [
-        "unit_context",
-        "dq_report"
-      ],
-      "outputs": [],
-      "serves": [],
-      "deadline_s": 90,
-      "error_codes": {
-        "AMBIGUOUS_REQUEST": "NEED_INPUT",
-        "ENTITY_NOT_FOUND": "SPEC_ISSUE",
-        "SPEC_MISMATCH": "SPEC_ISSUE",
-        "OUT_OF_SCOPE": "NO_ACCESS",
-        "SIGNATURE_INVALID": "NO_ACCESS",
-        "DATA_UNAVAILABLE": "NO_DATA",
-        "DQ_BLOCKING": "DATA_QUALITY",
-        "BUDGET_EXCEEDED": "SPEC_ISSUE",
-        "LLM_UNAVAILABLE": "TRANSIENT",
-        "LLM_QUOTA_EXHAUSTED": "QUOTA_EXHAUSTED",
-        "INTERNAL_ERROR": "FATAL"
-      },
-      "retries_transient_internally": true
+        "EMPTY_POPULATION": "NO_DATA",
+        "INTERNAL_ERROR": "FATAL",
+        "INVALID_SPEC": "SPEC_ISSUE",
+        "INVALID_STEPSPEC": "SPEC_ISSUE",
+        "RESULT_TRUNCATED": "DATA_QUALITY",
+        "SEMANTIC_VERSION_MISMATCH": "SPEC_ISSUE",
+        "SEMANTIC_VERSION_REQUIRED": "SPEC_ISSUE",
+        "SNAPSHOT_NOT_APPROVED": "SPEC_ISSUE",
+        "SNAPSHOT_REQUIRED": "SPEC_ISSUE",
+        "SNAPSHOT_UNKNOWN": "SPEC_ISSUE",
+        "SUBJECT_AREA_UNAVAILABLE": "DATA_QUALITY",
+        "TOOL_FAILED": "TRANSIENT",
+        "UNIT_AMBIGUOUS": "NEED_INPUT",
+        "UNIT_NOT_FOUND": "NO_DATA",
+        "UNKNOWN_METRIC": "SPEC_ISSUE",
+        "UNKNOWN_OPERATION": "SPEC_ISSUE",
+        "UNSUPPORTED_CONTRACT": "SPEC_ISSUE",
+        "USER_CONTEXT_MISMATCH": "NO_ACCESS"
+      }
     }
   ],
   "vocabulary": {

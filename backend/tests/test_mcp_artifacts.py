@@ -107,3 +107,68 @@ def test_permissions_table_matches_sp_6_3() -> None:
         "chart": {"chart_spec"},
         "report": {"report"},
     }
+
+
+# ---- WS1: the chart agent (docs/integration/AGENT_CONTRACT_MATRIX.md §1, §3.4) ----
+
+
+def test_chart_is_a_known_agent_with_artifact_tools(tools: McpTools) -> None:
+    assert "chart" in ALL_AGENTS
+    names = {tool.name for tool in tools.list_for("chart")}
+    assert {"artifact_put", "artifact_get", "artifact_list", "get_user_context"} <= names
+    assert not names & {"run_query", "re_run_query", "create_chart", "save_report"}
+
+
+async def test_chart_writes_chart_spec_pinned_to_a_comparison(tools: McpTools) -> None:
+    _, cmp = await call(tools, who("compare"), "artifact_put", draft_json=draft("comparison", "compare"))
+    err, read = await call(tools, who("chart"), "artifact_get", artifact_id=cmp["artifact_id"])
+    assert not err and read["content_hash"] == cmp["content_hash"]
+    ref = {"artifact_id": cmp["artifact_id"], "version": 1, "artifact_type": "comparison", "content_hash": cmp["content_hash"]}
+    err, spec = await call(tools, who("chart"), "artifact_put", draft_json=draft("chart_spec", "chart", input_artifact_refs=[ref]))
+    assert not err and spec["artifact_type"] == "chart_spec" and spec["input_artifact_refs"] == [ref]
+
+
+async def test_chart_cannot_write_other_types_or_read_other_users(tools: McpTools) -> None:
+    err, text = await call(tools, who("chart"), "artifact_put", draft_json=draft("insight", "chart"))
+    assert err and "cannot write insight" in text
+    _, theirs = await call(tools, who("compare", user=BOB), "artifact_put", draft_json=draft("comparison", "compare"))
+    err, text = await call(tools, who("chart"), "artifact_get", artifact_id=theirs["artifact_id"])
+    assert err and "not found" in text
+
+
+async def test_artifact_put_reports_broken_input_ref(tools: McpTools) -> None:
+    ref = {"artifact_id": "art_missing", "version": 1, "artifact_type": "comparison"}
+    err, text = await call(tools, who("chart"), "artifact_put", draft_json=draft("chart_spec", "chart", input_artifact_refs=[ref]))
+    assert err and "unknown input artifact art_missing@1" in text
+
+
+async def test_artifact_put_reports_hash_mismatch(tools: McpTools) -> None:
+    _, cmp = await call(tools, who("compare"), "artifact_put", draft_json=draft("comparison", "compare"))
+    ref = {"artifact_id": cmp["artifact_id"], "version": 1, "artifact_type": "comparison", "content_hash": "0" * 64}
+    err, text = await call(tools, who("chart"), "artifact_put", draft_json=draft("chart_spec", "chart", input_artifact_refs=[ref]))
+    assert err and "content hash" in text
+
+
+# ---- WS6: save_report embeds chart_spec artifacts (D7) ----------------------------------------------------------------
+
+
+async def test_save_report_embeds_a_chart_spec_of_this_user(tools: McpTools, tmp_path: Path) -> None:
+    import sqlite3
+
+    with sqlite3.connect(tmp_path / "backend.db") as conn:  # reports reference their creating invocation
+        conn.execute("INSERT INTO tasks (id, user_id, root_agent, status) VALUES ('t_1', ?, 'report', 'running')", (ALICE,))
+        conn.execute("INSERT INTO invocations (id, task_id, user_id, agent, caller, depth, inbound_text, status)"
+                     " VALUES ('inv_report', 't_1', ?, 'report', 'user', 0, 'r', 'running')", (ALICE,))
+    conn.close()
+    _, spec = await call(tools, who("chart"), "artifact_put", draft_json=draft("chart_spec", "chart"))
+    md = f"# R\n\n{{{{chart_spec:{spec['artifact_id']}@1}}}}\n"
+    err, saved = await call(tools, who("report"), "save_report", title="R", markdown=md)
+    assert not err and saved["report_id"].startswith("rp_")
+
+
+async def test_save_report_rejects_unknown_foreign_or_non_chart_spec_embeds(tools: McpTools) -> None:
+    _, theirs = await call(tools, who("chart", user=BOB), "artifact_put", draft_json=draft("chart_spec", "chart"))
+    _, run_state = await call(tools, who("orchestrator"), "artifact_put", draft_json=draft("run_state", "orchestrator"))
+    for ref in ("art_missing@1", f"{theirs['artifact_id']}@1", f"{run_state['artifact_id']}@1", "art_x"):
+        err, text = await call(tools, who("report"), "save_report", title="R", markdown=f"{{{{chart_spec:{ref}}}}}")
+        assert err and "chart_spec" in text, ref

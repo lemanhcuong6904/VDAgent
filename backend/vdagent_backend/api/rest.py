@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Header, Query, Response
 from pydantic import BaseModel, Field
 
 from vdagent_backend.api.deps import Svc, UserId
 from vdagent_backend.api.errors import ApiError, not_found
-from vdagent_backend.db import artifacts, repo
-from vdagent_backend.engine import TaskFinishedError, TaskNotFoundError, UnknownAgentError
+from vdagent_backend.db import artifact_store, artifacts, repo
+from vdagent_backend.engine import IdempotencyConflictError, TaskFinishedError, TaskNotFoundError, UnknownAgentError
 
 router = APIRouter(prefix="/api")
 
@@ -72,15 +72,25 @@ async def get_messages(
 
 
 @router.post("/agents/{agent}/messages", status_code=202)
-async def post_message(svc: Svc, user_id: UserId, agent: str, body: NewMessage) -> dict[str, str]:
+async def post_message(
+    svc: Svc, user_id: UserId, agent: str, body: NewMessage, response: Response,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key", max_length=200)] = None,
+) -> dict[str, Any]:
+    """Start a task. WS7 F-11: an optional `Idempotency-Key` makes retries return the first task (200, deduplicated)."""
     content = body.content.strip()
     if not content:
         raise ApiError(422, "invalid_request", "content must not be empty")
+    key = idempotency_key.strip() if idempotency_key and idempotency_key.strip() else None
     try:
-        task, inv = await svc.engine.post_message(user_id, agent, content)
+        task, inv = await svc.engine.post_message(user_id, agent, content, key)
     except UnknownAgentError:
         raise _unknown_agent(agent) from None
-    return {"task_id": task["id"], "invocation_id": inv["id"]}
+    except IdempotencyConflictError:
+        raise ApiError(409, "idempotency_conflict", "Idempotency-Key already used with different content") from None
+    deduplicated = bool(task.get("deduplicated"))
+    if deduplicated:
+        response.status_code = 200
+    return {"task_id": task["id"], "invocation_id": inv["id"], "deduplicated": deduplicated}
 
 
 # --------------------------------------------------------------------------- tasks
@@ -147,6 +157,19 @@ async def get_chart(svc: Svc, user_id: UserId, chart_id: str) -> dict[str, Any]:
         raise not_found("chart")
     return chart
 
+
+@router.get("/chart-specs/{artifact_id}/{version}")
+async def get_chart_spec(svc: Svc, user_id: UserId, artifact_id: str, version: int) -> dict[str, Any]:
+    envelope = await artifact_store.get(svc.db, user_id, artifact_id, version=version)
+    if envelope is None or envelope.artifact_type.value != "chart_spec":
+        raise not_found("chart_spec")
+    payload = envelope.payload
+    spec = payload.get("vega_lite")
+    if not isinstance(spec, dict):
+        raise ApiError(422, "invalid_chart_spec", "chart_spec has no Vega-Lite specification")
+    return {"id": envelope.artifact_id, "version": envelope.version,
+            "title": payload.get("title") or envelope.artifact_id,
+            "chart_type": payload.get("chart_type"), "spec": spec}
 
 @router.get("/reports")
 async def list_reports(svc: Svc, user_id: UserId) -> list[dict[str, Any]]:

@@ -120,3 +120,22 @@ async def open_mcp_session(url: str, token: str) -> AsyncIterator[McpSession]:
         transport = streamable_http_client(url, http_client=http_client)
         async with Client(transport, cache=None) as client:
             yield _SdkSession(client)
+
+
+class JsonToolError(Exception):
+    """An MCP tool answered with an error (its text is the message)."""
+
+
+class JsonTools:
+    """Structured tool calls over one session for deterministic StepSpec paths (WS2/WS3): the full JSON result
+    (no truncation for a model), or `JsonToolError`. Satisfies `vdagent_contracts.step_inputs.Tools`."""
+
+    def __init__(self, session: McpSession) -> None:
+        self._session = session
+
+    async def call(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+        async with asyncio.timeout(MCP_TOOL_TIMEOUT_S):
+            outcome = await self._session.call_tool(name, args)
+        if outcome.is_error:
+            raise JsonToolError(outcome.text)
+        return json.loads(outcome.text)

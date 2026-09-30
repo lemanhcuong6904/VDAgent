@@ -1,57 +1,28 @@
 {
   "agent": "insight",
   "contract_version": "1.0.0",
-  "catalog_version": "2.0.0",
+  "catalog_version": "2.1.0",
   "operations": [
     {
-      "operation": "explain_slow_moving",
-      "description": "Giải thích vì sao căn/nhóm căn bán chậm (quá hạn) bằng bằng chứng; chỉ cho hiện tượng bán chậm",
+      "operation": "explain_unit",
+      "description": "Giải thích căn/tòa/dự án từ dataset/metric/dq của Data (pipeline TEMPLATE/LLM) → insight (insight.v2).",
       "input_schema": {
         "type": "object",
-        "properties": {
-          "objective": {
-            "type": "string",
-            "maxLength": 300
-          },
-          "tasks": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string",
-              "enum": [
-                "T1",
-                "T2",
-                "T3",
-                "T5",
-                "T6",
-                "T7"
-              ]
-            }
-          },
-          "max_key_insights": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "phenomenon": {
-            "type": "string",
-            "enum": [
-              "slow_moving"
-            ]
-          }
-        },
         "required": [
-          "objective",
-          "tasks"
-        ],
-        "additionalProperties": false
+          "intent",
+          "tasks",
+          "analysis_scope"
+        ]
       },
-      "input_fields": {},
+      "input_fields": {
+        "dataset": "input_refs",
+        "metric": "input_refs",
+        "dq": "input_refs"
+      },
       "requires": [
-        "unit_set",
-        "metric_table"
-      ],
-      "uses_if_present": [
-        "unit_context"
+        "dataset",
+        "metric",
+        "dq"
       ],
       "produces": [
         "insight"
@@ -64,78 +35,30 @@
       ],
       "deadline_s": 90,
       "error_codes": {
-        "INPUT_SCHEMA_INVALID": "FATAL",
-        "REQUIRED_ARTIFACT_MISSING": "SPEC_ISSUE",
-        "SNAPSHOT_MISMATCH": "FATAL",
+        "E02": "WRONG_RESULT",
+        "E03": "SPEC_ISSUE",
+        "E04": "NO_ACCESS",
+        "INPUT_HASH_MISMATCH": "WRONG_RESULT",
+        "INPUT_HASH_REQUIRED": "SPEC_ISSUE",
+        "INPUT_INVALID": "DATA_QUALITY",
+        "INPUT_NOT_FOUND": "NO_DATA",
+        "INPUT_SCHEMA_UNSUPPORTED": "SPEC_ISSUE",
+        "INPUT_TYPE_MISMATCH": "WRONG_RESULT",
+        "INPUT_TYPE_UNSUPPORTED": "SPEC_ISSUE",
+        "INTERNAL_ERROR": "FATAL",
+        "INVALID_SPEC": "SPEC_ISSUE",
+        "LINEAGE_MISMATCH": "WRONG_RESULT",
+        "MISSING_INPUT": "SPEC_ISSUE",
         "SCOPE_VIOLATION": "NO_ACCESS",
-        "INSIGHT_INVALID": "WRONG_RESULT",
-        "LLM_QUOTA_EXHAUSTED": "QUOTA_EXHAUSTED",
-        "INTERNAL_ERROR": "FATAL"
-      },
-      "retries_transient_internally": true
-    },
-    {
-      "operation": "describe_patterns",
-      "description": "Mô tả nhóm thuộc tính (tầng, hướng, view, loại căn, đợt, kênh) có DOM/tỷ lệ quá hạn khác biệt",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "objective": {
-            "type": "string",
-            "maxLength": 300
-          },
-          "tasks": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string",
-              "enum": [
-                "T1",
-                "T2",
-                "T3",
-                "T5",
-                "T6",
-                "T7"
-              ]
-            }
-          },
-          "max_key_insights": {
-            "type": "integer",
-            "minimum": 1
-          }
-        },
-        "required": [
-          "objective",
-          "tasks"
-        ],
-        "additionalProperties": false
-      },
-      "input_fields": {},
-      "requires": [
-        "unit_set",
-        "metric_table"
-      ],
-      "uses_if_present": [
-        "unit_context"
-      ],
-      "produces": [
-        "insight"
-      ],
-      "outputs": [
-        "CHAT_ANSWER"
-      ],
-      "serves": [],
-      "deadline_s": 90,
-      "error_codes": {
-        "INPUT_SCHEMA_INVALID": "FATAL",
-        "REQUIRED_ARTIFACT_MISSING": "SPEC_ISSUE",
-        "SNAPSHOT_MISMATCH": "FATAL",
-        "SCOPE_VIOLATION": "NO_ACCESS",
-        "INSIGHT_INVALID": "WRONG_RESULT",
-        "LLM_QUOTA_EXHAUSTED": "QUOTA_EXHAUSTED",
-        "INTERNAL_ERROR": "FATAL"
-      },
-      "retries_transient_internally": true
+        "SEMANTIC_CONFIG_UNKNOWN": "SPEC_ISSUE",
+        "SEMANTIC_VERSION_MISMATCH": "SPEC_ISSUE",
+        "SEMANTIC_VERSION_REQUIRED": "SPEC_ISSUE",
+        "SNAPSHOT_MISMATCH": "SPEC_ISSUE",
+        "SNAPSHOT_REQUIRED": "SPEC_ISSUE",
+        "TOOL_FAILED": "TRANSIENT",
+        "UNKNOWN_OPERATION": "SPEC_ISSUE",
+        "USER_CONTEXT_MISMATCH": "NO_ACCESS"
+      }
     }
   ],
   "vocabulary": {

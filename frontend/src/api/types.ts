@@ -24,10 +24,14 @@ export interface MessageDTO {
 
 export type TaskStatus = "running" | "completed" | "failed" | "cancelled";
 
+/** How a finished root run ended (WS7): "partial" rides on status completed, "interrupted" on failed. */
+export type TaskOutcome = "completed" | "partial" | "failed" | "interrupted";
+
 export interface TaskDTO {
   id: string;
   root_agent: string;
   status: TaskStatus;
+  outcome?: TaskOutcome | null;
   created_at: string;
   finished_at: string | null;
 }
@@ -93,6 +97,14 @@ export interface TaskDetailDTO {
   invocations: InvocationDTO[];
 }
 
+
+export interface ChartSpecDTO {
+  id: string;
+  version: number;
+  title: string;
+  chart_type: string | null;
+  spec: Record<string, unknown>;
+}
 export interface CancelTaskResponseDTO {
   task: TaskDTO;
 }

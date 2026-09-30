@@ -103,3 +103,99 @@ async def test_content_hash_computed_server_side_matches_contracts(db: Any) -> N
     assert first.content_hash == second.content_hash == first.compute_content_hash()
     with pytest.raises(ValueError):
         await _put(db, _draft(payload={"ratio": 0.68}))  # floats never enter the store
+
+
+# ---- WS1: strict input references (docs/integration/CANONICAL_DATA_CONTRACT.md §3, §6) ----
+
+
+def _ref(stored: ArtifactEnvelope, **overrides: Any) -> dict[str, Any]:
+    ref: dict[str, Any] = {"artifact_id": stored.artifact_id, "version": stored.version, "artifact_type": stored.artifact_type.value}
+    ref.update(overrides)
+    return ref
+
+
+def _consumer(*refs: dict[str, Any], **overrides: Any) -> ArtifactDraft:
+    return _draft(
+        artifact_type="comparison", schema_version="comparison@1",
+        producer={"agent": "compare", "agent_version": "0.1.0"},
+        input_artifact_refs=list(refs), **overrides,
+    )
+
+
+async def test_put_accepts_resolvable_input_refs_with_matching_hash(db: Any) -> None:
+    source = await _put(db)
+    stored = await _put(db, _consumer(_ref(source, content_hash=source.content_hash)))
+    assert stored.input_artifact_refs[0].artifact_id == source.artifact_id
+    assert stored.input_artifact_refs[0].content_hash == source.content_hash
+
+
+async def test_put_rejects_unknown_input_ref(db: Any) -> None:
+    with pytest.raises(ValueError, match="unknown input artifact art_missing@1"):
+        await _put(db, _consumer({"artifact_id": "art_missing", "version": 1, "artifact_type": "data_package"}))
+
+
+async def test_put_rejects_input_ref_of_another_user(db: Any) -> None:
+    theirs = await _put(db, user=BOB)
+    with pytest.raises(ValueError, match="unknown input artifact"):
+        await _put(db, _consumer(_ref(theirs)))
+
+
+async def test_put_rejects_unknown_input_version(db: Any) -> None:
+    source = await _put(db)
+    with pytest.raises(ValueError, match="unknown input artifact"):
+        await _put(db, _consumer(_ref(source, version=2)))
+
+
+async def test_put_rejects_input_ref_with_wrong_type(db: Any) -> None:
+    source = await _put(db)
+    with pytest.raises(ValueError, match="is data_package, not dataset"):
+        await _put(db, _consumer(_ref(source, artifact_type="dataset")))
+
+
+async def test_put_rejects_input_ref_hash_mismatch(db: Any) -> None:
+    source = await _put(db)
+    with pytest.raises(ValueError, match="content hash"):
+        await _put(db, _consumer(_ref(source, content_hash="0" * 64)))
+
+
+async def test_put_pins_superseded_versions(db: Any) -> None:
+    first = await _put(db)
+    await _put(db, _draft(artifact_id=first.artifact_id, payload={"median": "65000000", "n": 7}))
+    stored = await _put(db, _consumer(_ref(first, content_hash=first.content_hash)))  # v1 stays readable and pinnable
+    assert stored.input_artifact_refs[0].version == 1
+
+
+async def test_put_rejects_snapshot_mismatch_with_input(db: Any) -> None:
+    source = await _put(db, _draft(snapshot_refs=["SNAP-2026-08-31"]))
+    with pytest.raises(ValueError, match="snapshot"):
+        await _put(db, _consumer(_ref(source), snapshot_refs=["SNAP-2026-09-28"]))
+
+
+async def test_put_rejects_semantic_version_mismatch_with_input(db: Any) -> None:
+    source = await _put(db, _draft(semantic_config_version="3.1.0"))
+    with pytest.raises(ValueError, match="semantic_config_version"):
+        await _put(db, _consumer(_ref(source), semantic_config_version="sc-1"))
+
+
+async def test_put_rejects_inputs_that_disagree_with_each_other(db: Any) -> None:
+    a = await _put(db, _draft(snapshot_refs=["SNAP-2026-08-31"]))
+    b = await _put(db, _draft(snapshot_refs=["SNAP-2026-09-28"]))
+    with pytest.raises(ValueError, match="snapshot"):
+        await _put(db, _consumer(_ref(a), _ref(b), snapshot_refs=[]))
+
+
+async def test_put_legacy_artifacts_without_snapshot_or_refs_still_work(db: Any) -> None:
+    legacy = await _put(db, _draft(snapshot_refs=[], semantic_config_version=None))
+    stored = await _put(db, _consumer(_ref(legacy)))  # nothing declared on the input: nothing to compare
+    assert stored.version == 1
+
+
+async def test_put_rejected_draft_writes_nothing(db: Any) -> None:
+    with pytest.raises(ValueError):
+        await _put(db, _consumer({"artifact_id": "art_missing", "version": 1, "artifact_type": "data_package"}))
+    assert await artifact_store.list_artifacts(db, ALICE) == []
+
+
+async def test_decimal_payload_round_trips_exactly(db: Any) -> None:
+    stored = await _put(db, _draft(payload={"net_area_m2": Decimal("63.02"), "ratio": Decimal("0.10"), "vnd": 72500000}))
+    assert stored.payload == {"net_area_m2": "63.02", "ratio": "0.10", "vnd": 72500000}

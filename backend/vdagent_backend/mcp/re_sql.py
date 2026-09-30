@@ -84,18 +84,11 @@ def connect_scoped(path: str, scope: AuthorizedScope) -> sqlite3.Connection:
     return conn
 
 
-def scoped_query(path: str, sql: str, scope: AuthorizedScope, *, timeout_s: float, count_hidden: bool = False) -> tuple[QueryResult, int | None]:
-    """Run one SELECT inside `scope`; with `count_hidden`, also count the rows the scope removed (numbers only)."""
+def scoped_query(path: str, sql: str, scope: AuthorizedScope, *, timeout_s: float) -> QueryResult:
+    """Run one SELECT inside `scope`. Rows outside the scope are neither returned nor counted (WS7 F-08)."""
     statement = check_select(sql).rstrip().rstrip(";")
     with closing(connect_scoped(path, scope)) as conn:
-        result = execute_select(conn, statement, timeout_s=timeout_s)
-        if not count_hidden:
-            return result, None
-        with _deadline(conn, timeout_s):
-            visible = conn.execute(f"SELECT COUNT(*) FROM ({statement})").fetchone()[0]
-    with closing(connect_warehouse(path)) as conn, _deadline(conn, timeout_s):
-        total = conn.execute(f"SELECT COUNT(*) FROM ({statement})").fetchone()[0]
-    return result, total - visible
+        return execute_select(conn, statement, timeout_s=timeout_s)
 
 
 def scoped_tables(path: str, scope: AuthorizedScope, *, timeout_s: float) -> list[dict[str, Any]]:

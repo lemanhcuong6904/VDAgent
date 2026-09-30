@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1
-# One image for the backend (with its agent plugins) and the seed job (spec §12).
-# Stage 1 builds the frontend; the backend serves /app/frontend/dist at `/`.
+# One image for the backend (with its six agent plugins in-process), the seed job and the offline tests (spec §12).
+# Targets:
+#   runtime (default): frontend built in stage 1 and served at `/`; production dependencies only.
+#   test:              workspace + dev dependencies (pytest); no frontend. Used by `docker compose --profile test`.
+# Secrets never enter the image: every **/.env is excluded by .dockerignore and mounted at runtime.
 
 FROM node:22-slim AS frontend
 WORKDIR /frontend
@@ -9,7 +12,7 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-FROM python:3.12-slim
+FROM python:3.12-slim AS base
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -18,8 +21,7 @@ ENV UV_COMPILE_BYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH"
 WORKDIR /app
-
-# Third-party dependencies first (cached until uv.lock / member pyproject files change).
+# Workspace manifests only: the dependency layers stay cached until uv.lock or a pyproject changes.
 COPY pyproject.toml uv.lock .python-version ./
 COPY sdk/pyproject.toml sdk/pyproject.toml
 COPY contracts/pyproject.toml contracts/pyproject.toml
@@ -31,19 +33,35 @@ COPY agents/data/pyproject.toml agents/data/pyproject.toml
 COPY agents/compare/pyproject.toml agents/compare/pyproject.toml
 COPY agents/insight/pyproject.toml agents/insight/pyproject.toml
 COPY agents/report/pyproject.toml agents/report/pyproject.toml
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-workspace
+COPY agents/chart/pyproject.toml agents/chart/pyproject.toml
 
+FROM base AS test
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-workspace
 COPY sdk/ sdk/
 COPY contracts/ contracts/
 COPY backend/ backend/
 COPY agents/ agents/
 COPY data/ data/
 RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen \
+    && python -c "import vdagent_backend.app, vdagent_contracts, vdagent_orchestrator, vdagent_data, vdagent_compare, vdagent_insight, vdagent_chart, vdagent_report, pytest"
+CMD ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+
+FROM base AS runtime
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-workspace
+COPY sdk/ sdk/
+COPY contracts/ contracts/
+COPY backend/ backend/
+COPY agents/ agents/
+COPY data/ data/
+COPY docker/ docker/
+RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev \
-    && python -c "import vdagent_backend.app, vdagent_orchestrator, vdagent_data, vdagent_compare, vdagent_insight, vdagent_report"
-
+    && python -c "import vdagent_backend.app, vdagent_contracts, vdagent_orchestrator, vdagent_data, vdagent_compare, vdagent_insight, vdagent_chart, vdagent_report"
 COPY --from=frontend /frontend/dist frontend/dist
-
 EXPOSE 8000
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=6 \
+    CMD ["python", "-c", "import json,sys,urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8000/api/users', timeout=4); sys.exit(0 if r.status == 200 and isinstance(json.load(r), list) else 1)"]
 CMD ["uvicorn", "vdagent_backend.app:app", "--host", "0.0.0.0", "--port", "8000"]

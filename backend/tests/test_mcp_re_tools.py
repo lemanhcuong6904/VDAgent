@@ -13,7 +13,7 @@ import pytest
 from conftest import ALICE, BOB, seed_users
 from vdagent_backend.db import scopes
 from vdagent_backend.db.database import create_db
-from vdagent_backend.mcp.tools import PERMISSIONS, McpTools
+from vdagent_backend.mcp.tools import PERMISSIONS, TOOLS, McpTools
 from vdagent_backend.re_warehouse import build
 from vdagent_backend.tokens import McpIdentity
 
@@ -70,10 +70,13 @@ async def test_re_run_query_rejects_non_select(tools: McpTools) -> None:
 
 
 async def test_re_run_query_blocks_out_of_scope_project(tools: McpTools) -> None:
-    err, result = await call(tools, "re_run_query", sql=CANDIDATES, count_hidden=True)
+    err, result = await call(tools, "re_run_query", sql=CANDIDATES)
     assert not err
     assert {r[1] for r in result["preview"]} == {"PRJ-X"}
-    assert result["row_count"] == 12 and result["hidden_rows"] == 1  # D12-09 of PRJ-Y
+    assert result["row_count"] == 12 and "hidden_rows" not in result  # WS7 F-08: D12-09 of PRJ-Y is not even counted
+    assert "count_hidden" not in json.dumps([t.input_schema for t in TOOLS])
+    err, _ = await call(tools, "re_run_query", sql=CANDIDATES, count_hidden=True)
+    assert err  # the old flag is refused, not silently honoured
     assert result["dataset_id"].startswith("ds_")
     _, bob = await call(tools, "re_run_query", user=BOB, sql=CANDIDATES)
     assert {r[1] for r in bob["preview"]} == {"PRJ-Y"}

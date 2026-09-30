@@ -43,6 +43,7 @@ def task_dto(row: Mapping[str, Any]) -> dict[str, Any]:
         "id": row["id"],
         "root_agent": row["root_agent"],
         "status": row["status"],
+        "outcome": row.get("outcome"),
         "created_at": row["created_at"],
         "finished_at": row["finished_at"],
     }
@@ -98,17 +99,37 @@ async def create_user(db: AsyncEngine, name: str) -> Row:
 # --------------------------------------------------------------------------- tasks
 
 
-async def create_task(db: AsyncEngine, user_id: str, root_agent: str, inbound_text: str) -> tuple[Row, Row]:
-    """Human trigger (§4.1 step 1): a running task and its queued root invocation, atomically."""
+async def find_keyed_task(db: AsyncEngine, user_id: str, root_agent: str, key: str) -> tuple[Row, Row] | None:
+    """The task a client Idempotency-Key already started (WS7 F-11), with its root invocation."""
+    async with db.connect() as conn:
+        task = (await conn.execute(
+            text("SELECT * FROM tasks WHERE user_id = :u AND root_agent = :a AND idempotency_key = :k"),
+            {"u": user_id, "a": root_agent, "k": key},
+        )).mappings().one_or_none()
+        if task is None:
+            return None
+        inv = (await conn.execute(
+            text("SELECT * FROM invocations WHERE task_id = :t AND depth = 0 ORDER BY created_at LIMIT 1"), {"t": task["id"]},
+        )).mappings().one()
+    return dict(task), dict(inv)
+
+
+async def create_task(
+    db: AsyncEngine, user_id: str, root_agent: str, inbound_text: str, idempotency_key: str | None = None
+) -> tuple[Row, Row]:
+    """Human trigger (§4.1 step 1): a running task and its queued root invocation, atomically.
+
+    With `idempotency_key`, a second task with the same (user, root agent, key) violates a unique index.
+    """
     now = now_iso()
     task_id, inv_id = new_id("t"), new_id("inv")
     async with db.begin() as conn:
         task = await conn.execute(
             text(
-                "INSERT INTO tasks (id, user_id, root_agent, status, created_at) "
-                "VALUES (:id, :user_id, :agent, 'running', :now) RETURNING *"
+                "INSERT INTO tasks (id, user_id, root_agent, status, created_at, idempotency_key) "
+                "VALUES (:id, :user_id, :agent, 'running', :now, :key) RETURNING *"
             ),
-            {"id": task_id, "user_id": user_id, "agent": root_agent, "now": now},
+            {"id": task_id, "user_id": user_id, "agent": root_agent, "now": now, "key": idempotency_key},
         )
         task_row = dict(task.mappings().one())
         inv = await conn.execute(
@@ -137,25 +158,27 @@ async def list_tasks(db: AsyncEngine, user_id: str, status: str | None = None, l
     return await _all(db, sql, user_id=user_id, status=status, limit=limit)
 
 
-async def finish_task(db: AsyncEngine, task_id: str, status: str) -> Row | None:
-    """Move a running task to a terminal status; returns the updated row, or None if it was not running."""
+async def finish_task(db: AsyncEngine, task_id: str, status: str, outcome: str | None = None) -> Row | None:
+    """Move a running task to a terminal status (and the run outcome its root agent reported); returns the updated
+    row, or None if it was not running."""
     async with db.begin() as conn:
         res = await conn.execute(
             text(
-                "UPDATE tasks SET status = :status, finished_at = :now "
+                "UPDATE tasks SET status = :status, finished_at = :now, outcome = :outcome "
                 "WHERE id = :id AND status = 'running' RETURNING *"
             ),
-            {"id": task_id, "status": status, "now": now_iso()},
+            {"id": task_id, "status": status, "now": now_iso(), "outcome": outcome},
         )
         row = res.mappings().one_or_none()
         return dict(row) if row else None
 
 
 async def fail_running_tasks(db: AsyncEngine) -> list[Row]:
-    """Startup recovery: every running task → failed."""
+    """Startup recovery: every running task → failed, outcome `interrupted` (WS7 F-04)."""
     async with db.begin() as conn:
         res = await conn.execute(
-            text("UPDATE tasks SET status = 'failed', finished_at = :now WHERE status = 'running' RETURNING *"),
+            text("UPDATE tasks SET status = 'failed', outcome = 'interrupted', finished_at = :now"
+                 " WHERE status = 'running' RETURNING *"),
             {"now": now_iso()},
         )
         return [dict(r) for r in res.mappings().all()]

@@ -48,6 +48,9 @@ class Ended:
 Event = Emit | ToolResult | Call | Ended
 
 
+RUN_OUTCOMES = frozenset({"completed", "partial", "failed"})
+
+
 class TurnContext:
     def __init__(
         self,
@@ -73,6 +76,18 @@ class TurnContext:
         self.max_steps = max_steps
         self.inbox: asyncio.Queue[Event] = asyncio.Queue()
         self._closed = False
+        self.outcome: str | None = None  # WS7 F-03: run outcome reported by the plugin
+
+    def report_outcome(self, outcome: str) -> None:
+        """Report the business outcome of this turn's run: completed | partial | failed (WS7 F-03).
+
+        A root run reported `failed` ends its task as `failed`; `partial` stays `completed` with outcome `partial`.
+        """
+        if self._closed:
+            raise ContractViolation("report_outcome: the turn is over")
+        if outcome not in RUN_OUTCOMES:
+            raise ContractViolation(f"report_outcome: unknown outcome {outcome!r}; use one of {sorted(RUN_OUTCOMES)}")
+        self.outcome = outcome
 
     def close(self) -> None:
         """End the turn: later calls raise; events still queued get `ContractViolation`."""

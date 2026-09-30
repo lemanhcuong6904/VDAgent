@@ -5,6 +5,8 @@ description = "vdagent report agent plugin (LangGraph with a Jev quality gate)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "vdagent-sdk",
+  "vdagent-contracts",
+  "vdagent-agentkit",
   "python-dotenv>=1.0",
   "langgraph>=1.2",
   "langchain-openai>=1.6",
@@ -14,6 +16,8 @@ dependencies = [
 
 [tool.uv.sources]
 vdagent-sdk = { workspace = true }
+vdagent-contracts = { workspace = true }
+vdagent-agentkit = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

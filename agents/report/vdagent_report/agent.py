@@ -18,6 +18,10 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage, convert_to_messages
 from pydantic import SecretStr
 from langchain_openai import ChatOpenAI
+from pydantic import ValidationError
+from vdagent_agentkit.mcp_client import JsonTools
+from vdagent_contracts.messages import ContractMessage, StepSpec, parse_incoming
+from vdagent_contracts.reports import AgentReport, ReportError, render_agent_report
 from vdagent_sdk import SEND_TO_AGENT, Agent, AgentTimeoutError, InvocationContext, Message, Peer
 
 from .graph import STEP_LIMIT_TEXT, ReportTurn
@@ -138,8 +142,69 @@ class LangGraphAgent:
         return reply.text.strip()
 
 
+NO_LLM_TEXT = (
+    "Report đang chạy không có LLM (REPORT_LLM=off): chỉ nhận yêu cầu StepSpec@1 draft_report với các artifact"
+    " insight / comparison / chart_spec đã ghim hash. Yêu cầu tự do cần cấu hình LLM trong agents/report/.env."
+)
+
+
+class ReportAgent(LangGraphAgent):
+    """WS6: `StepSpec@1 draft_report` → deterministic, evidence-checked report (stepspec.py); anything else → the
+    LangGraph turn when a model is configured, else an explanation. `model=None` = offline Report Mode only."""
+
+    def __init__(self, *, model: BaseChatModel | None, judge: Judge | None,
+                 mcp_session_factory: McpSessionFactory = open_mcp_session, system_prompt: str, compact_prompt: str,
+                 timeout_s: float = DEFAULT_LLM_TIMEOUT_S) -> None:
+        super().__init__(model=model, judge=judge, mcp_session_factory=mcp_session_factory,  # pyright: ignore[reportArgumentType]
+                         system_prompt=system_prompt, compact_prompt=compact_prompt, timeout_s=timeout_s)
+        self._has_llm = model is not None and judge is not None
+
+    @property
+    def has_llm(self) -> bool:
+        return self._has_llm
+
+    async def invoke(self, ctx: InvocationContext) -> None:
+        text = str(ctx.history[-1].get("content") or "") if ctx.history else ""
+        try:
+            incoming = parse_incoming(text)
+        except ValueError:
+            incoming = None
+        if isinstance(incoming, ContractMessage):
+            await ctx.emit_assistant(await self._contract(ctx, incoming))
+            return
+        if not self._has_llm:
+            await ctx.emit_assistant(NO_LLM_TEXT)
+            return
+        await super().invoke(ctx)
+
+    async def _contract(self, ctx: InvocationContext, message: ContractMessage) -> str:
+        from .stepspec import run_step
+
+        if message.contract != "StepSpec@1":
+            text = f"report accepts StepSpec@1, not {message.contract}"
+            report = AgentReport(state="rejected", summary=text, error=ReportError(code="UNSUPPORTED_CONTRACT", message=text))
+        else:
+            try:
+                step = StepSpec.model_validate(message.data)
+            except ValidationError as exc:
+                report = AgentReport(state="rejected", summary="invalid StepSpec@1",
+                                     error=ReportError(code="INVALID_STEPSPEC", message=f"{exc.error_count()} error(s)"))
+            else:
+                async with self._mcp_session_factory(ctx.mcp.url, ctx.mcp.token) as mcp:
+                    report = await run_step(step, JsonTools(mcp))
+        head = f"Report: {report.state}" + (f" ({report.error.code})" if report.error else "")
+        return render_agent_report(head, report)
+
+    async def compact(self, previous_summary: str, messages: list[Message]) -> str:
+        if not self._has_llm:
+            return previous_summary
+        return await super().compact(previous_summary, messages)
+
+
 def build_agent(env: Mapping[str, str]) -> Agent:
-    """Raises `PluginConfigError` naming the missing or invalid setting."""
+    """Raises `PluginConfigError` naming the missing or invalid setting (unless `REPORT_LLM=off`)."""
+    if (env.get("REPORT_LLM") or "").strip().lower() == "off":
+        return ReportAgent(model=None, judge=None, system_prompt=load_prompt("system"), compact_prompt=load_prompt("compact"))
     settings = load_settings(env)
     for noisy in ("httpx", "openai"):  # per-request INFO lines drown out agent logs
         logging.getLogger(noisy).setLevel(logging.WARNING)
@@ -150,7 +215,7 @@ def build_agent(env: Mapping[str, str]) -> Agent:
         timeout=settings.llm_timeout_s,
     )
     judge = JevJudge(url=settings.jev_decisions_url, api_key=settings.openai_api_key, model=settings.judge_model)
-    return LangGraphAgent(
+    return ReportAgent(
         model=model,
         judge=judge,
         system_prompt=load_prompt("system"),

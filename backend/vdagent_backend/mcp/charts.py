@@ -1,4 +1,4 @@
-"""Vega-Lite v5 specs for `create_chart` (§6.3)."""
+"""Vega-Lite v6 specs for `create_chart` (§6.3)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import re
 from datetime import datetime
 from typing import Any
 
-VEGA_LITE_SCHEMA = "https://vega.github.io/schema/vega-lite/v5.json"
+VEGA_LITE_SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json"  # the major version the frontend bundles
 CHART_KINDS = ("bar", "line", "pie")
 MAX_CHART_ROWS = 10_000
 _ISO_DATE_PREFIX = re.compile(r"\d{4}-\d{2}-\d{2}")

@@ -25,13 +25,16 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from vdagent_backend.config import Config
-from vdagent_backend.db import repo
+from vdagent_backend.db import artifact_store, repo
 from vdagent_backend.db.memory import ScopedMemory
 from vdagent_backend.engine.context import Call, Emit, Ended, Event, ToolResult, TurnContext
 from vdagent_backend.engine.waitgraph import WaitGraph
+from vdagent_backend.ids import now_iso
+from vdagent_contracts.envelope import ArtifactDraft, ArtifactStatus, Producer
 from vdagent_backend.events import EventBus
 from vdagent_backend.ids import new_id
 from vdagent_backend.plugins import AgentRegistry
@@ -48,6 +51,10 @@ INVOKE_CANCEL_GRACE_S = 5.0  # how long a cancelled invoke may take to unwind be
 
 class UnknownAgentError(Exception):
     pass
+
+
+class IdempotencyConflictError(Exception):
+    """An Idempotency-Key reused with different message content (WS7 F-11)."""
 
 
 class TaskNotFoundError(Exception):
@@ -89,6 +96,7 @@ class Run:
     rpc: asyncio.Task[Any] | None = None  # in-flight invoke or compaction task, cancelled on task cancel
     task: asyncio.Task[None] | None = None
     cancel_requested: bool = False
+    outcome: str | None = None  # WS7 F-03: run outcome reported through ctx.report_outcome
     finished: bool = False  # left the turn; child results are discarded from here on
     done: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -199,7 +207,32 @@ class Engine:
         for row in await repo.inflight_invocations(self.db):
             await self._patch_stack(row["user_id"], row["agent"], row["task_id"], row["id"], RESTARTED)
             await repo.finish_invocation(self.db, row["id"], "failed", error=RESTARTED)
-        await repo.fail_running_tasks(self.db)
+        for task in await repo.fail_running_tasks(self.db):
+            await self._reconcile_run_states(task["user_id"], task["id"])
+
+    async def _reconcile_run_states(self, user_id: str, task_id: str) -> None:
+        """WS7 F-04: a run_state still `running` after a restart gets a new `interrupted` version (history kept).
+
+        No automatic resume: the interrupted turn's MCP tokens and pending calls are gone, so a resumed run would
+        need a new task and re-validated inputs; the user re-asks (optionally with an Idempotency-Key).
+        """
+        for state in await artifact_store.list_artifacts(self.db, user_id, run_id=task_id, artifact_type="run_state"):
+            if state.payload.get("status") not in ("running", "pending"):
+                continue
+            steps = [{**s, "status": "interrupted"} if s.get("status") in ("running", "pending") else s
+                     for s in state.payload.get("steps", [])]
+            draft = ArtifactDraft(
+                artifact_id=state.artifact_id, artifact_type=state.artifact_type, schema_version=state.schema_version,
+                status=ArtifactStatus.INVALID, producer=Producer(agent="backend", agent_version="recovery"),
+                snapshot_refs=state.snapshot_refs, semantic_config_version=state.semantic_config_version,
+                limitations=["INTERRUPTED:backend restarted"], reason_code="BACKEND_RESTARTED", reason="backend restarted during the run",
+                payload={**state.payload, "status": "interrupted", "steps": steps,
+                         "interrupted": {"reason": "backend restarted", "at": now_iso()}},
+            )
+            try:
+                await artifact_store.put(self.db, user_id=user_id, run_id=task_id, task_id=task_id, draft=draft)
+            except Exception:  # never block startup on one artifact
+                log.exception("could not reconcile run_state %s of task %s", state.artifact_id, task_id)
 
     # ------------------------------------------------------------------ queries for the API
 
@@ -243,11 +276,30 @@ class Engine:
 
     # ------------------------------------------------------------------ triggers
 
-    async def post_message(self, user_id: str, agent: str, content: str) -> tuple[dict[str, Any], dict[str, Any]]:
-        """Human trigger (§4.1): new task + queued root invocation. Returns (task row, invocation row)."""
+    async def post_message(
+        self, user_id: str, agent: str, content: str, idempotency_key: str | None = None
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Human trigger (§4.1): new task + queued root invocation. Returns (task row, invocation row).
+
+        WS7 F-11: with a client `idempotency_key`, a retry returns the task that key already started (the row gets
+        `deduplicated = True`) instead of running again; the same key with other content raises
+        `IdempotencyConflictError`. Equal texts without a key are separate requests and are never merged.
+        """
         if agent not in self.registry:
             raise UnknownAgentError(agent)
-        task, inv = await repo.create_task(self.db, user_id, agent, content)
+        if idempotency_key is not None:
+            existing = await self._keyed(user_id, agent, content, idempotency_key)
+            if existing is not None:
+                return existing
+            try:
+                task, inv = await repo.create_task(self.db, user_id, agent, content, idempotency_key)
+            except IntegrityError:  # a concurrent retry with the same key won the insert
+                existing = await self._keyed(user_id, agent, content, idempotency_key)
+                if existing is None:
+                    raise
+                return existing
+        else:
+            task, inv = await repo.create_task(self.db, user_id, agent, content)
         self._publish_task(task)
         self._publish_invocation(inv)
         run = Run(
@@ -262,6 +314,15 @@ class Engine:
         )
         self._enqueue(run)
         return task, inv
+
+    async def _keyed(self, user_id: str, agent: str, content: str, key: str) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        found = await repo.find_keyed_task(self.db, user_id, agent, key)
+        if found is None:
+            return None
+        task, inv = found
+        if inv["inbound_text"] != content:
+            raise IdempotencyConflictError(key)
+        return {**task, "deduplicated": True}, inv
 
     async def cancel_task(self, user_id: str, task_id: str) -> dict[str, Any]:
         """§4.6 cancel. Returns the task row afterwards."""
@@ -421,6 +482,7 @@ class Engine:
             while True:
                 final = await self._on_event(run, await ctx.inbox.get())
                 if final is not None:
+                    run.outcome = ctx.outcome
                     return final
                 run.check_cancel()
         finally:
@@ -622,8 +684,8 @@ class Engine:
             self._publish_invocation(row)
         if run.parent is not None:
             self._deliver(run, final)
-        else:
-            await self._finish_task(run.task_id, "completed")
+        else:  # a root run reported `failed` fails its task (WS7 F-03); `partial` stays completed + outcome
+            await self._finish_task(run.task_id, "failed" if run.outcome == "failed" else "completed", run.outcome)
 
     async def _conclude_failed(self, run: Run, reason: str) -> None:
         log.warning("invocation %s (%s) failed: %s", run.id, run.agent, reason)
@@ -636,10 +698,10 @@ class Engine:
         else:
             await self._finish_task(run.task_id, "failed")
 
-    async def _finish_task(self, task_id: str, status: str) -> None:
+    async def _finish_task(self, task_id: str, status: str, outcome: str | None = None) -> None:
         if task_id in self._cancelled:
             return  # the cancel owns the task's final status
-        row = await repo.finish_task(self.db, task_id, status)
+        row = await repo.finish_task(self.db, task_id, status, outcome)
         if row is not None:
             self._publish_task(row)
 

@@ -10,7 +10,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   root_agent  TEXT NOT NULL,                  -- agent whose chat the human posted in
   status      TEXT NOT NULL CHECK (status IN ('running','completed','failed','cancelled')),
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  finished_at TEXT
+  finished_at TEXT,
+  outcome     TEXT,                           -- WS7 F-03/F-04: completed | partial | failed | interrupted (NULL: not reported)
+  idempotency_key TEXT                        -- WS7 F-11: client Idempotency-Key of the triggering message
 );
 CREATE INDEX IF NOT EXISTS ix_tasks_user ON tasks(user_id, created_at);
 

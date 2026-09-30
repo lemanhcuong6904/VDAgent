@@ -27,8 +27,10 @@ PREVIEW_ROWS = 20
 DEFAULT_PAGE_ROWS = 50
 MAX_PAGE_ROWS = 200
 _EMBED = re.compile(r"\{\{\s*(chart|dataset)\s*:\s*([^}\s]+)\s*\}\}")
+# WS6 (D7): a chart_spec artifact of the shared store, pinned by version: {{chart_spec:art_…@<version>}}
+_SPEC_EMBED = re.compile(r"\{\{\s*chart_spec\s*:\s*([^}\s]+)\s*\}\}")
 
-ALL_AGENTS = frozenset({"orchestrator", "data", "compare", "insight", "report"})
+ALL_AGENTS = frozenset({"orchestrator", "data", "compare", "insight", "chart", "report"})
 
 # §6.1 permission matrix: tool → agents that see it in tools/list and may call it.
 PERMISSIONS: dict[str, frozenset[str]] = {
@@ -159,8 +161,9 @@ TOOLS: list[types.Tool] = [
     types.Tool(
         name="save_report",
         description=(
-            "Save a markdown report and return its report_id. Embed charts with {{chart:<chart_id>}} and"
-            " dataset tables with {{dataset:<dataset_id>}} on their own lines."
+            "Save a markdown report and return its report_id. Embed charts with {{chart:<chart_id>}},"
+            " chart_spec artifacts with {{chart_spec:<artifact_id>@<version>}} and dataset tables with"
+            " {{dataset:<dataset_id>}} on their own lines."
         ),
         input_schema=_schema(
             {"title": {"type": "string"}, "markdown": {"type": "string"}},
@@ -222,12 +225,12 @@ TOOLS: list[types.Tool] = [
     types.Tool(
         name="re_run_query",
         description=(
-            "Run one read-only SELECT on the real-estate DW; rows outside your user's scope are never visible."
-            " Set count_hidden=true to also get hidden_rows, the number of rows your scope removed."
+            "Run one read-only SELECT on the real-estate DW; rows outside your user's scope are never visible,"
+            " not even as a count."
             + _DATASET_RESULT
         ),
         input_schema=_schema(
-            {"sql": {"type": "string"}, "name": _DATASET_NAME, "count_hidden": {"type": "boolean"}},
+            {"sql": {"type": "string"}, "name": _DATASET_NAME},
             ["sql"],
         ),
     ),
@@ -469,6 +472,13 @@ class McpTools:
             missing |= ids - await artifacts.existing_artifact_ids(self._db, identity.user_id, table, ids)
         if missing:
             raise ToolError(f"markdown references unknown ids: {', '.join(sorted(missing))}")
+        for ref in _SPEC_EMBED.findall(markdown):
+            artifact_id, _, version = ref.partition("@")
+            if not version.isdigit():
+                raise ToolError(f"chart_spec embed {ref!r} must pin a version: {{{{chart_spec:<id>@<version>}}}}")
+            envelope = await artifact_store.get(self._db, identity.user_id, artifact_id, version=int(version))
+            if envelope is None or envelope.artifact_type.value != "chart_spec":
+                raise ToolError(f"markdown references an unknown chart_spec: {ref}")
         report_id = await artifacts.insert_report(
             self._db, user_id=identity.user_id, invocation_id=identity.invocation_id, title=title, markdown=markdown
         )
@@ -541,16 +551,10 @@ class McpTools:
     async def _re_run_query(self, identity: McpIdentity, args: dict[str, Any]) -> dict[str, Any]:
         scope = await self._re_scope(identity)
         query = _required_str(args, "sql")
-        count_hidden = args.get("count_hidden", False)
-        if not isinstance(count_hidden, bool):
-            raise ToolError("'count_hidden' must be a boolean")
-        result, hidden = await asyncio.to_thread(
-            re_sql.scoped_query, self._re_warehouse_db, query, scope, timeout_s=self._timeout_s, count_hidden=count_hidden
-        )
-        payload = await self._store_dataset(identity, _optional_str(args, "name"), query, result)
-        if hidden is not None:
-            payload["hidden_rows"] = hidden
-        return payload
+        if "count_hidden" in args:  # WS7 F-08: out-of-scope rows are never counted
+            raise ToolError("'count_hidden' is not supported: rows outside your scope are not disclosed")
+        result = await asyncio.to_thread(re_sql.scoped_query, self._re_warehouse_db, query, scope, timeout_s=self._timeout_s)
+        return await self._store_dataset(identity, _optional_str(args, "name"), query, result)
 
 
 def _summary(envelope: ArtifactEnvelope) -> dict[str, Any]:

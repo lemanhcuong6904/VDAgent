@@ -24,6 +24,22 @@ def apply_schema(path: str) -> None:
     with sqlite3.connect(path) as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA_PATH.read_text())
+        _migrate(conn)
+
+
+# Additive migrations for databases created before a column existed (WS7). Never drops or rewrites data.
+_TASK_COLUMNS = {"outcome": "TEXT", "idempotency_key": "TEXT"}
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+    for name, kind in _TASK_COLUMNS.items():
+        if name not in columns:
+            conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {kind}")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_tasks_idempotency ON tasks(user_id, root_agent, idempotency_key)"
+        " WHERE idempotency_key IS NOT NULL"
+    )
 
 
 def _set_pragmas(dbapi_conn, _record) -> None:  # noqa: ANN001

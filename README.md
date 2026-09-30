@@ -1,160 +1,165 @@
-# vdagent
+# VDaAgent
 
-A proof-of-concept multi-agent analytics assistant. A user asks questions about a retail sales
-warehouse; five LLM agents (orchestrator, data, compare, insight, report) collaborate by messaging
-each other through the Backend, which also serves the React UI and an MCP tool server. The agents
-are **plugins**: the Backend imports the modules listed in `backend/config.yaml` at startup, calls
-their `setup(api, opts)` (like Neovim / lazy.nvim), and runs their turns in its own process.
+Trợ lý phân tích gồm 6 agent, dành cho Sales Ops bất động sản. Bạn đặt câu hỏi bằng ngôn ngữ tự nhiên, ví dụ "Vì sao căn
+A12-08 bán chậm? So sánh với các căn tương đồng, vẽ biểu đồ và xuất báo cáo.". Hệ thống trả về câu trả lời có trích dẫn,
+biểu đồ và báo cáo 6 phần.
 
-- Design: [`docs/superpowers/specs/2026-09-24-vdagent-design.md`](docs/superpowers/specs/2026-09-24-vdagent-design.md)
-- Agent template design: [`docs/superpowers/specs/2026-09-24-agent-template-design.md`](docs/superpowers/specs/2026-09-24-agent-template-design.md)
-- Agents as plugins: [`docs/superpowers/specs/2026-09-26-agent-plugins-design.md`](docs/superpowers/specs/2026-09-26-agent-plugins-design.md)
-- Agents beyond a ReAct loop: [`docs/superpowers/specs/2026-09-28-agent-freedom-design.md`](docs/superpowers/specs/2026-09-28-agent-freedom-design.md)
-- Building an agent plugin: [`agents/_template/README.md`](agents/_template/README.md)
+- **Các agent:** Orchestrator, Data, Insight, Compare, Chart và Report. Chúng là plugin chạy trong cùng một tiến trình
+  Backend, và chỉ giao tiếp qua engine của Backend cùng một artifact store dùng chung.
+- **LLM ở chỗ cần ngôn ngữ, code ở chỗ cần con số.**
+  - LLM của Orchestrator hiểu câu hỏi và đề xuất plan. Code kiểm tra plan rồi chạy nó dưới dạng DAG.
+  - Insight dùng LLM để diễn đạt kết quả.
+  - Data, Compare, Chart và Report chạy deterministic.
+- **Truy vết được.**
+  - Mọi artifact đều có version và content hash.
+  - Mọi con số trong biểu đồ hay báo cáo đều có `source_ref` trỏ về đúng field của artifact.
+  - Mỗi run pin một snapshot (`SNAP-2026-09-28`) và một semantic version (`sc-1`).
 
-## Prerequisites
+## Kiến trúc tóm tắt
 
-- [uv](https://docs.astral.sh/uv/) (Python 3.12 is picked up from `.python-version`), GNU make, Node 22 for the frontend.
-- First time only:
-
-  ```
-  uv sync
-  for a in orchestrator data compare insight report; do cp -n agents/$a/.env.example agents/$a/.env; done
-  ```
-
-  Then fill in `OPENAI_API_KEY`, `OPENAI_BASE_URL` and `LLM_MODEL` in each `agents/<name>/.env`
-  (see [Environment variables](#environment-variables)).
-
-## Plugins
-
-`backend/config.yaml` lists the agent plugins, loaded in order when the Backend starts:
-
-```yaml
-plugins:
-  - module: vdagent_orchestrator
-  - module: vdagent_data
-    opts: {}          # optional, free-form: handed to the plugin's setup() as a dict
-  - module: vdagent_report
-    enabled: false    # optional toggle
+```mermaid
+flowchart LR
+    U[Người dùng / UI] --> O[Orchestrator<br/>LLM planner]
+    O --> V[Code: kiểm tra plan<br/>catalog · deps · pin]
+    V --> D[Data]
+    D --> I[Insight]
+    D --> C[Compare]
+    I --> CH[Chart]
+    C --> CH
+    CH --> R[Report]
+    S[(Artifact store<br/>có version · có hash)] -. mọi artifact .- D & I & C & CH & R
 ```
 
-- A plugin is an importable Python package in the Backend's environment (here: a uv workspace
-  member under `agents/`) whose top-level module exports `setup(api, opts)`. `setup` registers one
-  or more agents (`api.register_agent(name=…, description=…, agent=…)`) and optional shutdown hooks.
-- Plugins depend only on `vdagent_sdk` (`sdk/`), which defines the interface the Backend expects:
-  `Agent` (`invoke(ctx)`, `compact(...)`), `InvocationContext`, `PluginAPI`, and the turn rules
-  R1–R11 in its docstring. How an agent thinks (framework, model, tool loop, MCP client, memory) is
-  up to the plugin; see [Agents are different programs](#agents-are-different-programs).
-- **A plugin that fails to load** (import error, missing setting, bad registration) is logged as
-  `plugin <module> failed: …` and skipped; the Backend starts with the others. Its agent is absent
-  from the UI and from every other agent's peer list.
-- Plugins share the Backend's process and event loop: a plugin must not block the loop (R10) and
-  must not write `os.environ` (R11).
-- To add one: copy `agents/_template` (see its README), add the folder to the workspace in the
-  root `pyproject.toml`, `uv sync`, and list its module under `plugins:`.
+- Chi tiết: [docs/architecture/MULTI_AGENT_SYSTEM_ARCHITECTURE.md](docs/architecture/MULTI_AGENT_SYSTEM_ARCHITECTURE.md).
+- Trạng thái hiện tại và các blocker: [AGENTS.md](AGENTS.md).
 
-## Agents are different programs
+## Yêu cầu
 
-The Backend runs every agent through the same `invoke(ctx)`; what happens inside is the agent
-team's choice. Three agents are plain ReAct loops, two are not:
+- Docker kèm Docker Compose v2 (`docker compose version`).
+- GNU make.
+- Một API key tương thích OpenAI, cho mode live.
 
-| Agent | Built with | Beyond a ReAct loop | What the Backend sees |
-|---|---|---|---|
-| orchestrator, data, compare | LiteLLM tool loop | nothing | assistant steps, tool results |
-| insight | LangChain `create_agent` + middleware | recalls earlier findings by vector search, extracts and saves new ones, skips near-duplicates ([README](agents/insight/README.md)) | the same, plus `ctx.memory` rows |
-| report | LangGraph `StateGraph` | every draft is judged by Jev, a decisions model (not a chat model); one revision edge driven by its typed verdict ([README](agents/report/README.md)) | only the final, assessed answer |
+**Không cần cài Node/npm hay Python trên máy để chạy demo Docker.** Image tự build frontend React, và container backend
+phục vụ cả UI lẫn API trên cùng một cổng. Không cần `npm run dev`.
 
-Agent memory lives in `backend.db` (`memories`, keyword search via FTS5, vector search via
-sqlite-vec), scoped to one user and one agent. The Backend stores and ranks notes; the agent
-computes the embeddings and decides what to save and recall (`ctx.memory`, SDK rule R1).
+## 1. Clone và tạo file env
 
-## Environment variables
+```bash
+git clone git@github.com:HOANGQUANGMINH371195/Team_6_cAi.git
+cd Team_6_cAi
+make docker-env        # tạo agents/<name>/.env từ .env.example (không bao giờ ghi đè file đã có)
+```
 
-Each component reads its own `.env` file. Every `.env` is gitignored and excluded from Docker
-images; commit changes to the `.env.example` next to it instead.
+Điền key vào các file. Mọi `.env` đều được gitignore và được mount chỉ đọc vào container; không file nào bị đóng vào
+image.
 
-| File | Needed? | Create it with |
+| File | Cho mode live | Ghi chú |
 |---|---|---|
-| `agents/<name>/.env`, one per agent plugin | **Yes**, for each of the five agents | `cp agents/<name>/.env.example agents/<name>/.env`, then fill in the LLM settings |
-| `backend/.env` | No: the Backend runs on `backend/config.yaml` alone | `cp backend/.env.example backend/.env`, then uncomment what you need |
+| `agents/orchestrator/.env` | **bắt buộc:** `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `LLM_MODEL` | LLM planner. Đã kiểm chứng với `gpt-4o-mini`. |
+| `agents/data/.env` | **bắt buộc:** cùng 3 biến trên | Thiếu thì plugin không load. Trên đường demo, Data không gọi LLM. |
+| `agents/report/.env` | **bắt buộc:** cùng 3 biến trên | Giống Data. Bản thân báo cáo là deterministic. |
+| `agents/insight/.env` | `OPENAI_API_KEY` và/hoặc `GEMINI_API_KEY` | Không có key nào thì Insight diễn đạt bằng template. |
+| `agents/compare/.env`, `agents/chart/.env` | file phải tồn tại; key tuỳ chọn | Deterministic trên đường demo. |
 
-### Agent plugins (`agents/<name>/.env`)
+Không đặt các biến `ORCH_*` trong `.env`. Service live tự đặt chúng: `ORCH_LLM=on`,
+`ORCH_SNAPSHOT_ID=SNAP-2026-09-28`, `ORCH_SEMANTIC_VERSION=sc-1`, `ORCH_DAG_TIMEOUT_S=300`.
 
-| Variable | Required | Default | Meaning |
+## 2. Khởi động demo live
+
+```bash
+make docker-live-up
+```
+
+Lệnh này build image, seed dữ liệu demo vào volume `vdagent_live_var`, khởi động `backend-live` ở
+**http://localhost:8022**, đợi container `healthy`, rồi in trạng thái.
+
+## 3. Kiểm tra hệ thống đã chạy
+
+```bash
+make docker-live-check
+```
+
+Output mong đợi (không bao giờ in key):
+
+```
+backend:   http://localhost:8022
+ORCH_LLM               on
+ORCH_SNAPSHOT_ID       SNAP-2026-09-28
+ORCH_SEMANTIC_VERSION  sc-1
+ORCH_DAG_TIMEOUT_S     300
+health                 healthy
+agents                 orchestrator data compare insight report chart
+orchestrator: LLM planner on (model gpt-4o-mini), snapshot SNAP-2026-09-28, semantic sc-1
+insight: data source fixtures, LLM on
+```
+
+Nếu dòng `agents` thiếu agent nào, chạy `make docker-live-logs | grep failed`. Log sẽ nêu tên biến bị thiếu.
+
+## 4. Demo 4 happy case
+
+1. Mở **http://localhost:8022**.
+2. Chọn user **Alice** (dropdown góc trên bên trái).
+3. Click agent **orchestrator**.
+4. Dán prompt và nhấn Enter.
+
+| # | Prompt | Plan do LLM lập | Kết quả cần thấy |
 |---|---|---|---|
-| `OPENAI_API_KEY` | yes | — | API key for the model endpoint. |
-| `OPENAI_BASE_URL` | yes | — | Base URL of an OpenAI-compatible endpoint, e.g. `https://…/v1`. |
-| `LLM_MODEL` | yes | — | Model name served by that endpoint. It **must support tool calling**. |
-| `LLM_TIMEOUT_S` | no | `120` | Timeout per LLM call, in seconds (must be > 0). |
-| `EMBED_MODEL` | no (insight only) | `openai/text-embedding-3-small` | Embedding model for insight's memory, on the same endpoint. |
-| `JUDGE_MODEL` | no (report only) | `typesafe/jev-1.13` | Jev model for report's quality gate, called with `OPENAI_API_KEY`. |
-| `JEV_DECISIONS_URL` | no (report only) | `https://openrouter.ai/api/alpha/decisions` | Decisions endpoint serving Jev. |
+| HC1 | `Vì sao căn A12-08 bán chậm?` | Data → Insight | Tồn 138 ngày; "có khả năng liên quan" tới giá cao hơn peer 12,4% |
+| HC2 | `So sánh căn A12-08 với các căn tương đồng và chỉ ra những khác biệt đáng chú ý.` | Data → Compare | 72.500.000 so với 64.500.000 VND/m² (+12,40%), DOM 138 so với 61, **5 peer**, ghi chú B-11 |
+| HC3 | `Phân tích căn A12-08 và cho tôi các biểu đồ quan trọng.` | Data → [Insight ∥ Compare] → Chart | 5 id biểu đồ |
+| HC4 | `Vì sao căn A12-08 bán chậm? So sánh với các căn tương đồng, vẽ biểu đồ và xuất báo cáo.` | Data → [Insight ∥ Compare] → Chart → Report | đủ 6 agent; trong **Artifacts → Reports** có báo cáo 6 phần với 5 biểu đồ render |
 
-The five agents need the same required variables. They may share one model or each use their own.
+- Các bước của plan và các wave (vd `[[B1],[B2,B3],[B4],[B5]]` với HC4) được ghi trong `run_state` của mỗi run.
+- Để xem plan của LLM trong log: `docker compose --profile live logs backend-live | grep "llm plan accepted"`.
+- Kịch bản demo đầy đủ, lời thuyết trình và những điều không được nói:
+  [docs/integration/DEMO_RUNBOOK_4_HAPPY_CASES.md](docs/integration/DEMO_RUNBOOK_4_HAPPY_CASES.md).
 
-- **Who reads it:** each plugin reads its own file in `setup()` with `dotenv_values()`; nothing is
-  loaded into the Backend's `os.environ`, so plugins cannot see or overwrite each other's keys.
-- **Precedence:** the plugin's `.env` wins over the Backend's process environment, so a key
-  exported in your shell cannot shadow the one in the plugin's file.
-- **Missing required variable:** that plugin fails to load (`plugin vdagent_<name> failed:
-  missing required environment variable …`); the Backend still starts.
+## 5. Dừng và dọn dẹp
 
-### Backend (`backend/.env`, optional)
+```bash
+make docker-live-down     # dừng, giữ dữ liệu
+make docker-live-clean    # xoá container live và volume vdagent_live_var (lần start sau sẽ sạch)
+```
 
-Each variable overrides the matching key of `backend/config.yaml`. The process environment wins
-over the file.
+## Các mode khác
 
-| Variable | Default (`config.yaml`) | Meaning |
-|---|---|---|
-| `VDAGENT_MCP_PUBLIC_URL` | `http://localhost:8000/mcp` | MCP URL handed to agent plugins (their MCP clients connect to this Backend). |
-| `VDAGENT_BACKEND_DB` | `./var/backend.db` | Backend SQLite file (relative to where the backend is started). |
-| `VDAGENT_WAREHOUSE_DB` | `./var/warehouse.db` | Warehouse SQLite file. |
-| `VDAGENT_FRONTEND_DIST` | `./frontend/dist` | Built frontend, served at `/` if it exists. |
-| `VDAGENT_MAX_DEPTH` | `4` | Maximum agent-call depth. |
-| `VDAGENT_MAX_STEPS` | `12` | Assistant steps per turn (`ctx.max_steps`). |
-| `VDAGENT_CONFIG` | `backend/config.yaml` | Which YAML to load. Set it in the shell: it has no effect inside `backend/.env`, which is looked up next to the chosen config file. |
+| Mode | Lệnh | URL | Dùng khi |
+|---|---|---|---|
+| Offline (không cần key, planner deterministic) | `make docker-offline-up` / `make docker-offline-down` / `make docker-offline-clean` | http://localhost:8001 | demo dự phòng, regression |
+| Bộ acceptance (stack mới, tách biệt) | `acceptance/ws7/run.sh` (đặt `WS7_BROWSER_PYTHON` là Python có Playwright để chạy bước trình duyệt) | cổng 8021 | phải in `WS7 acceptance: PASS` |
+| Bộ test offline trong Docker | `make docker-test` | — | lần chạy gần nhất: 1231 pass / 29 skip |
+| Stack dev (`./var`, cấu hình cũ) | `make docker-up` / `make docker-down` | http://localhost:8000 | **không phải** demo live: stack này không đặt pin `ORCH_*`, nên LLM planner trả `SNAPSHOT_REQUIRED` |
+| Chạy local không dùng Docker | `uv sync`, `make reset-db`, `make backend`, rồi `cd frontend && npm install && npm run dev` | :8000 / :5173 | phát triển |
 
-`HOST` (for `make backend HOST=0.0.0.0`) is a make variable, not an environment setting: it is the
-interface the HTTP server (UI, API, MCP) binds to.
+Test trên máy: `uv sync && uv run pytest -q -p no:cacheprovider`. Test frontend: `cd frontend && npm test`.
 
-## Makefile usage
+## Xử lý sự cố
 
-| Target | Does |
+| Triệu chứng | Cách xử lý |
 |---|---|
-| `make` / `make help` | Lists the targets. |
-| `make backend` | Starts the backend (API, SSE, MCP, built UI) on http://localhost:8000 with the agent plugins listed in `backend/config.yaml`. `HOST=0.0.0.0` serves HTTP to other machines. |
-| `make reset-db` | Deletes `var/backend.db` and `var/warehouse.db` and reseeds them (demo users Alice and Bob, the deterministic warehouse). |
+| `SNAPSHOT_REQUIRED — no snapshot configured` | Bạn đang ở stack dev (cổng 8000). Dùng `make docker-live-up` và cổng **8022**. |
+| `port is already allocated` | Có thứ khác đang giữ cổng 8022. Chạy `docker ps --format '{{.Names}} {{.Ports}}'`, rồi `make docker-live-clean`. |
+| `Không hoàn thành: LLM_PLAN_…` | Plan của LLM bị bước kiểm tra từ chối, nên chưa có gì chạy. Xem `make docker-live-logs \| grep "llm plan rejected"`. Gửi lại, hoặc dùng mode offline. |
+| Thiếu một agent | Thiếu biến trong `agents/<name>/.env`. Xem `make docker-live-logs \| grep failed`. |
+| Gửi xong không thấy task nào | Chưa chọn user. Chọn Alice. |
 
-A typical local session:
+## Cần biết trước khi demo
 
-```
-make reset-db              # first run, or to start again from clean data
-make backend               # logs one "plugin vdagent_<name> loaded: <name>" line per agent
-cd frontend && npm install && npm run dev   # another terminal → http://localhost:5173
-```
+- Compare dùng **5 peer**. Bộ "golden" 7 căn của nghiệp vụ chưa có luật chọn được duyệt (**B-11**, BLOCKED).
+- Chỉ **Orchestrator** (lập plan) và **Insight** (diễn đạt) gọi LLM.
+- Metric thiếu (`discount_pct`, `inquiry_leads_30d`) được báo là không có dữ liệu, không bao giờ là 0.
+- Các phát hiện là tương quan ("có khả năng liên quan"), không phải nguyên nhân.
+- **Chưa sẵn sàng production.** Danh tính người dùng chỉ là header demo `X-User-Id` (F-05, BLOCKED); xem
+  [docs/integration/AUTH_DESIGN.md](docs/integration/AUTH_DESIGN.md).
 
-Changing a plugin's code or `.env` takes effect when the backend restarts.
+## Tham chiếu cho developer
 
-Stop the backend before `make reset-db`: it deletes the SQLite files, and a running backend would
-keep writing to the deleted ones. The database paths can be overridden
-(`make reset-db BACKEND_DB=/tmp/b.db WAREHOUSE_DB=/tmp/w.db`); start the backend with the matching
-`VDAGENT_BACKEND_DB` / `VDAGENT_WAREHOUSE_DB` to use them.
-
-## Docker
-
-```
-docker compose up --build
-```
-
-Then open http://localhost:8000. The backend service is configured by
-`backend/config.compose.yaml` and runs the five agent plugins in-process. Each plugin's
-`agents/<name>/.env` is mounted read-only into the container (the image never contains `.env`
-files), so all five must exist before `docker compose up`.
-
-## Tests
-
-```
-uv run pytest                      # backend + every plugin
-uv run pytest agents/data          # one plugin
-cd frontend && npm test            # frontend
-```
+- Danh sách plugin nằm trong `backend/config.yaml` (trong Docker là `backend/config.compose.yaml`).
+- Mỗi plugin export `setup(api, opts)` và chỉ phụ thuộc `vdagent_sdk` (`sdk/`, luật lượt chạy R1–R11).
+- Plugin load lỗi sẽ được log là `plugin <module> failed: …` và bị bỏ qua.
+- Thêm agent: copy `agents/_template`, thêm vào uv workspace trong `pyproject.toml`, rồi liệt kê dưới `plugins:`.
+- Contract (`StepSpec@1`, `AgentReport@1`, envelope của artifact, catalog) nằm trong `contracts/vdagent_contracts/`.
+- Override của Backend (`backend/.env`, tuỳ chọn): `VDAGENT_MCP_PUBLIC_URL`, `VDAGENT_BACKEND_DB`,
+  `VDAGENT_WAREHOUSE_DB`, `VDAGENT_FRONTEND_DIST`, `VDAGENT_MAX_DEPTH` (4), `VDAGENT_MAX_STEPS` (12), `VDAGENT_CONFIG`.
+- Design spec: [docs/superpowers/specs/](docs/superpowers/specs/). Kế hoạch tích hợp và bằng chứng:
+  [docs/integration/](docs/integration/).

@@ -162,3 +162,39 @@ async def test_artifacts_are_owner_scoped_and_dataset_rows_page(client: httpx.As
     assert (await client.get("/api/reports", headers=B)).json() == []
     assert (await client.get(f"/api/reports/{report}", headers=B)).status_code == 404
     assert (await client.get(f"/api/reports/{report}", headers=A)).json()["markdown"] == "# hi"
+
+
+async def test_chart_spec_delivery_is_owner_scoped(client: httpx.AsyncClient) -> None:
+    from vdagent_backend.db import artifact_store
+    from vdagent_contracts.envelope import ArtifactDraft
+
+    task_id = (await client.post("/api/agents/data/messages", json={"content": "x"}, headers=A)).json()["task_id"]
+    await wait_for(lambda: _task_status(client, task_id))
+    db = client.app.state.services.db  # type: ignore[attr-defined]
+    stored = await artifact_store.put(
+        db,
+        user_id=ALICE,
+        run_id=task_id,
+        task_id=task_id,
+        draft=ArtifactDraft.model_validate({
+            "artifact_type": "chart_spec",
+            "schema_version": "chart_spec@1",
+            "status": "VALID",
+            "producer": {"agent": "chart", "agent_version": "test"},
+            "snapshot_refs": ["SNAP-2026-09-28"],
+            "semantic_config_version": "sc-1",
+            "payload": {
+                "title": "DOM mục tiêu và nhóm tương đồng",
+                "chart_type": "bar",
+                "vega_lite": {"$schema": "https://vega.github.io/schema/vega-lite/v6.json", "data": {"values": []}},
+                "dataset": [],
+                "bindings": [],
+            },
+        }),
+    )
+    url = f"/api/chart-specs/{stored.artifact_id}/{stored.version}"
+    body = (await client.get(url, headers=A)).json()
+    assert body["id"] == stored.artifact_id and body["version"] == stored.version
+    assert body["title"] == "DOM mục tiêu và nhóm tương đồng"
+    assert body["spec"]["$schema"].startswith("https://vega.github.io/schema/vega-lite/")
+    assert (await client.get(url, headers=B)).status_code == 404

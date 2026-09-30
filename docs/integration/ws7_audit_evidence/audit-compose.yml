@@ -1,0 +1,12 @@
+services:
+  seed-offline:
+    volumes: !override
+      - audit-var:/app/var
+  backend-offline:
+    ports: !override
+      - "8021:8000"
+    volumes: !override
+      - audit-var:/app/var
+volumes:
+  audit-var:
+    name: vdagent_ws7audit_var

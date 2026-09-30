@@ -1,0 +1,4 @@
+task failed
+   orchestrator failed backend restarted
+artifacts of killed run: [('run_state', 1)]
+last run_state: ('running', 1, [('B1', 'pending'), ('B2', 'pending'), ('B3', 'pending'), ('B4', 'pending'), ('B5', 'pending')])

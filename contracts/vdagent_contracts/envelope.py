@@ -58,6 +58,8 @@ class ArtifactRef(BaseModel):
     artifact_id: str
     version: int = Field(ge=1)
     artifact_type: ArtifactType
+    content_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    """Expected `content_hash` of the pinned version; when set, the store rejects a reference that does not match."""
 
 
 # Excluded from the content hash besides the canonical run-identity fields: the owner is not content.
@@ -128,4 +130,6 @@ class ArtifactDraft(BaseModel):
             raise ValueError("SUPERSEDED is set by the store, never submitted")
         if self.status is ArtifactStatus.PARTIAL and not self.limitations:
             raise ValueError("a PARTIAL artifact must list its limitations")
+        if len(self.snapshot_refs) > 1:
+            raise ValueError("an artifact is built from at most one snapshot")
         return self

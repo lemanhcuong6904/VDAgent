@@ -2,22 +2,28 @@ import { useReport } from "../../api/queries";
 import { formatDateTime } from "../../ui/format";
 import { MarkdownText } from "../Markdown";
 import { ChartView } from "./ChartView";
+import { ChartSpecView } from "./ChartSpecView";
 import { DatasetTable } from "./DatasetTable";
 
-/** `{{chart:<id>}}` / `{{dataset:<id>}}` embeds; the capture groups make `split` interleave them. */
-const EMBED = /\{\{\s*(chart|dataset)\s*:\s*([^}\s]+)\s*\}\}/;
+/** Legacy embeds plus pinned shared-store `{{chart_spec:<id>@<version>}}` embeds. */
+const EMBED = /\{\{\s*(chart_spec|chart|dataset)\s*:\s*([^}@\s]+)(?:@(\d+))?\s*\}\}/;
 
-type Segment = { kind: "markdown"; text: string } | { kind: "chart" | "dataset"; id: string };
+type Segment =
+  | { kind: "markdown"; text: string }
+  | { kind: "chart" | "dataset"; id: string }
+  | { kind: "chart_spec"; id: string; version: number };
 
 export function splitReport(markdown: string): Segment[] {
   const parts = markdown.split(EMBED);
   const out: Segment[] = [];
-  for (let i = 0; i < parts.length; i += 3) {
+  for (let i = 0; i < parts.length; i += 4) {
     const text = parts[i] ?? "";
     if (text.trim()) out.push({ kind: "markdown", text });
     const kind = parts[i + 1];
     const id = parts[i + 2];
+    const version = parts[i + 3];
     if ((kind === "chart" || kind === "dataset") && id) out.push({ kind, id });
+    if (kind === "chart_spec" && id && version) out.push({ kind, id, version: Number(version) });
   }
   return out;
 }
@@ -39,6 +45,7 @@ export function ReportView({ id }: { id: string }) {
       {splitReport(report.markdown).map((seg, i) => {
         if (seg.kind === "markdown") return <MarkdownText key={i} text={seg.text} />;
         if (seg.kind === "chart") return <ChartView key={i} id={seg.id} />;
+        if (seg.kind === "chart_spec") return <ChartSpecView key={i} id={seg.id} version={seg.version} />;
         return <DatasetTable key={i} id={seg.id} compact />;
       })}
     </article>

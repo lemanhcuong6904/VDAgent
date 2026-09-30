@@ -1,0 +1,181 @@
+"""claim_binder, labels and TEMPLATE mode (pipeline step 8, spec §8.2)."""
+
+from __future__ import annotations
+
+from decimal import Decimal
+from typing import Any
+
+import pytest
+
+from ..candidates.common import CandidateContext
+from ..candidates.t1_unit import t1_candidates
+from ..candidates.t2_distribution import t2_candidates
+from ..candidates.t7_limitation import t7_candidates
+from ..contracts import InsightCandidate
+from ..render import RenderError, bind_claim, recommendation_text, render_template
+from .builders import cause, context, dataset, diagnostic, dq, dq_field, inventory, project, scope, unit
+
+
+def overpriced(**diag_kw: Any) -> tuple[CandidateContext, InsightCandidate]:
+    data = dataset(
+        [unit(11, unit_code="SAPPHIRE1-16.231")],
+        [inventory(11, 145)],
+        [diagnostic(11, 145, **diag_kw)],
+        [cause(11, "OVERPRICED_VS_PEER")],
+    )
+    ctx = context(data)
+    (c,) = t1_candidates(ctx).candidates
+    return ctx, c
+
+
+def test_template_mode_binds_real_numbers_and_the_cause_label() -> None:
+    ctx, c = overpriced()
+    claim = render_template(c, ctx.cfg, ctx.view)
+    assert claim.template == ctx.cfg.cause("OVERPRICED_VS_PEER").template
+    assert claim.rendered_text == (
+        "Căn SAPPHIRE1-16.231 tồn 145 ngày; yếu tố có khả năng liên quan: giá cao hơn nhóm tương đồng "
+        "(đơn giá/m² so với trung vị peer +12,4%)."
+    )
+    assert [(b.slot, b.value, b.metric_ref) for b in claim.numeric_bindings] == [
+        ("dom", Decimal(145), c.slots["dom"].metric_ref),
+        ("spread", Decimal("12.40"), c.slots["spread"].metric_ref),
+    ]
+
+
+def test_too_few_peers_hide_the_peer_comparison() -> None:
+    ctx, c = overpriced(peer_count=2)
+    claim = render_template(c, ctx.cfg, ctx.view)
+    assert claim.template == ctx.cfg.language.peer_hidden_template
+    assert "12,4" not in claim.rendered_text and "nhóm tương đồng quá ít căn" in claim.rendered_text
+
+
+@pytest.mark.parametrize(
+    ("permit", "guarantee", "label"),
+    [
+        (False, True, "giấy phép mở bán"),
+        (True, False, "bảo lãnh ngân hàng"),
+        (False, False, "giấy phép mở bán và bảo lãnh ngân hàng"),
+    ],
+)
+def test_legal_template_says_what_the_project_lacks(permit: bool, guarantee: bool, label: str) -> None:
+    data = dataset(
+        [unit(1)],
+        [inventory(1, 120)],
+        [diagnostic(1, 120, "LEGAL_PERMIT_BARRIER")],
+        [cause(1, "LEGAL_PERMIT_BARRIER")],
+        projects=[project(is_sales_permit_issued=permit, is_bank_guarantee_issued=guarantee)],
+    )
+    ctx = context(data)
+    (c,) = t1_candidates(ctx).candidates
+    claim = render_template(c, ctx.cfg, ctx.view)
+    assert claim.rendered_text == (
+        f"Dự án Dự án X chưa đủ {label}; vướng mắc pháp lý / giấy phép bán hàng "
+        "là yếu tố có khả năng liên quan tới 1 căn quá hạn."
+    )
+
+
+def test_distribution_template_states_both_counting_methods() -> None:
+    units = [unit(i) for i in range(1, 11)]
+    data = dataset(
+        units,
+        [inventory(i, 100 + i) for i in range(1, 11)],
+        [diagnostic(i, 100 + i) for i in range(1, 11)],
+        [cause(i, "OVERPRICED_VS_PEER") for i in range(1, 11)],
+    )
+    ctx = context(data, tasks=("T2",), analysis_scope=scope("ZONE", zone_ids=["ZN-AQUA-01"]))
+    (c,) = t2_candidates(ctx).candidates
+    text = render_template(c, ctx.cfg, ctx.view).rendered_text
+    assert "giá cao hơn nhóm tương đồng chiếm 100% tổng điểm quy nguyên nhân" in text
+    assert "xuất hiện ở 100% số căn quá hạn" in text
+    assert text.count("tổng điểm") == 1 and text.count("số căn quá hạn") == 1
+
+
+def test_limitation_template_uses_the_catalogue_message() -> None:
+    field = dq_field("fact_unit_inventory_snapshot", "spiff_bonus_vnd", "WARN", primary=False, missing="45")
+    ctx = context(dataset([unit(1)], [inventory(1, 40)]), dq([field]))
+    c = next(x for x in t7_candidates(ctx).candidates if x.candidate_id.startswith("C-T7-DQ-"))
+    text = render_template(c, ctx.cfg, ctx.view).rendered_text
+    assert text == "Dữ liệu cho spiff_bonus_vnd còn hạn chế: trường dữ liệu thiếu quá nhiều nên không được sử dụng."
+
+
+def test_bind_claim_follows_the_slot_refs_of_the_draft() -> None:
+    ctx, c = overpriced()
+    cid = c.candidate_id
+    claim = bind_claim(
+        "{{unit}} đã tồn {{days}}, có khả năng liên quan tới {{cause_label}}.",
+        {"unit": f"{cid}.unit", "days": f"{cid}.dom", "cause_label": f"{cid}.cause_label"},
+        {cid: c},
+        ctx.cfg,
+        ctx.view,
+    )
+    assert claim.rendered_text == "SAPPHIRE1-16.231 đã tồn 145 ngày, có khả năng liên quan tới giá cao hơn nhóm tương đồng."
+    assert [(b.slot, b.value) for b in claim.numeric_bindings] == [("days", Decimal(145))]
+
+
+@pytest.mark.parametrize(
+    ("template", "refs"),
+    [
+        ("Tồn {{dom}}.", {}),  # no ref for a slot
+        ("Tồn {{dom}}.", {"dom": "C-UNKNOWN.dom"}),  # unknown candidate
+        ("Tồn {{dom}}.", {"dom": "{cid}.nope"}),  # unknown slot of the candidate
+    ],
+)
+def test_unresolvable_slots_are_render_errors(template: str, refs: dict[str, str]) -> None:
+    ctx, c = overpriced()
+    refs = {k: v.format(cid=c.candidate_id) for k, v in refs.items()}
+    with pytest.raises(RenderError):
+        bind_claim(template, refs, {c.candidate_id: c}, ctx.cfg, ctx.view)
+
+
+def test_recommendation_comes_from_the_config_only_with_an_action() -> None:
+    ctx, c = overpriced()
+    assert recommendation_text(c, ctx.cfg) == ctx.cfg.action_texts["TARGETED_PRICE_CORRECTION"]
+    ctx2 = context(
+        dataset([unit(11)], [inventory(11, 145)], [diagnostic(11, 145)], [cause(11, "OVERPRICED_VS_PEER")]), tasks=("T1",)
+    )
+    (no_t6,) = t1_candidates(ctx2).candidates
+    assert recommendation_text(no_t6, ctx2.cfg) is None
+
+
+def test_a_unit_word_repeated_after_a_slot_is_written_once() -> None:
+    """Seen live: the model wrote "{{peers}} căn" while the value already reads "12 căn"."""
+    ctx, c = overpriced()
+    cid = c.candidate_id
+    refs = {"unit": f"{cid}.unit", "days": f"{cid}.dom", "peers": f"{cid}.peers", "spread": f"{cid}.spread"}
+    claim = bind_claim(
+        "{{unit}} tồn {{days}} ngày, so với {{peers}} căn tương đồng giá cao hơn {{spread}}.", refs, {cid: c}, ctx.cfg, ctx.view
+    )
+    assert claim.rendered_text.count("ngày") == 1 and "căn căn" not in claim.rendered_text
+    assert " căn tương đồng" in claim.rendered_text and "ngày, so" in claim.rendered_text
+
+
+def test_q2_ratio_and_count_slots_are_rendered_with_their_fixed_label() -> None:
+    """Live P5 Q2/Q3: "tỷ trọng 13,3% trong tổng số căn chậm", "100% số căn" (which base?)."""
+    units = [unit(i) for i in range(1, 11)]
+    data = dataset(
+        units, [inventory(i, 100 + i) for i in range(1, 11)], [diagnostic(i, 100 + i) for i in range(1, 11)],
+        [cause(i, "OVERPRICED_VS_PEER") for i in range(1, 11)],
+    )  # fmt: skip
+    ctx = context(data, tasks=("T2",), analysis_scope=scope("ZONE", zone_ids=["ZN-AQUA-01"]))
+    (c,) = t2_candidates(ctx).candidates
+    cid = c.candidate_id
+    refs = {"cause_label": f"{cid}.cause_label", "w": f"{cid}.weighted_share", "u": f"{cid}.unit_share"}
+    claim = bind_claim("{{cause_label}} chiếm {{w}} và xuất hiện ở {{u}}.", refs, {cid: c}, ctx.cfg, ctx.view)
+    assert claim.rendered_text == (
+        "Giá cao hơn nhóm tương đồng chiếm 100% tổng điểm quy nguyên nhân và xuất hiện ở 100% số căn quá hạn."
+    )
+    assert [b.display for b in claim.numeric_bindings] == ["100%", "100%"]  # the number itself stays bare
+
+
+def test_the_scope_noun_follows_the_level_of_the_subject() -> None:
+    units = [unit(i) for i in range(1, 11)]
+    data = dataset(
+        units, [inventory(i, 100 + i) for i in range(1, 11)], [diagnostic(i, 100 + i) for i in range(1, 11)],
+        [cause(i, "OVERPRICED_VS_PEER") for i in range(1, 11)],
+    )  # fmt: skip
+    for level, ids, noun in (("ZONE", {"zone_ids": ["ZN-AQUA-01"]}, "tòa"), ("PROJECT", {"project_ids": ["PRJ-X"]}, "dự án")):
+        ctx = context(data, tasks=("T2",), analysis_scope=scope(level, **ids))
+        (c,) = t2_candidates(ctx).candidates
+        cid = c.candidate_id
+        refs = {"n": f"{cid}.scope_noun", "s": f"{cid}.scope"}
+        assert bind_claim("Tại {{n}} {{s}}.", refs, {cid: c}, ctx.cfg, ctx.view).rendered_text.startswith(f"Tại {noun} ")

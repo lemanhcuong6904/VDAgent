@@ -13,5 +13,8 @@ plugins:
   - module: vdagent_compare
   - module: vdagent_insight
   - module: vdagent_report
+  # Chart (D6, WS4): StepSpec@1 draw_chart over real artifacts. Demo commands (`chart demo`, `chart ask`) are off
+  # unless CHART_DEMO=on in agents/chart/.env or `opts: {demo: true}` — never in production.
+  - module: vdagent_chart
   # - module: agent_template   # echo agent; copy agents/_template to start a new plugin
   #   opts: {name: echo}
