@@ -11,6 +11,7 @@ from vdagent_data.resolve import (
     Ladder,
     Unresolved,
     level_before,
+    split_level,
     name_form,
     resolve_entities,
     unit_code_form,
@@ -189,3 +190,34 @@ async def test_the_first_entity_that_cannot_be_taken_stops_the_others() -> None:
     with pytest.raises(Unresolved) as info:
         await resolve_entities(FakeDw(), [("Tòa Aqua 1", "ZONE"), ("Landmark", "ZONE")], "so sánh Tòa Aqua 1 với phân khu Landmark")
     assert info.value.mention == "Landmark"
+
+
+@pytest.mark.parametrize("mention,level,rest", [
+    ("phân khu Landmark", "ZONE", "Landmark"), ("Dự án Sông Xanh", "PROJECT", "Sông Xanh"), ("căn A12-08", "UNIT", "A12-08"),
+    ("căn hộ A12-08", "UNIT", "A12-08"), ("Landmark", None, "Landmark"), ("phân khu", None, "phân khu"),
+])
+def test_a_level_word_inside_the_mention_is_split_off(mention: str, level: str | None, rest: str) -> None:
+    assert split_level(mention) == (level, rest)
+
+
+async def test_a_mention_written_with_its_level_word_is_resolved_at_that_level() -> None:
+    with pytest.raises(Unresolved) as info:
+        await resolve_entities(FakeDw(), [("phân khu Landmark", "ZONE")], "Tại sao phân khu Landmark bán chậm?")
+    assert info.value.code == "AMBIGUOUS_REQUEST" and {c.key for c in info.value.options} == {"Z1", "Z2"}
+    assert info.value.mention == "phân khu Landmark"
+
+
+async def test_a_saved_choice_for_the_mention_as_written_is_found_after_the_split() -> None:
+    [r] = await resolve_entities(FakeDw(), [("phân khu Landmark", "ZONE")], "Tại sao phân khu Landmark bán chậm?", saved={"phan khu landmark": "Z2"})
+    assert r.candidate.key == "Z2" and r.mention == "phân khu Landmark"
+
+
+async def test_a_zone_whose_own_name_starts_with_a_level_word_is_found_without_the_split() -> None:
+    class Dw(FakeDw):
+        async def __call__(self, table: str, sql: str, why: str) -> list[dict[str, Any]]:
+            if table == "dim_zone_master":
+                return [{"zone_key": "Z9", "zone_name": "Phân khu Đông", "project_key": "P1"}]
+            return await super().__call__(table, sql, why)
+
+    [r] = await resolve_entities(Dw(), [("Phân khu Đông", "ZONE")], "xem Phân khu Đông")
+    assert r.candidate.key == "Z9"

@@ -63,6 +63,16 @@ def level_before(question: str, mention: str) -> Kind | None:
     return None
 
 
+def split_level(mention: str) -> tuple[Kind | None, str]:
+    """"phân khu Landmark" → (ZONE, "Landmark"): a level word the user wrote inside the mention itself."""
+    words, form = mention.split(), name_form(mention).split()
+    for word, kind in _LEVEL_WORDS:
+        head = word.split()
+        if len(form) > len(head) and form[: len(head)] == head and len(words) > len(head):
+            return kind, " ".join(words[len(head):])
+    return None, mention
+
+
 @dataclass
 class Resolution:
     mention: str
@@ -200,6 +210,15 @@ async def resolve_entities(select: Select, entities: Sequence[tuple[str, str]], 
     for mention, hint in entities:
         level = level_before(question, mention)
         result = Ladder(await _pool(select, mention, hint, level), saved).resolve(mention, hint, level)
+        if result.accepted is None and not result.ambiguous and not result.empty_scope:
+            inner, rest = split_level(mention)  # "phân khu Landmark": only when the name as written found nothing
+            if inner is not None:
+                aliased = dict(saved or {})
+                if name_form(mention) in aliased:
+                    aliased[name_form(rest)] = aliased[name_form(mention)]
+                again = Ladder(await _pool(select, rest, hint, inner), aliased).resolve(rest, hint, inner)
+                if again.accepted is not None or again.ambiguous or again.empty_scope:
+                    result = again
         if result.empty_scope:
             raise Unresolved("OUT_OF_SCOPE", mention, f"Không có đối tượng nào trong phạm vi quyền của bạn khớp với “{mention}”.")
         if result.accepted is not None and result.method is not None:
