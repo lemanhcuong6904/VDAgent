@@ -3,9 +3,11 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from .common import cartesian_layout, encoding, field, figure, records
+from .theme import resolve_theme
 
 
 def _xy_trace(chart_type: str, spec: Mapping[str, Any]) -> tuple[dict[str, Any], str, str]:
+    theme = resolve_theme(None)
     spec_encoding = encoding(spec)
     spec_records = records(spec)
     x_field = field(spec_encoding, "x", "label")
@@ -18,13 +20,29 @@ def _xy_trace(chart_type: str, spec: Mapping[str, Any]) -> tuple[dict[str, Any],
         "name": y_field,
         "hovertemplate": f"{x_field}: %{{x}}<br>{y_field}: %{{y}}<extra></extra>",
     }
+    if trace_type == "bar":
+        trace["marker"] = {
+            "color": theme["primary_color"],
+            "line": {"color": theme["primary_dark"], "width": 1},
+        }
+        trace["opacity"] = 0.92
     if chart_type == "line":
         trace["mode"] = "lines+markers"
+        trace["line"] = {"color": theme["primary_color"], "width": 3, "shape": "spline"}
+        trace["marker"] = {"color": theme["primary_color"], "size": 8, "line": {"color": "#ffffff", "width": 1.5}}
     elif chart_type == "area":
         trace["mode"] = "lines"
         trace["fill"] = "tozeroy"
+        trace["line"] = {"color": theme["primary_color"], "width": 2.5, "shape": "spline"}
+        trace["fillcolor"] = "rgba(37, 99, 235, 0.18)"
     elif chart_type == "scatter":
         trace["mode"] = "markers"
+        trace["marker"] = {
+            "color": theme["primary_color"],
+            "size": 11,
+            "opacity": 0.86,
+            "line": {"color": "#ffffff", "width": 1.5},
+        }
         detail = spec_encoding.get("detail")
         if isinstance(detail, Mapping) and isinstance(detail.get("field"), str):
             trace["text"] = [record.get(str(detail["field"])) for record in spec_records]
@@ -34,7 +52,10 @@ def _xy_trace(chart_type: str, spec: Mapping[str, Any]) -> tuple[dict[str, Any],
 
 def render_xy(chart_type: str, spec: Mapping[str, Any]) -> dict[str, Any]:
     trace, x_field, y_field = _xy_trace(chart_type, spec)
-    return figure([trace], cartesian_layout(spec, x_field, y_field))
+    rendered_layout = cartesian_layout(spec, x_field, y_field)
+    if chart_type == "bar":
+        rendered_layout["bargap"] = 0.32
+    return figure([trace], rendered_layout)
 
 
 def render_grouped_bar(spec: Mapping[str, Any]) -> dict[str, Any]:
@@ -46,21 +67,30 @@ def render_stacked_bar(spec: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _render_series_bar(spec: Mapping[str, Any], barmode: str) -> dict[str, Any]:
+    theme = resolve_theme(None)
     spec_encoding = encoding(spec)
     spec_records = records(spec)
     x_field = field(spec_encoding, "x", "label")
     y_field = field(spec_encoding, "y", "value")
     series_field = field(spec_encoding, "series", "series")
     series_values = list(dict.fromkeys(record.get(series_field) for record in spec_records))
+    palette = list(theme["palette"])
     traces = [
         {
             "type": "bar",
             "name": str(series),
             "x": [record.get(x_field) for record in spec_records if record.get(series_field) == series],
             "y": [record.get(y_field) for record in spec_records if record.get(series_field) == series],
+            "marker": {
+                "color": palette[index % len(palette)],
+                "line": {"color": "rgba(15, 23, 42, 0.18)", "width": 1},
+            },
+            "opacity": 0.94,
         }
-        for series in series_values
+        for index, series in enumerate(series_values)
     ]
     rendered_layout = cartesian_layout(spec, x_field, y_field)
     rendered_layout["barmode"] = barmode
+    rendered_layout["bargap"] = 0.28
+    rendered_layout["bargroupgap"] = 0.08
     return figure(traces, rendered_layout)

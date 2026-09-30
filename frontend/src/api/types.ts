@@ -104,6 +104,7 @@ export interface ChartSpecDTO {
   title: string;
   chart_type: string | null;
   spec: Record<string, unknown>;
+  plotly?: Record<string, unknown> | null;
 }
 export interface CancelTaskResponseDTO {
   task: TaskDTO;

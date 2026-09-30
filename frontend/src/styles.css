@@ -923,9 +923,9 @@ pre {
 }
 .chart-canvas {
   width: 100%;
-  min-height: 60px;
+  min-height: 360px;
+  height: clamp(360px, 48vh, 520px);
 }
-
 .report-head h3 {
   margin: 0 0 2px;
 }

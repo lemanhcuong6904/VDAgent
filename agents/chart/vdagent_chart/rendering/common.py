@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping
 
 from .theme import resolve_theme
@@ -18,16 +19,37 @@ FIELD_LABELS = {
     "lon": "Longitude",
     "month": "Month",
     "price_m2": "$P\\;(\\mathrm{million\\ VND}/m^2)$",
+    "net_asking_price_per_m2": "$P_{net}/m^2$",
     "stage": "Stage",
     "target": "Target",
     "value": "Value",
 }
+
+_MATH_WRAPPED = re.compile(r"^\$(.*)\$$", re.DOTALL)
+_PROSE_WORD = re.compile(r"[^\W\d_]{2,}\s+[^\W\d_]{2,}", re.UNICODE)
 
 
 def text(value: Any, fallback: str = "") -> str:
     if isinstance(value, Mapping):
         return str(value.get("value") or fallback)
     return str(value or fallback)
+
+
+def _plain_unit_text(value: str) -> str:
+    return value.replace("m^2", "m²").replace("m2", "m²")
+
+
+def _safe_title_text(value: Any, fallback: str = "") -> str:
+    if not isinstance(value, Mapping):
+        return _plain_unit_text(str(value or fallback))
+    raw = str(value.get("value") or fallback)
+    if value.get("format") != "math":
+        return _plain_unit_text(raw)
+    match = _MATH_WRAPPED.match(raw.strip())
+    inner = match.group(1) if match else raw
+    if _PROSE_WORD.search(inner) and "\\mathrm" not in inner:
+        return _plain_unit_text(inner)
+    return raw
 
 
 def field(encoding: Mapping[str, Any], channel: str, fallback: str) -> str:
@@ -40,7 +62,7 @@ def field(encoding: Mapping[str, Any], channel: str, fallback: str) -> str:
 def axis_title(presentation: Mapping[str, Any], axis: str, fallback: str) -> str:
     spec = presentation.get(f"{axis}_axis")
     if isinstance(spec, Mapping):
-        return text(spec.get("title"), fallback)
+        return _safe_title_text(spec.get("title"), fallback)
     return FIELD_LABELS.get(fallback, fallback)
 
 
@@ -66,20 +88,50 @@ def layout(spec: Mapping[str, Any]) -> dict[str, Any]:
     theme = resolve_theme(str(spec_presentation.get("theme_ref") or "dashboard/default"))
     title = text(spec_presentation.get("title_spec"), str(spec_presentation.get("title", "")))
     return {
-        "title": {"text": title, "font": {"size": theme["title_size"]}},
-        "font": {"family": theme["font_family"], "size": theme["font_size"]},
+        "template": "plotly_white",
+        "title": {
+            "text": title,
+            "x": 0.02,
+            "xanchor": "left",
+            "y": 0.97,
+            "font": {"size": theme["title_size"], "color": theme["title_color"]},
+        },
+        "font": {"family": theme["font_family"], "size": theme["font_size"], "color": theme["axis_color"]},
+        "colorway": list(theme["palette"]),
         "paper_bgcolor": theme["paper_bgcolor"],
         "plot_bgcolor": theme["plot_bgcolor"],
-        "margin": {"l": 64, "r": 24, "t": 56, "b": 56},
+        "margin": {"l": 72, "r": 28, "t": 72, "b": 64},
         "hovermode": "closest",
+        "hoverlabel": {"bgcolor": "#ffffff", "bordercolor": theme["axis_line_color"], "font": {"color": "#0f172a"}},
+        "legend": {"orientation": "h", "x": 0, "y": -0.18, "xanchor": "left", "yanchor": "top"},
+        "uniformtext": {"mode": "hide", "minsize": 10},
+        "separators": ",.",
     }
 
 
 def cartesian_layout(spec: Mapping[str, Any], x_field: str, y_field: str) -> dict[str, Any]:
     spec_presentation = presentation(spec)
+    theme = resolve_theme(str(spec_presentation.get("theme_ref") or "dashboard/default"))
     rendered = layout(spec)
-    rendered["xaxis"] = {"title": {"text": axis_title(spec_presentation, "x", x_field)}}
-    rendered["yaxis"] = {"title": {"text": axis_title(spec_presentation, "y", y_field)}, "gridcolor": "#e5e7eb"}
+    rendered["xaxis"] = {
+        "title": {"text": axis_title(spec_presentation, "x", x_field), "standoff": 12},
+        "showgrid": False,
+        "showline": True,
+        "linecolor": theme["axis_line_color"],
+        "ticks": "outside",
+        "tickcolor": theme["axis_line_color"],
+        "automargin": True,
+    }
+    rendered["yaxis"] = {
+        "title": {"text": axis_title(spec_presentation, "y", y_field), "standoff": 14},
+        "gridcolor": theme["grid_color"],
+        "showgrid": True,
+        "zeroline": False,
+        "showline": False,
+        "ticks": "outside",
+        "tickcolor": theme["axis_line_color"],
+        "automargin": True,
+    }
     return rendered
 
 

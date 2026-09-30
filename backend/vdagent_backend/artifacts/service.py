@@ -196,9 +196,15 @@ class ArtifactService:
         spec = envelope.payload.get("vega_lite")
         if not isinstance(spec, dict):
             raise ArtifactError("chart_spec has no Vega-Lite specification")
-        return {"id": envelope.artifact_id, "version": envelope.version,
-                "title": envelope.payload.get("title") or envelope.artifact_id,
-                "chart_type": envelope.payload.get("chart_type"), "spec": spec}
+        plotly = envelope.payload.get("plotly")
+        return {
+            "id": envelope.artifact_id,
+            "version": envelope.version,
+            "title": envelope.payload.get("title") or envelope.artifact_id,
+            "chart_type": envelope.payload.get("chart_type"),
+            "spec": spec,
+            "plotly": plotly if isinstance(plotly, dict) else None,
+        }
 
     async def interrupt_run(self, user_id: str, task_id: str) -> list[ArtifactEnvelope]:
         """Startup recovery of a task the restart failed (WS7 F-04): each of its run_states still `running`/`pending`
