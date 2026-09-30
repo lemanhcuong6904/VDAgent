@@ -21,6 +21,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal
 
@@ -39,7 +40,7 @@ from vdagent_data.trace import Observer, Tracer
 
 log = logging.getLogger(__name__)
 
-OPERATIONS = ("fetch_units", "aggregate_metrics")
+OPERATIONS = ("fetch_units", "aggregate_metrics", "fetch_peer_candidates", "fetch_unit_context")
 _SPEC = ConfigDict(extra="forbid", frozen=True)
 
 # internal code → (the contract's code, its class): the table D of contract_agent.md, tab Data. Unknown codes are FATAL
@@ -111,8 +112,32 @@ class AggregateV1(_Spec):
     filters: list[str] = Field(default_factory=list)
 
 
-def parse_spec(step: StepSpec) -> FetchUnitsV1 | AggregateV1:
-    model = {"fetch_units": FetchUnitsV1, "aggregate_metrics": AggregateV1}.get(step.operation)
+class PeersV1(_Spec):
+    """The target is one unit named directly (the other way, an input package, needs the asynchronous protocol)."""
+
+    @model_validator(mode="after")
+    def _one_target(self) -> PeersV1:
+        if self.scope_all or len(self.entities) != 1:
+            raise ValueError("the target of a peer search is exactly one unit in `entities`")
+        return self
+
+
+class ContextV1(_Spec):
+    context_groups: list[str] = Field(default_factory=lambda: list(vocab.CONTEXT_GROUPS))
+
+    @model_validator(mode="after")
+    def _named_entities(self) -> ContextV1:
+        if self.scope_all:
+            raise ValueError("the context of a whole scope is not served: name the entities")
+        return self
+
+
+Spec = FetchUnitsV1 | AggregateV1 | PeersV1 | ContextV1
+
+
+def parse_spec(step: StepSpec) -> Spec:
+    model = {"fetch_units": FetchUnitsV1, "aggregate_metrics": AggregateV1, "fetch_peer_candidates": PeersV1,
+             "fetch_unit_context": ContextV1}.get(step.operation)
     if model is None:
         raise core.StepError("rejected", "UNKNOWN_OPERATION", f"unknown operation {step.operation!r}; this agent serves {', '.join(OPERATIONS)}")
     try:
@@ -121,16 +146,22 @@ def parse_spec(step: StepSpec) -> FetchUnitsV1 | AggregateV1:
         first = exc.errors()[0]
         where = ".".join(str(p) for p in first["loc"]) or "spec"
         raise core.StepError("rejected", "INVALID_SPEC", f"invalid {step.operation} spec at `{where}`: {first['msg']}") from None
-    bad = vocab.unknown_names("filter", spec.filters, vocab.FILTERS)
+    bad: list[str] = []
+    lists: list[list[str]] = []
     if isinstance(spec, FetchUnitsV1):
-        bad += vocab.unknown_names("attribute", spec.attributes, vocab.ATTRIBUTES)
-    else:
-        bad += vocab.unknown_names("metric", spec.metrics, vocab.METRICS_V1) + vocab.unknown_names("dimension", spec.group_by, vocab.DIMENSIONS)
+        bad = vocab.unknown_names("filter", spec.filters, vocab.FILTERS) + vocab.unknown_names("attribute", spec.attributes, vocab.ATTRIBUTES)
+        lists = [spec.filters]
+    elif isinstance(spec, AggregateV1):
+        bad = (vocab.unknown_names("filter", spec.filters, vocab.FILTERS) + vocab.unknown_names("metric", spec.metrics, vocab.METRICS_V1)
+               + vocab.unknown_names("dimension", spec.group_by, vocab.DIMENSIONS))
+        lists = [spec.filters, spec.metrics, spec.group_by]
+    elif isinstance(spec, ContextV1):
+        bad = vocab.unknown_names("context group", spec.context_groups, vocab.CONTEXT_GROUPS)
+        lists = [spec.context_groups]
     if bad:
         raise core.StepError("rejected", "INVALID_SPEC", "not in the vocabulary of this agent: " + ", ".join(bad))
-    for names in ([spec.filters] if isinstance(spec, FetchUnitsV1) else [spec.filters, spec.metrics, spec.group_by]):
-        if len(set(names)) != len(names):
-            raise core.StepError("rejected", "INVALID_SPEC", "a name is listed twice")
+    if any(len(set(names)) != len(names) for names in lists):
+        raise core.StepError("rejected", "INVALID_SPEC", "a name is listed twice")
     return spec
 
 
@@ -245,11 +276,18 @@ async def _run(run: core._Run, step: StepSpec, tracer: Tracer, saved: Mapping[st
     if resolved:
         await tracer.note("resolve", "Đã nhận diện đối tượng người dùng nêu, không đoán và không dùng LLM",
                           entities=[f"{r.mention} → {r.candidate.kind} {r.candidate.label} ({r.method})" for r in resolved])
+    if isinstance(spec, PeersV1) and resolved[0].candidate.kind != "UNIT":
+        raise core.StepError("rejected", "INVALID_SPEC",
+                             f"the target of a peer search must be one unit; “{resolved[0].mention}” is a {resolved[0].candidate.kind.lower()}")
     limitations = [*config_limits, *core._source_labels(run)]
     if spec.out_of_catalog_need:
         limitations.append("OUT_OF_CATALOG_NEED_NOT_SERVED")  # no T3 in this build: the catalog part is served, the rest is said
-    pop = Population(resolved, list(spec.filters), run.snapshot_date_key, _threshold(config))
-    if isinstance(spec, FetchUnitsV1):
+    pop = Population(resolved, list(getattr(spec, "filters", [])), run.snapshot_date_key, _threshold(config))
+    if isinstance(spec, PeersV1):
+        out.report = await _peers(run, resolved[0].candidate, config, limitations)
+    elif isinstance(spec, ContextV1):
+        out.report = await _context(run, spec, pop, config, limitations)
+    elif isinstance(spec, FetchUnitsV1):
         single = len(resolved) == 1 and resolved[0].candidate.kind == "UNIT" and not spec.scope_all and not spec.filters
         if single:
             out.report = await _single_unit(run, resolved[0].candidate, config, limitations)
@@ -294,9 +332,19 @@ def _threshold(config: Mapping[str, Any]) -> int | None:
     return int(entry["value"]) if entry and entry["status"] == "APPROVED" else None
 
 
-def _require_thresholds(spec: FetchUnitsV1 | AggregateV1, config: Mapping[str, Any]) -> None:
+def _peer_minimum_key(config: Mapping[str, Any]) -> str:
+    """The key that holds the smallest peer set: `min_peer_count` (the real DW) or `min_group_size` (the mock), whichever is approved."""
+    for key in ("min_peer_count", "min_group_size"):
+        if key in config and config[key]["status"] == "APPROVED":
+            return key
+    return "min_peer_count"
+
+
+def _require_thresholds(spec: Spec, config: Mapping[str, Any]) -> None:
     needs: list[str] = []
-    if "slow_moving" in spec.filters:
+    if isinstance(spec, PeersV1):
+        needs += ["peer_area_tolerance_pct", _peer_minimum_key(config)]
+    if isinstance(spec, (FetchUnitsV1, AggregateV1)) and "slow_moving" in spec.filters:
         needs.append("overdue_threshold_days")
     if isinstance(spec, AggregateV1):
         needs += [k for m in spec.metrics if (k := vocab.METRICS_V1[m].needs)]
@@ -308,7 +356,7 @@ def _require_thresholds(spec: FetchUnitsV1 | AggregateV1, config: Mapping[str, A
 # ---- S1: the entities --------------------------------------------------------------------------------------------------------
 
 
-async def _resolve(run: core._Run, spec: FetchUnitsV1 | AggregateV1, step: StepSpec, saved: Mapping[str, str]) -> list[Resolved]:
+async def _resolve(run: core._Run, spec: Spec, step: StepSpec, saved: Mapping[str, str]) -> list[Resolved]:
     if spec.scope_all:
         return []
     try:
@@ -565,3 +613,195 @@ async def _aggregate(run: core._Run, spec: AggregateV1, pop: Population, config:
     summary = f"{len(members)} căn của {_describe(pop)}, {len(groups)} nhóm, {len(spec.metrics)} chỉ số @ {run.snapshot_id}."
     return core._report(run.step, "completed", refs=[dataset_ref, metric_ref, dq_ref], warnings=warnings,
                         partial=bool(metric_limits or dq_limits), summary=summary)
+
+
+# ---- fetch_peer_candidates ---------------------------------------------------------------------------------------------------
+
+FLOOR_BANDS = ("LOW", "MID", "HIGH", "TOP")
+# "Nhóm hướng" of the peer rule. The DATA team has not defined the groups (SPEC §6.4, open point 3); these are the groups of the
+# Compare engine's current peer rule, so the two agree until the DATA team decides: declared provisional in every answer.
+ORIENTATION_GROUP = {"S": "COOL", "SE": "COOL", "E": "COOL", "W": "HOT", "SW": "HOT", "NW": "HOT", "N": "NORTH", "NE": "NORTH"}
+
+
+def _adjacent_bands(band: str) -> list[str]:
+    if band not in FLOOR_BANDS:
+        return []
+    at = FLOOR_BANDS.index(band)
+    return [FLOOR_BANDS[i] for i in (at - 1, at + 1) if 0 <= i < len(FLOOR_BANDS)]
+
+
+async def _peers(run: core._Run, target: Candidate, config: dict[str, Any], limitations: list[str]) -> AgentReport:
+    """The six criteria of SPEC §3.4: same project, launch batch, unit type, area within the tolerance, floor band and orientation
+    group; the target is never its own peer. Too few → the adjacent floor bands, marked `expanded`; still too few → flagged."""
+    run.trace.enter("fetch")
+    [subject] = await run.select("dim_unit_master", f"SELECT * FROM dim_unit_master WHERE unit_key = {core._q(target.key)}",
+                                 f"Đọc căn {target.code}, căn mục tiêu của việc tìm nhóm tương đồng")
+    try:
+        area = peer_area(subject)
+    except PeerAreaUnavailable as exc:
+        raise core.StepError("failed", "SUBJECT_AREA_UNAVAILABLE", f"{target.code}: {exc}; area_m2 is never used instead") from None
+    ratio = Decimal(config["peer_area_tolerance_pct"]["ratio"])
+    minimum = int(config[_peer_minimum_key(config)]["value"])
+    band, batch, orientation = subject.get("floor_band"), subject.get("launch_batch_id"), subject.get("balcony_orientation")
+    bands = [band, *_adjacent_bands(str(band))] if band else []
+    where = [f"u.project_key = {core._q(str(subject['project_key']))}", f"u.unit_type = {core._q(str(subject['unit_type']))}",
+             f"u.unit_key <> {core._q(target.key)}"]
+    if batch:
+        where.append(f"u.launch_batch_id = {core._q(str(batch))}")
+    else:
+        limitations.append("PEER_CRITERION_UNAVAILABLE:launch_batch_id")
+    if bands:
+        where.append(f"u.floor_band IN {core._in(bands)}")
+    else:
+        limitations.append("PEER_CRITERION_UNAVAILABLE:floor_band")
+    pool = await run.select(
+        "dim_unit_master", "SELECT u.* FROM dim_unit_master u JOIN fact_unit_inventory_snapshot i ON i.unit_key = u.unit_key"
+        f" AND i.snapshot_date_key = {run.snapshot_date_key} WHERE {' AND '.join(where)} ORDER BY u.unit_key",
+        "Lấy các căn cùng dự án, đợt mở bán, loại căn (và các nhóm tầng kề) làm ứng viên, rồi lọc theo diện tích và nhóm hướng")
+    group = ORIENTATION_GROUP.get(str(orientation))
+    if group is None:
+        limitations.append("PEER_CRITERION_UNAVAILABLE:balcony_orientation")
+    strict: list[dict[str, Any]] = []
+    expanded: list[dict[str, Any]] = []
+    excluded: list[dict[str, str]] = []
+    for u in pool:
+        try:
+            other = peer_area(u)
+        except PeerAreaUnavailable:
+            excluded.append({"unit_code": u["unit_code"], "reason": "net_area_unavailable"})
+            continue
+        if abs(other - area) > ratio * area or (group is not None and ORIENTATION_GROUP.get(str(u.get("balcony_orientation"))) != group):
+            continue
+        (strict if u.get("floor_band") == band else expanded).append(u)
+    chosen = [(u, "strict") for u in strict]
+    widened = len(strict) < minimum
+    if widened:
+        chosen += [(u, "expanded") for u in expanded]
+    constrained = len(chosen) < minimum
+    keys = [subject["unit_key"], *(u["unit_key"] for u, _ in chosen)]
+    inventory = await run.select(
+        "fact_unit_inventory_snapshot",
+        f"SELECT * FROM fact_unit_inventory_snapshot WHERE snapshot_date_key = {run.snapshot_date_key} AND unit_key IN {core._in(keys)} ORDER BY unit_key",
+        "Lấy dòng tồn kho của căn mục tiêu và các ứng viên (trạng thái, số ngày tồn, giá)")
+    status = {r["unit_key"]: r.get("inventory_status") for r in inventory}
+    units = [subject, *(u for u, _ in chosen)]
+    projects = await run.select("dim_project_profile", f"SELECT * FROM dim_project_profile WHERE project_key = {core._q(str(subject['project_key']))}",
+                                "Lấy hồ sơ dự án của căn mục tiêu")
+    zones = await run.select("dim_zone_master", f"SELECT * FROM dim_zone_master WHERE zone_key IN {core._in(str(u['zone_key']) for u in units)} ORDER BY zone_key",
+                             "Lấy thông tin phân khu của các căn đã đọc")
+    run.trace.enter("check")
+    dq, dq_limits = core._dq(run, units, inventory, {"complete": True, "days_covered": None})
+    dq["coverage"] = {}
+    await core._check_note(run, dq, dq_limits)
+
+    if excluded:
+        limitations.append(f"PEER_AREA_UNAVAILABLE:{len(excluded)}")
+    if constrained:
+        limitations.append(f"SMALL_SAMPLE:{len(chosen)}")
+    limitations.append("PROVISIONAL_DEFINITION:orientation_group")
+    candidates = [{"unit_key": u["unit_key"], "unit_code": u["unit_code"], "match_tier": tier, "inventory_status": status.get(u["unit_key"])}
+                  for u, tier in chosen]
+    dataset = {
+        "snapshot": core._snapshot_block(run),
+        "population": {"rule": "peer_candidates", "subject_unit_key": subject["unit_key"], "area_field": PEER_AREA_FIELD,
+                       "criteria": ["same_project", "same_launch_batch", "same_unit_type", "area_within_tolerance", "same_floor_band",
+                                    "same_orientation_group"]},
+        "peer_set": {"target_unit_key": subject["unit_key"], "candidates": candidates, "strict_count": len(strict), "min_peer_count": minimum,
+                     "area_tolerance_ratio": str(ratio), "is_peer_sample_constrained": constrained,
+                     "floor_bands_used": bands if widened else [band]},
+        "tables": {"dim_project_profile": projects, "dim_zone_master": zones, "dim_unit_master": units, "fact_unit_inventory_snapshot": inventory},
+        "row_counts": {"dim_unit_master": len(units), "fact_unit_inventory_snapshot": len(inventory)},
+        "excluded": excluded, "semantic_config": config, "queries": run.queries,
+    }
+    dataset_ref, _ = await run.put(ArtifactType.DATASET, "re_dataset@1", dataset, limitations, partial=bool(excluded))
+    subject_ref = {"type": "UNIT", "id": subject["unit_key"], "label": subject["unit_code"]}
+    rows = [{"metric_id": name, "calculation_ref": f"calc_{name}@1", "subject": subject_ref, "statistic": "count", "value": value, "n": value,
+             "unit": "COUNT", "source_ref": "re:dim_unit_master"} for name, value in (("peer_count", len(chosen)), ("peer_count_strict", len(strict)))]
+    metric_ref, _ = await run.put(ArtifactType.METRIC, "re_metric@1", {"metrics": rows}, [], [dataset_ref])
+    dq_ref, _ = await run.put(ArtifactType.DQ, "re_dq@1", dq, dq_limits, [dataset_ref], partial=bool(dq_limits))
+    warnings = [*limitations, *dq_limits]
+    summary = (f"{target.code}: {len(chosen)} căn tương đồng ({len(strict)} khớp đủ 6 tiêu chí, tối thiểu {minimum}) @ {run.snapshot_id}"
+               + (", mẫu còn nhỏ." if constrained else "."))
+    return core._report(run.step, "completed", refs=[dataset_ref, metric_ref, dq_ref], warnings=warnings, partial=bool(excluded or dq_limits),
+                        summary=summary)
+
+
+# ---- fetch_unit_context ------------------------------------------------------------------------------------------------------
+
+
+async def _context(run: core._Run, spec: ContextV1, pop: Population, config: dict[str, Any], limitations: list[str]) -> AgentReport:
+    """Price history, sales funnel, secondary market, macro and infrastructure of the units of the entities (SPEC §6.3). A table
+    whose group was not asked for is not read; a month or an asset that is missing is a limitation, never a silent omission."""
+    run.trace.enter("fetch")
+    day = core._day(run.snapshot_date_key)
+    iso, month = day.isoformat(), day.year * 100 + day.month
+    units = await run.select("dim_unit_master", f"SELECT u.* FROM {pop.base} WHERE {pop.where} ORDER BY u.unit_key",
+                             f"Lấy các căn của {_describe(pop)} ở kỳ chốt đã khóa")
+    if not units and not spec.success_criteria.allow_empty:
+        raise core.StepError("failed", "EMPTY_POPULATION", f"no unit of {_describe(pop)} in your authorized scope")
+    inventory = await run.select("fact_unit_inventory_snapshot", f"SELECT i.* FROM {pop.base} WHERE {pop.where} ORDER BY i.unit_key",
+                                 "Lấy dòng tồn kho của các căn đó (để kiểm tra chất lượng và biết trạng thái)")
+    project_keys = sorted({str(u["project_key"]) for u in units})
+    projects = await run.select("dim_project_profile", f"SELECT * FROM dim_project_profile WHERE project_key IN {core._in(project_keys)} ORDER BY project_key",
+                                "Lấy hồ sơ dự án (thị trường, phân khúc) của các căn đã đọc")
+    zones = await run.select("dim_zone_master", f"SELECT * FROM dim_zone_master WHERE zone_key IN {core._in(str(u['zone_key']) for u in units)} ORDER BY zone_key",
+                             "Lấy thông tin phân khu của các căn đã đọc")
+    tables: dict[str, Any] = {"dim_project_profile": projects, "dim_zone_master": zones, "dim_unit_master": units, "fact_unit_inventory_snapshot": inventory}
+    groups = set(spec.context_groups)
+    start = core._date_key(day - timedelta(days=core.FUNNEL_WINDOW_DAYS - 1))
+    if "price" in groups:
+        tables["fact_unit_price_history"] = await run.select(
+            "fact_unit_price_history",
+            f"{pop.via_units('fact_unit_price_history', 'p', dated=False)} AND p.effective_date <= '{iso}' ORDER BY p.unit_key, p.effective_date",
+            "Lấy lịch sử đổi giá của các căn đó, không sau ngày chốt")
+    if "funnel" in groups:
+        tables["fact_sales_funnel_daily"] = await run.select(
+            "fact_sales_funnel_daily",
+            f"{pop.via_units('fact_sales_funnel_daily', 'f', dated=False)} AND f.date_key BETWEEN {start} AND {run.snapshot_date_key}"
+            " ORDER BY f.unit_key, f.date_key",
+            f"Lấy phễu bán hàng {core.FUNNEL_WINDOW_DAYS} ngày gần nhất của các căn đó, không sau ngày chốt")
+    if "secondary" in groups:
+        tables["dim_secondary_market_comps"] = await run.select(
+            "dim_secondary_market_comps", f"SELECT * FROM dim_secondary_market_comps WHERE project_key IN {core._in(project_keys)}"
+            f" AND unit_type IN {core._in(str(u['unit_type']) for u in units)} AND transaction_date <= '{iso}' ORDER BY comp_key",
+            "Lấy giao dịch thị trường thứ cấp cùng dự án và loại căn, không sau ngày chốt")
+    if "macro" in groups:
+        pairs = sorted({(str(p["market_id"]), str(p["segment"])) for p in projects})
+        macro = await run.select(
+            "fact_market_macro_monthly", f"SELECT * FROM fact_market_macro_monthly WHERE market_id IN {core._in(m for m, _ in pairs)}"
+            f" AND segment IN {core._in(s for _, s in pairs)} AND month_key <= {month} ORDER BY market_id, segment, month_key",
+            "Lấy chỉ số vĩ mô theo tháng của thị trường và phân khúc của các dự án, không sau tháng chốt")
+        tables["fact_market_macro_monthly"] = [m for m in macro if (str(m["market_id"]), str(m["segment"])) in pairs]
+        for pair in pairs:
+            latest = max((m["month_key"] for m in tables["fact_market_macro_monthly"] if (str(m["market_id"]), str(m["segment"])) == pair), default=0)
+            if latest < month:
+                limitations.append(f"MACRO_MONTH_MISSING:{month}")
+    if "infra" in groups:
+        tables["dim_infrastructure_assets"] = await run.select(
+            "dim_infrastructure_assets", f"SELECT * FROM dim_infrastructure_assets WHERE project_key IN {core._in(project_keys)} ORDER BY asset_key",
+            "Lấy hạ tầng quanh các dự án")
+        with_assets = {str(a["project_key"]) for a in tables["dim_infrastructure_assets"]}
+        limitations += [f"INFRA_MISSING:{p}" for p in project_keys if p not in with_assets]
+    run.trace.enter("check")
+    dq, dq_limits = core._dq(run, units, inventory, {"complete": True, "days_covered": None})
+    dq["coverage"] = {}
+    await core._check_note(run, dq, dq_limits)
+
+    if not units:
+        limitations.append("EMPTY_RESULT")
+    dataset = {
+        "snapshot": core._snapshot_block(run),
+        "population": {"rule": "entities", "subject_unit_key": None, "entities": [_entity(r) for r in pop.resolved], "scope_all": False,
+                       "filters": [], "context_groups": list(spec.context_groups), "funnel_window_days": core.FUNNEL_WINDOW_DAYS,
+                       "area_field": PEER_AREA_FIELD},
+        "tables": tables, "row_counts": {name: len(rows) for name, rows in tables.items()},
+        "excluded": [], "semantic_config": config, "queries": run.queries,
+    }
+    dataset_ref, _ = await run.put(ArtifactType.DATASET, "re_dataset@1", dataset, limitations)
+    rows, metric_limits = _measure(["unit_count"], {(): _merge(units, inventory)}, [], pop.threshold, {})
+    metric_ref, _ = await run.put(ArtifactType.METRIC, "re_metric@1", {"metrics": rows}, metric_limits, [dataset_ref])
+    dq_ref, _ = await run.put(ArtifactType.DQ, "re_dq@1", dq, dq_limits, [dataset_ref], partial=bool(dq_limits))
+    warnings = [*limitations, *metric_limits, *dq_limits]
+    summary = f"Bối cảnh ({', '.join(spec.context_groups)}) của {len(units)} căn thuộc {_describe(pop)} @ {run.snapshot_id}, {len(warnings)} hạn chế."
+    return core._report(run.step, "completed", refs=[dataset_ref, metric_ref, dq_ref], warnings=warnings, partial=bool(dq_limits or metric_limits),
+                        summary=summary)

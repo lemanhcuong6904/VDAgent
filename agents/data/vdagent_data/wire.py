@@ -45,7 +45,8 @@ from vdagent_data.v1 import ERROR_TABLE, V1Result, run_step_v1
 
 _FROM_PREFIX = re.compile(r"^\[from: [^\]]+\]\s*")
 MAX_OPTIONS = 10
-PACKAGE_OF_OPERATION = {"fetch_units": ("dataset", "unit_set"), "aggregate_metrics": ("metric", "metric_table")}
+PACKAGE_OF_OPERATION = {"fetch_units": ("dataset", "unit_set"), "aggregate_metrics": ("metric", "metric_table"),
+                        "fetch_peer_candidates": ("dataset", "peer_set"), "fetch_unit_context": ("dataset", "context_bundle")}
 # the class of every code of table D (contract_agent.md, tab Data): what the Orchestrator does with the step
 TABLE_D_CLASS = {
     "SPEC_MISMATCH": "SPEC_ISSUE", "SPEC_INVALID": "SPEC_ISSUE", "DATA_UNAVAILABLE": "NO_DATA", "EMPTY_RESULT": "NO_DATA",
@@ -86,8 +87,12 @@ _LIMITATION_TEXT = {
     "PEER_AREA_UNAVAILABLE": "{0} căn thiếu diện tích ròng nên bị loại khỏi ứng viên.",
     "SYNTHETIC_SOURCE": "Trường {0} là dữ liệu mô phỏng.",
     "BLOCKED": "{0} đang chờ quyết định nghiệp vụ nên chưa áp dụng.",
+    "MACRO_MONTH_MISSING": "Bảng vĩ mô chưa có tháng {0}; dùng tháng gần nhất có dữ liệu.",
+    "INFRA_MISSING": "Dự án {0} chưa có dữ liệu hạ tầng.",
+    "PEER_CRITERION_UNAVAILABLE": "Căn mục tiêu thiếu {0} nên tiêu chí này không áp dụng được.",
 }
-_TARGET_FIRST = {"METRIC_UNAVAILABLE", "WINDOW_INCOMPLETE", "DQ_MISSING", "DQ_VIOLATION", "SYNTHETIC_SOURCE"}
+_TARGET_FIRST = {"METRIC_UNAVAILABLE", "WINDOW_INCOMPLETE", "DQ_MISSING", "DQ_VIOLATION", "SYNTHETIC_SOURCE", "MACRO_MONTH_MISSING", "INFRA_MISSING",
+                 "PEER_CRITERION_UNAVAILABLE"}
 
 
 def map_warning(raw: str) -> dict[str, Any]:
@@ -121,7 +126,8 @@ class Confidence:
     reasons: list[str]
 
 
-_MISSING = ("METRIC_UNAVAILABLE", "DQ_MISSING", "DQ_VIOLATION", "WINDOW_INCOMPLETE", "PEER_AREA_UNAVAILABLE")
+_MISSING = ("METRIC_UNAVAILABLE", "DQ_MISSING", "DQ_VIOLATION", "WINDOW_INCOMPLETE", "PEER_AREA_UNAVAILABLE", "MACRO_MONTH_MISSING", "INFRA_MISSING",
+            "PEER_CRITERION_UNAVAILABLE")
 _TENTATIVE = ("PROVISIONAL_DEFINITION", "CONFIG_PENDING", "SMALL_SAMPLE", "SYNTHETIC_SOURCE", "SNAPSHOT_STATUS_ASSUMED", "BLOCKED",
               "OUT_OF_CATALOG_NEED_NOT_SERVED", "EMPTY_RESULT")
 
