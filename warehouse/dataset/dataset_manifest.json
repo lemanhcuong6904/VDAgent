@@ -1,0 +1,107 @@
+{
+  "dataset_id": "vdagent_dw_re",
+  "dataset_name": "Central Data Warehouse VDAgent Master Dataset",
+  "dataset_version": "3.1.0",
+  "snapshot_id": "SNAP-20260630-01",
+  "snapshot_date": "2026-06-30",
+  "snapshot_frozen_date_key": "20260630",
+  "assembled_at": "2026-09-30T16:10:27.211825",
+  "projects_assembled": [
+    100,
+    200,
+    300,
+    400,
+    500
+  ],
+  "total_tables": 16,
+  "tables": {
+    "snapshot_manifest": {
+      "rows": 1,
+      "sha256": "8662913dc9d4ead2b87f1f70df5c546ce83abe8d093dd712bfeba6622dedc879",
+      "table_type": "shared"
+    },
+    "semantic_config": {
+      "rows": 47,
+      "sha256": "59a9bd0d6e30a1e666455df94c32cc503bc36ea21b249e12e4bc5fcb5c7e3ae6",
+      "table_type": "shared"
+    },
+    "dim_date": {
+      "rows": 401,
+      "sha256": "443486fd8579f6591a5e520422704291192b0431cec2436a0642095a5faf44be",
+      "table_type": "shared"
+    },
+    "dim_project_profile": {
+      "rows": 5,
+      "sha256": "7029320285041f546af23d26e7dfd66a5ebec9ba1571e51483dc882b435a1740",
+      "table_type": "master_concatenated"
+    },
+    "dim_zone_master": {
+      "rows": 89,
+      "sha256": "c93afdaa82f8e0a8d93e5cd1aa1e95e93453da76644b4de6993be5f75e3ae7d1",
+      "table_type": "master_concatenated"
+    },
+    "dim_unit_master": {
+      "rows": 47713,
+      "sha256": "9e99f57e69bc7c8278936bd009426cbef38a607c9c5db6545ebcdf119260a519",
+      "table_type": "master_concatenated"
+    },
+    "dim_sales_channel": {
+      "rows": 27,
+      "sha256": "741e36928b02f06fe0b9ce097983d7e59dc9b1206819725d7ad3c0183fea5faa",
+      "table_type": "master_concatenated"
+    },
+    "dim_infrastructure_assets": {
+      "rows": 18,
+      "sha256": "33b3ac12694e6e82e3ee3e6c7d88e9fb60421f89623855949b2da3b1b455eb31",
+      "table_type": "master_concatenated"
+    },
+    "dim_secondary_market_comps": {
+      "rows": 1556,
+      "sha256": "794eb687959252bf08aa7e84ecde06be11033576c4e5f818ec1c953ecea71994",
+      "table_type": "master_concatenated"
+    },
+    "fact_unit_inventory_snapshot": {
+      "rows": 47522,
+      "sha256": "0e9135140a63d3de5c2a61dba918caec60b86c0e26f629f42f253e4e87e3e03d",
+      "table_type": "master_concatenated",
+      "snapshot_frozen": "20260630",
+      "dropped_offsnapshot_rows": 292264
+    },
+    "fact_sales_funnel_daily": {
+      "rows": 89136,
+      "sha256": "3809c2bf55c63bc505b2e20ff91ccb8ce33ec96cab71dfc06bf97a2d161b4fd7",
+      "table_type": "master_concatenated"
+    },
+    "fact_unit_price_history": {
+      "rows": 4346,
+      "sha256": "846e84238d562b6ab07cfd7ccd5926c636f2e7f366f02da6aec5bb9b8de08258",
+      "table_type": "master_concatenated"
+    },
+    "fact_market_macro_monthly": {
+      "rows": 93,
+      "sha256": "d87fc7dbc4eade5e6a2c12ead609d9e8c1b66cef65b36be975da50f162d4f2d9",
+      "table_type": "master_concatenated"
+    },
+    "fact_sales_channel_performance": {
+      "rows": 27,
+      "sha256": "b50eea3a544a38f82f5cdb8732cc1a8d823d05839883799143d728452b50e016",
+      "table_type": "master_concatenated",
+      "snapshot_frozen": "20260630",
+      "dropped_offsnapshot_rows": 175
+    },
+    "dm_unit_friction_diagnostics": {
+      "rows": 5051,
+      "sha256": "3bb1575e8446dc240b36fb30020fa368d742f2f316be006c2486b5560f23f651",
+      "table_type": "master_concatenated",
+      "snapshot_frozen": "20260630",
+      "dropped_offsnapshot_rows": 1797
+    },
+    "unit_diagnostic_causes": {
+      "rows": 10797,
+      "sha256": "3bcb20204a2e1c5593d230b86491cd6f3c3f3fc495d0785e84d2df12b498faa2",
+      "table_type": "master_concatenated",
+      "snapshot_frozen": "20260630",
+      "dropped_offsnapshot_rows": 1797
+    }
+  }
+}
