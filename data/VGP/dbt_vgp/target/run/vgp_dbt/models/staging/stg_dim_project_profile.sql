@@ -1,0 +1,26 @@
+
+  
+  create view "vgp"."main_staging"."stg_dim_project_profile__dbt_tmp" as (
+    select
+    project_key,
+    project_id,
+    project_name,
+    market_id,
+    market_name,
+    province_city,
+    district,
+    developer_name,
+    developer_tier,
+    developer_origin,
+    segment,
+    construction_status,
+    construction_progress_pct,
+    is_sales_permit_issued,
+    is_bank_guarantee_issued,
+    max_foreign_quota_exceeded,
+    primary_infra_id,
+    distance_to_primary_infra_m,
+    partner_bank_name,
+    expected_handover_date
+from '../data/04_dim_project_profile.csv'
+  );
