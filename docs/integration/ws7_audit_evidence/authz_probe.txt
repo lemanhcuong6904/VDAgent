@@ -1,0 +1,10 @@
+report                 alice=200 bob=404 bob_body='{"error":{"code":"not_found","message":"report not found"}}'
+chart_spec             alice=200 bob=404 bob_body='{"error":{"code":"not_found","message":"chart_spec not found"}}'
+task                   alice=200 bob=404 bob_body='{"error":{"code":"not_found","message":"task not found"}}'
+report list            alice=200 bob=200 bob_body='[]'
+orchestrator messages  alice=200 bob=200 bob_body='{"summary":null,"messages":[],"pending":[]}'
+chart_spec wrong version alice: 404 | non-chart artifact via chart-specs: (404, '{"error":{"code":"not_found","message":"chart_spec not found"}}')
+no user header: (401,) | unknown user: (401, '{"error":{"code":"unknown_user","message":"unknown or missing user"}}')
+MCP without token: (401, '{"error":{"code":"invalid_token","message":"missing, unknown or revoked MCP token"}}')
+MCP bogus token: (401, '{"error":{"code":"invalid_token","message":"missing, unknown or revoked MCP token"}}')
+bob cancel alice task: (404, '{"error":{"code":"not_found","message":"task not found"}}')

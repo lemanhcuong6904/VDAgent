@@ -12,11 +12,13 @@ def user_dto(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def task_dto(row: Mapping[str, Any]) -> dict[str, Any]:
-    """`{id, root_agent, status, created_at, finished_at}`."""
+    """`{id, root_agent, status, outcome, created_at, finished_at}`; `outcome` is the run's business outcome
+    (completed | partial | failed | interrupted) or null when none was reported."""
     return {
         "id": row["id"],
         "root_agent": row["root_agent"],
         "status": row["status"],
+        "outcome": row.get("outcome"),
         "created_at": row["created_at"],
         "finished_at": row["finished_at"],
     }

@@ -1,10 +1,11 @@
 [project]
 name = "vdagent-data"
 version = "0.1.0"
-description = "vdagent data agent plugin (LiteLLM tool loop)"
+description = "vdagent data agent plugin (deterministic StepSpec path + LiteLLM tool loop for free text)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "vdagent-sdk",
+  "vdagent-contracts",
   "python-dotenv>=1.0",
   "litellm>=1.50",
   "mcp>=1.9",
@@ -12,6 +13,7 @@ dependencies = [
 
 [tool.uv.sources]
 vdagent-sdk = { workspace = true }
+vdagent-contracts = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

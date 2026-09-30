@@ -1,0 +1,164 @@
+Báo cáo căn A12-08 @ SNAP-2026-09-28
+rp_bc8aa7ae6b6f · Sep 30, 09:28 AM
+Báo cáo căn A12-08 @ SNAP-2026-09-28
+1. Bối cảnh
+Câu hỏi: Vì sao căn A12-08 bán chậm? So sánh với các căn tương đồng, vẽ biểu đồ và xuất báo cáo.
+Đối tượng: căn A12-08; dữ liệu SNAP-2026-09-28 / semantic sc-1; phạm vi được phép: PRJ-X.
+Dataset gốc: art_c554d1f0e566@1; đầu vào: art_02a67eccc7dd@1 (insight), art_a10f95f7c552@1 (peer_definition), art_3dc3a7a84d71@1 (comparison), art_33ccbe811abe@1 (chart_spec), art_b36634effe54@1 (chart_spec), art_f395f5c25beb@1 (chart_spec), art_a5841c8480e3@1 (chart_spec), art_bf85a54ca98a@1 (chart_spec).
+2. Tóm tắt điều hành
+Giá ròng/m²: 72.500.000 [S5] VND/m² so với trung vị nhóm tương đồng 64.500.000 [S6] VND/m² (chênh 12,40 [S7]%).
+DOM: 138 [S12] ngày so với trung vị nhóm tương đồng 61 [S13] ngày (chênh 126,23 [S14]%).
+Yếu tố có khả năng liên quan (theo Insight): OVERPRICED_VS_PEER. Đây là mối liên hệ quan sát được, không phải kết luận nhân quả.
+3. Chỉ số chính
+Chỉ số	Căn	Trung vị nhóm	Số căn	Chênh
+Giá ròng/m² (VND/m²)	72.500.000 [S1]	64.500.000 [S2]	5 [S3]	12,40 [S4]%
+DOM (ngày)	138 [S8]	61 [S9]	5 [S10]	126,23 [S11]%
+4. Phân tích & Insight
+OVERPRICED_VS_PEER — Căn A12-08 đã tồn 138 ngày; yếu tố có khả năng liên quan là giá cao hơn nhóm tương đồng, với mức chênh so với nhóm tương đồng +12,4%. (số liệu: 138 [S15], 12,40 [S16]) [art_02a67eccc7dd@1]
+Thời gian áp dụng trợ cấp chưa có dữ liệu đầy đủ. [art_02a67eccc7dd@1]
+Nhóm tương đồng theo luật hiện hành của Compare [art_a10f95f7c552@1]: A12-11, A10-02, A14-03, B09-05, B11-07. Tập 7 căn golden chưa có luật được duyệt (B-11), nên nhóm này chỉ mang tính mô tả.
+
+Đề xuất hành động (từ Insight, cần phê duyệt):
+
+Chỉ có 0 đề xuất được Insight hỗ trợ bằng bằng chứng; báo cáo không tự thêm đề xuất khác vì không có dữ liệu chứng minh.
+5. Bằng chứng & Trực quan hóa
+
+net_asking_price_per_m2: A12-08 so với trung vị 5 căn tương đồng (bar)
+
+art_33ccbe811abe@1
+net_asking_price_per_m2: A12-08 so với trung vị 5 căn tương đồng
+A12-08
+Trung vị 5 căn tương đồng
+label
+0
+10,000,000
+20,000,000
+30,000,000
+40,000,000
+50,000,000
+60,000,000
+70,000,000
+80,000,000
+net_asking_price_per_m2
+net_asking_price_per_m2: A12-08 so với trung vị 5 căn tương đồng
+
+dom: A12-08 so với trung vị 5 căn tương đồng (bar)
+
+art_b36634effe54@1
+dom: A12-08 so với trung vị 5 căn tương đồng
+A12-08
+Trung vị 5 căn tương đồng
+label
+0
+20
+40
+60
+80
+100
+120
+140
+dom
+dom: A12-08 so với trung vị 5 căn tương đồng
+
+Giá ròng/m² và DOM trong nhóm tương đồng (scatter)
+
+art_f395f5c25beb@1
+Giá ròng/m² và DOM trong nhóm tương đồng
+0
+10,000,000
+20,000,000
+30,000,000
+40,000,000
+50,000,000
+60,000,000
+70,000,000
+80,000,000
+net_asking_price_per_m2
+0
+20
+40
+60
+80
+100
+120
+140
+dom
+Giá ròng/m² và DOM trong nhóm tương đồng
+
+A12-08: 138 ngày (kpi_card)
+
+art_a5841c8480e3@1
+A12-08: 138 ngày
+A12-08 · dom
+138
+A12-08: 138 ngày
+
+A12-08: +12,4% (kpi_card)
+
+art_bf85a54ca98a@1
+A12-08: +12,4%
+A12-08 · spread
+12.4
+A12-08: +12,4%
+
+Bảng giá trị căn mục tiêu và nhóm tương đồng
+
+Căn	Vai trò	DOM (ngày)	Giá ròng/m² (VND)
+A12-08	subject	138 [S17]	72.500.000 [S18]
+A12-11	peer	46 [S19]	67.000.000 [S20]
+A10-02	peer	61 [S21]	64.500.000 [S22]
+A14-03	peer	42 [S23]	69.000.000 [S24]
+B09-05	peer	86 [S25]	61.500.000 [S26]
+B11-07	peer	105 [S27]	60.000.000 [S28]
+
+Nguồn số liệu (mỗi con số [S*] trỏ tới artifact và JSON pointer):
+
+S1: art_3dc3a7a84d71@1#/metrics/0/subjectValue
+S2: art_3dc3a7a84d71@1#/metrics/0/benchmark/value
+S3: art_3dc3a7a84d71@1#/metrics/0/benchmark/n
+S4: art_3dc3a7a84d71@1#/metrics/0/pctGap
+S5: art_3dc3a7a84d71@1#/metrics/0/subjectValue
+S6: art_3dc3a7a84d71@1#/metrics/0/benchmark/value
+S7: art_3dc3a7a84d71@1#/metrics/0/pctGap
+S8: art_3dc3a7a84d71@1#/metrics/1/subjectValue
+S9: art_3dc3a7a84d71@1#/metrics/1/benchmark/value
+S10: art_3dc3a7a84d71@1#/metrics/1/benchmark/n
+S11: art_3dc3a7a84d71@1#/metrics/1/pctGap
+S12: art_3dc3a7a84d71@1#/metrics/1/subjectValue
+S13: art_3dc3a7a84d71@1#/metrics/1/benchmark/value
+S14: art_3dc3a7a84d71@1#/metrics/1/pctGap
+S15: art_02a67eccc7dd@1#/insight/insights/0/claim/numeric_bindings/0/value
+S16: art_02a67eccc7dd@1#/insight/insights/0/claim/numeric_bindings/1/value
+S17: art_3dc3a7a84d71@1#/peerValues/0/values/dom
+S18: art_3dc3a7a84d71@1#/peerValues/0/values/net_asking_price_per_m2
+S19: art_3dc3a7a84d71@1#/peerValues/1/values/dom
+S20: art_3dc3a7a84d71@1#/peerValues/1/values/net_asking_price_per_m2
+S21: art_3dc3a7a84d71@1#/peerValues/2/values/dom
+S22: art_3dc3a7a84d71@1#/peerValues/2/values/net_asking_price_per_m2
+S23: art_3dc3a7a84d71@1#/peerValues/3/values/dom
+S24: art_3dc3a7a84d71@1#/peerValues/3/values/net_asking_price_per_m2
+S25: art_3dc3a7a84d71@1#/peerValues/4/values/dom
+S26: art_3dc3a7a84d71@1#/peerValues/4/values/net_asking_price_per_m2
+S27: art_3dc3a7a84d71@1#/peerValues/5/values/dom
+S28: art_3dc3a7a84d71@1#/peerValues/5/values/net_asking_price_per_m2
+6. Hạn chế & Chất lượng dữ liệu
+
+Hạn chế được mang từ các artifact đầu vào (mã → ý nghĩa):
+
+BLOCKED:B-2_min_peer_count — quyết định nghiệp vụ chưa được duyệt
+BLOCKED:D2b_segment_mapping — quyết định nghiệp vụ chưa được duyệt
+CONFIG_PENDING:min_group_size — tham số cấu hình semantic còn PENDING
+DQ_MISSING:asking_price_vnd:12 — một số dòng thiếu giá trị
+FIELD_UNAVAILABLE:asking_price_per_m2 — trường dữ liệu không có trong DW
+METRIC_UNAVAILABLE:discount_pct — chỉ số không có nguồn trong DW hoặc bị trống (giữ null, không thay bằng 0)
+METRIC_UNAVAILABLE:subsidy_duration_mo — chỉ số không có nguồn trong DW hoặc bị trống (giữ null, không thay bằng 0)
+SYNTHETIC_SOURCE:net_area_m2 — giá trị trong fixture là tổng hợp (B-3)
+WINDOW_INCOMPLETE:inquiry_leads_30d:3 — cửa sổ dữ liệu không đủ ngày (giữ null)
+
+Quyết định nghiệp vụ còn mở:
+
+B-11: luật chọn 7 căn tương đồng golden chưa được duyệt; báo cáo dùng nhóm do Compare chọn.
+B-2: min_peer_count chưa có giá trị được duyệt (Compare dùng mặc định của engine).
+D2b: chưa có ánh xạ segment; giữ nguyên giá trị DW.
+B-3: net_area_m2 trong fixture là số tổng hợp; ý nghĩa nghiệp vụ chưa xác nhận.
+B-12: một số ngưỡng sc-1 riêng của Insight còn PENDING.

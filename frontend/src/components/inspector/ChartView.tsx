@@ -18,7 +18,7 @@ export function ChartView({ id }: { id: string }) {
     setError(null);
     import("vega-embed")
       .then(({ default: embed }) =>
-        embed(el, { ...spec, width: "container", autosize: { type: "fit", contains: "padding" } } as VisualizationSpec, {
+        embed(el, { ...spec, width: "container", autosize: { type: "fit-x", contains: "padding" } } as VisualizationSpec, {
           actions: false,
           renderer: "svg",
         }),

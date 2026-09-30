@@ -1,0 +1,476 @@
+{
+  "tasks": [
+    {
+      "name": "kpi_card",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_kpi_card",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "project" },
+      "visual_targets": [{ "target_id": "vt_kpi_card", "visual_question": "current_value", "preferred_chart_type": "kpi_card", "artifact_ids": ["metric_kpi_card"] }],
+      "artifact_refs": [{ "artifact_id": "metric_kpi_card", "version": 1, "expected_hash": "sha256:metric-kpi-card-v1" }],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "kpi-card-v1"
+    },
+    {
+      "name": "line",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_line",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "month" },
+      "visual_targets": [{ "target_id": "vt_line", "visual_question": "trend", "preferred_chart_type": "line", "artifact_ids": ["metric_price_trend"] }],
+      "artifact_refs": [{ "artifact_id": "metric_price_trend", "version": 1, "expected_hash": "sha256:metric-price-trend-v1" }],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "line-v1"
+    },
+    {
+      "name": "area",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_area",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "month" },
+      "visual_targets": [{ "target_id": "vt_area", "visual_question": "trend", "preferred_chart_type": "area", "artifact_ids": ["metric_price_trend"] }],
+      "artifact_refs": [{ "artifact_id": "metric_price_trend", "version": 1, "expected_hash": "sha256:metric-price-trend-v1" }],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "area-v1"
+    },
+    {
+      "name": "bar",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_bar",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "group" },
+      "visual_targets": [{ "target_id": "vt_bar", "visual_question": "target_vs_peer", "preferred_chart_type": "bar", "artifact_ids": ["metric_dom_target", "metric_dom_peer", "comparison_dom_peer"] }],
+      "artifact_refs": [
+        { "artifact_id": "metric_dom_target", "version": 1, "expected_hash": "sha256:metric-dom-target-v1" },
+        { "artifact_id": "metric_dom_peer", "version": 1, "expected_hash": "sha256:metric-dom-peer-v1" },
+        { "artifact_id": "comparison_dom_peer", "version": 3, "expected_hash": "sha256:comparison-dom-peer-v3" }
+      ],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "bar-v1"
+    },
+    {
+      "name": "grouped_bar",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_grouped_bar",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "area_type" },
+      "visual_targets": [{ "target_id": "vt_grouped_bar", "visual_question": "comparison", "preferred_chart_type": "grouped_bar", "artifact_ids": ["metric_grouped_inventory"] }],
+      "artifact_refs": [{ "artifact_id": "metric_grouped_inventory", "version": 1, "expected_hash": "sha256:metric-grouped-inventory-v1" }],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "grouped-bar-v1"
+    },
+    {
+      "name": "stacked_bar",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_stacked_bar",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "area_type" },
+      "visual_targets": [{ "target_id": "vt_stacked_bar", "visual_question": "composition", "preferred_chart_type": "stacked_bar", "artifact_ids": ["metric_stacked_inventory"] }],
+      "artifact_refs": [{ "artifact_id": "metric_stacked_inventory", "version": 1, "expected_hash": "sha256:metric-stacked-inventory-v1" }],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "stacked-bar-v1"
+    },
+    {
+      "name": "pie",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_pie",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "status" },
+      "visual_targets": [{ "target_id": "vt_pie", "visual_question": "composition", "preferred_chart_type": "pie", "artifact_ids": ["metric_inventory_composition"] }],
+      "artifact_refs": [{ "artifact_id": "metric_inventory_composition", "version": 1, "expected_hash": "sha256:metric-inventory-composition-v1" }],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "pie-v1"
+    },
+    {
+      "name": "scatter",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_scatter",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "unit" },
+      "visual_targets": [{ "target_id": "vt_scatter", "visual_question": "relationship", "preferred_chart_type": "scatter", "artifact_ids": ["metric_price_dom_scatter"] }],
+      "artifact_refs": [{ "artifact_id": "metric_price_dom_scatter", "version": 1, "expected_hash": "sha256:metric-price-dom-scatter-v1" }],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "scatter-v1"
+    },
+    {
+      "name": "rich_context_relationship",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_rich_context_relationship",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "unit" },
+      "visual_targets": [
+        {
+          "target_id": "vt_rich_relationship",
+          "visual_question": "relationship",
+          "preferred_chart_type": "scatter",
+          "artifact_ids": [
+            "metric_price_dom_scatter",
+            "insight_synthetic_price_dom",
+            "comparison_synthetic_price_dom_segments",
+            "insight_synthetic_dom_distribution"
+          ]
+        }
+      ],
+      "artifact_refs": [
+        { "artifact_id": "metric_price_dom_scatter", "version": 1, "expected_hash": "sha256:metric-price-dom-scatter-v1" },
+        { "artifact_id": "insight_synthetic_price_dom", "version": 1, "expected_hash": "sha256:insight-synthetic-price-dom-v1" },
+        { "artifact_id": "comparison_synthetic_price_dom_segments", "version": 1, "expected_hash": "sha256:comparison-synthetic-price-dom-segments-v1" },
+        { "artifact_id": "insight_synthetic_dom_distribution", "version": 1, "expected_hash": "sha256:insight-synthetic-dom-distribution-v1" }
+      ],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "rich-context-relationship-v1"
+    },
+    {
+      "name": "histogram",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_histogram",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "unit" },
+      "visual_targets": [{ "target_id": "vt_histogram", "visual_question": "distribution", "preferred_chart_type": "histogram", "artifact_ids": ["metric_dom_distribution"] }],
+      "artifact_refs": [{ "artifact_id": "metric_dom_distribution", "version": 1, "expected_hash": "sha256:metric-dom-distribution-v1" }],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "histogram-v1"
+    },
+    {
+      "name": "box_plot",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_box_plot",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "unit" },
+      "visual_targets": [{ "target_id": "vt_box_plot", "visual_question": "distribution_comparison", "preferred_chart_type": "box_plot", "artifact_ids": ["metric_box_dom"] }],
+      "artifact_refs": [{ "artifact_id": "metric_box_dom", "version": 1, "expected_hash": "sha256:metric-box-dom-v1" }],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "box-plot-v1"
+    },
+    {
+      "name": "heatmap",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_heatmap_canonical",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "area_month" },
+      "visual_targets": [{ "target_id": "vt_heatmap_canonical", "visual_question": "matrix", "preferred_chart_type": "heatmap", "artifact_ids": ["metric_area_month_heatmap"] }],
+      "artifact_refs": [{ "artifact_id": "metric_area_month_heatmap", "version": 1, "expected_hash": "sha256:metric-area-month-heatmap-v1" }],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "heatmap-canonical-v1"
+    },
+    {
+      "name": "map",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_map",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "building" },
+      "visual_targets": [{ "target_id": "vt_map", "visual_question": "geospatial", "preferred_chart_type": "map", "artifact_ids": ["metric_map_price"] }],
+      "artifact_refs": [{ "artifact_id": "metric_map_price", "version": 1, "expected_hash": "sha256:metric-map-price-v1" }],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "map-v1"
+    },
+    {
+      "name": "funnel",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_funnel_canonical",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "stage" },
+      "visual_targets": [{ "target_id": "vt_funnel_canonical", "visual_question": "funnel", "preferred_chart_type": "funnel", "artifact_ids": ["metric_sales_funnel"] }],
+      "artifact_refs": [{ "artifact_id": "metric_sales_funnel", "version": 1, "expected_hash": "sha256:metric-sales-funnel-v1" }],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "funnel-canonical-v1"
+    },
+    {
+      "name": "waterfall",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_waterfall",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "component" },
+      "visual_targets": [{ "target_id": "vt_waterfall", "visual_question": "additive_change", "preferred_chart_type": "waterfall", "artifact_ids": ["metric_waterfall_price"] }],
+      "artifact_refs": [{ "artifact_id": "metric_waterfall_price", "version": 1, "expected_hash": "sha256:metric-waterfall-price-v1" }],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "waterfall-v1"
+    },
+    {
+      "name": "treemap",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_treemap",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "hierarchy" },
+      "visual_targets": [{ "target_id": "vt_treemap", "visual_question": "hierarchy", "preferred_chart_type": "treemap", "artifact_ids": ["metric_treemap_inventory"] }],
+      "artifact_refs": [{ "artifact_id": "metric_treemap_inventory", "version": 1, "expected_hash": "sha256:metric-treemap-inventory-v1" }],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "treemap-v1"
+    },
+    {
+      "name": "bullet",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_bullet",
+      "mode": "direct_visualization",
+      "scope": { "project_ids": ["VHOP"], "snapshot_id": "2026-06-30", "data_grain": "project" },
+      "visual_targets": [{ "target_id": "vt_bullet", "visual_question": "actual_vs_target", "preferred_chart_type": "bullet", "artifact_ids": ["metric_bullet_sales"] }],
+      "artifact_refs": [{ "artifact_id": "metric_bullet_sales", "version": 1, "expected_hash": "sha256:metric-bullet-sales-v1" }],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "bullet-v1"
+    },
+    {
+      "name": "dom_peer",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_dom_peer",
+      "mode": "direct_visualization",
+      "scope": {
+        "project_ids": ["VHOP"],
+        "snapshot_id": "2026-06-30",
+        "data_grain": "group"
+      },
+      "visual_targets": [
+        {
+          "target_id": "vt_dom_peer",
+          "visual_question": "target_vs_peer",
+          "preferred_chart_type": "bar",
+          "artifact_ids": [
+            "metric_dom_target",
+            "metric_dom_peer",
+            "evidence_dom_peer",
+            "comparison_dom_peer"
+          ]
+        }
+      ],
+      "artifact_refs": [
+        {
+          "artifact_id": "metric_dom_target",
+          "version": 1,
+          "expected_hash": "sha256:metric-dom-target-v1"
+        },
+        {
+          "artifact_id": "metric_dom_peer",
+          "version": 1,
+          "expected_hash": "sha256:metric-dom-peer-v1"
+        },
+        {
+          "artifact_id": "evidence_dom_peer",
+          "version": 1,
+          "expected_hash": "sha256:evidence-dom-peer-v1"
+        },
+        {
+          "artifact_id": "comparison_dom_peer",
+          "version": 3,
+          "expected_hash": "sha256:comparison-dom-peer-v3"
+        }
+      ],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "dom-peer-v3"
+    },
+    {
+      "name": "price_trend",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_price_trend",
+      "mode": "direct_visualization",
+      "scope": {
+        "project_ids": ["VHOP"],
+        "snapshot_id": "2026-06-30",
+        "data_grain": "month"
+      },
+      "visual_targets": [
+        {
+          "target_id": "vt_price_trend",
+          "visual_question": "trend",
+          "preferred_chart_type": "line",
+          "artifact_ids": ["metric_price_trend"]
+        }
+      ],
+      "artifact_refs": [
+        {
+          "artifact_id": "metric_price_trend",
+          "version": 1,
+          "expected_hash": "sha256:metric-price-trend-v1"
+        }
+      ],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "price-trend-v1"
+    },
+    {
+      "name": "inventory_composition",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_inventory",
+      "mode": "direct_visualization",
+      "scope": {
+        "project_ids": ["VHOP"],
+        "snapshot_id": "2026-06-30",
+        "data_grain": "status"
+      },
+      "visual_targets": [
+        {
+          "target_id": "vt_inventory",
+          "visual_question": "composition",
+          "preferred_chart_type": "pie",
+          "artifact_ids": ["metric_inventory_composition"]
+        }
+      ],
+      "artifact_refs": [
+        {
+          "artifact_id": "metric_inventory_composition",
+          "version": 1,
+          "expected_hash": "sha256:metric-inventory-composition-v1"
+        }
+      ],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "inventory-v1"
+    },
+    {
+      "name": "dom_distribution",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_distribution",
+      "mode": "direct_visualization",
+      "scope": {
+        "project_ids": ["VHOP"],
+        "snapshot_id": "2026-06-30",
+        "data_grain": "unit"
+      },
+      "visual_targets": [
+        {
+          "target_id": "vt_distribution",
+          "visual_question": "distribution",
+          "preferred_chart_type": "histogram",
+          "artifact_ids": ["metric_dom_distribution"]
+        }
+      ],
+      "artifact_refs": [
+        {
+          "artifact_id": "metric_dom_distribution",
+          "version": 1,
+          "expected_hash": "sha256:metric-dom-distribution-v1"
+        }
+      ],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "distribution-v1"
+    },
+    {
+      "name": "price_dom_relationship",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_relationship",
+      "mode": "direct_visualization",
+      "scope": {
+        "project_ids": ["VHOP"],
+        "snapshot_id": "2026-06-30",
+        "data_grain": "unit"
+      },
+      "visual_targets": [
+        {
+          "target_id": "vt_relationship",
+          "visual_question": "relationship",
+          "preferred_chart_type": "scatter",
+          "artifact_ids": ["metric_price_dom_scatter"]
+        }
+      ],
+      "artifact_refs": [
+        {
+          "artifact_id": "metric_price_dom_scatter",
+          "version": 1,
+          "expected_hash": "sha256:metric-price-dom-scatter-v1"
+        }
+      ],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "relationship-v1"
+    },
+    {
+      "name": "sales_funnel",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_funnel",
+      "mode": "direct_visualization",
+      "scope": {
+        "project_ids": ["VHOP"],
+        "snapshot_id": "2026-06-30",
+        "data_grain": "stage"
+      },
+      "visual_targets": [
+        {
+          "target_id": "vt_funnel",
+          "visual_question": "funnel",
+          "preferred_chart_type": "funnel",
+          "artifact_ids": ["metric_sales_funnel"]
+        }
+      ],
+      "artifact_refs": [
+        {
+          "artifact_id": "metric_sales_funnel",
+          "version": 1,
+          "expected_hash": "sha256:metric-sales-funnel-v1"
+        }
+      ],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "funnel-v1"
+    },
+    {
+      "name": "area_month_heatmap",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_heatmap",
+      "mode": "direct_visualization",
+      "scope": {
+        "project_ids": ["VHOP"],
+        "snapshot_id": "2026-06-30",
+        "data_grain": "area_month"
+      },
+      "visual_targets": [
+        {
+          "target_id": "vt_heatmap",
+          "visual_question": "matrix",
+          "preferred_chart_type": "heatmap",
+          "artifact_ids": ["metric_area_month_heatmap"]
+        }
+      ],
+      "artifact_refs": [
+        {
+          "artifact_id": "metric_area_month_heatmap",
+          "version": 1,
+          "expected_hash": "sha256:metric-area-month-heatmap-v1"
+        }
+      ],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "heatmap-v1"
+    },
+    {
+      "name": "missing_dependency",
+      "schema_version": "chart-task/2.0",
+      "run_id": "run_vhop_demo_001",
+      "task_id": "chart_task_missing_dependency",
+      "mode": "direct_visualization",
+      "scope": {
+        "project_ids": ["VHOP"],
+        "snapshot_id": "2026-06-30",
+        "data_grain": "unit"
+      },
+      "visual_targets": [
+        {
+          "target_id": "vt_missing",
+          "visual_question": "current_value",
+          "artifact_ids": ["metric_not_ready"]
+        }
+      ],
+      "artifact_refs": [
+        { "artifact_id": "metric_not_ready", "version": 1, "required": true }
+      ],
+      "policy_ref": "chart-policy/demo-1.0",
+      "idempotency_key": "missing-v1"
+    }
+  ]
+}

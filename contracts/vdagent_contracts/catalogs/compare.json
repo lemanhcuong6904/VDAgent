@@ -1,0 +1,65 @@
+{
+  "agent": "compare",
+  "contract_version": "1.0.0",
+  "catalog_version": "ws5-1",
+  "fixture": false,
+  "operations": [
+    {
+      "operation": "compare_to_peers",
+      "description": "So căn với nhóm tương đồng (net_area_m2, dung sai tỉ lệ sc-1) → peer_definition + comparison. Tập peer: B-11 BLOCKED.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "subject"
+        ]
+      },
+      "input_fields": {
+        "dataset": "input_refs",
+        "metric": "input_refs",
+        "dq": "input_refs"
+      },
+      "requires": [
+        "dataset",
+        "metric",
+        "dq"
+      ],
+      "produces": [
+        "peer_definition",
+        "comparison"
+      ],
+      "outputs": [
+        "CHAT_ANSWER"
+      ],
+      "serves": [
+        "COMPARE"
+      ],
+      "deadline_s": 60,
+      "error_codes": {
+        "CLARIFICATION_NEEDED": "NEED_INPUT",
+        "INPUT_HASH_MISMATCH": "WRONG_RESULT",
+        "INPUT_HASH_REQUIRED": "SPEC_ISSUE",
+        "INPUT_INVALID": "DATA_QUALITY",
+        "INPUT_NOT_FOUND": "NO_DATA",
+        "INPUT_SCHEMA_UNSUPPORTED": "SPEC_ISSUE",
+        "INPUT_TYPE_MISMATCH": "WRONG_RESULT",
+        "INPUT_TYPE_UNSUPPORTED": "SPEC_ISSUE",
+        "INVALID_INPUT": "SPEC_ISSUE",
+        "INVALID_SPEC": "SPEC_ISSUE",
+        "LINEAGE_MISMATCH": "WRONG_RESULT",
+        "MISSING_INPUT": "SPEC_ISSUE",
+        "PERMISSION_DENIED": "NO_ACCESS",
+        "SCOPE_VIOLATION": "NO_ACCESS",
+        "SEMANTIC_VERSION_MISMATCH": "SPEC_ISSUE",
+        "SEMANTIC_VERSION_REQUIRED": "SPEC_ISSUE",
+        "SNAPSHOT_MISMATCH": "SPEC_ISSUE",
+        "SNAPSHOT_REQUIRED": "SPEC_ISSUE",
+        "SUBJECT_AMBIGUOUS": "NEED_INPUT",
+        "SUBJECT_AREA_UNAVAILABLE": "DATA_QUALITY",
+        "SUBJECT_NOT_FOUND": "NO_DATA",
+        "TOOL_FAILED": "TRANSIENT",
+        "UNKNOWN_OPERATION": "SPEC_ISSUE",
+        "USER_CONTEXT_MISMATCH": "NO_ACCESS"
+      }
+    }
+  ]
+}

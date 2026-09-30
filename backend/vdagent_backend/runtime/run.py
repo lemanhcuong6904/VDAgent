@@ -74,6 +74,7 @@ class Run:
     task: asyncio.Task[None] | None = None
     cancel_requested: bool = False
     finished: bool = False  # left the turn; child results are discarded from here on
+    outcome: str | None = None  # the business outcome its turn reported (`ctx.report_outcome`, WS7 F-03)
     done: asyncio.Event = field(default_factory=asyncio.Event)
     step: Step = field(default_factory=Step)
     # accepted child calls awaiting their result: tool_call id → child run (one wait-for edge each)

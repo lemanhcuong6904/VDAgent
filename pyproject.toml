@@ -5,13 +5,16 @@ description = "vdagent PoC: multi-agent analytics assistant (uv workspace root)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "vdagent-sdk",
+  "vdagent-contracts",
   "vdagent-backend",
+  "vdagent-agentkit",
   "vdagent-agent-template",
   "vdagent-orchestrator",
   "vdagent-data",
   "vdagent-compare",
   "vdagent-insight",
   "vdagent-report",
+  "vdagent-chart",
 ]
 
 [tool.uv]
@@ -20,24 +23,30 @@ package = false
 [tool.uv.workspace]
 members = [
   "sdk",
+  "contracts",
   "backend",
+  "agents/_shared",
   "agents/_template",
   "agents/orchestrator",
   "agents/data",
   "agents/compare",
   "agents/insight",
   "agents/report",
+  "agents/chart",
 ]
 
 [tool.uv.sources]
 vdagent-sdk = { workspace = true }
+vdagent-contracts = { workspace = true }
 vdagent-backend = { workspace = true }
+vdagent-agentkit = { workspace = true }
 vdagent-agent-template = { workspace = true }
 vdagent-orchestrator = { workspace = true }
 vdagent-data = { workspace = true }
 vdagent-compare = { workspace = true }
 vdagent-insight = { workspace = true }
 vdagent-report = { workspace = true }
+vdagent-chart = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -50,7 +59,7 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-testpaths = ["backend/tests", "agents"]
+testpaths = ["backend/tests", "contracts", "agents"]
 
 [tool.basedpyright]
 venvPath = "."
@@ -58,11 +67,14 @@ venv = ".venv"
 typeCheckingMode = "standard"
 extraPaths = [
   "sdk",
+  "contracts",
   "backend",
+  "agents/_shared",
   "agents/_template",
   "agents/orchestrator",
   "agents/data",
   "agents/compare",
   "agents/insight",
   "agents/report",
+  "agents/chart",
 ]

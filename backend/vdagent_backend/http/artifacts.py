@@ -1,4 +1,4 @@
-"""`/api/datasets`, `/api/charts`, `/api/reports`: read the user's artifacts."""
+"""`/api/datasets`, `/api/charts`, `/api/chart-specs`, `/api/reports`: read the user's artifacts."""
 
 from __future__ import annotations
 
@@ -7,7 +7,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Query
 
 from vdagent_backend.http.deps import Svc, UserId
-from vdagent_backend.http.errors import not_found
+from vdagent_backend.artifacts import ArtifactError
+from vdagent_backend.http.errors import ApiError, not_found
 
 router = APIRouter(prefix="/api")
 
@@ -41,6 +42,18 @@ async def get_chart(svc: Svc, user_id: UserId, chart_id: str) -> dict[str, Any]:
     chart = await svc.artifacts.get_chart(user_id, chart_id)
     if chart is None:
         raise not_found("chart")
+    return chart
+
+
+@router.get("/chart-specs/{artifact_id}/{version}")
+async def get_chart_spec(svc: Svc, user_id: UserId, artifact_id: str, version: int) -> dict[str, Any]:
+    """A pinned `chart_spec` artifact version (report embeds `{{chart_spec:<id>@<version>}}`) with its Vega-Lite spec."""
+    try:
+        chart = await svc.artifacts.get_chart_spec(user_id, artifact_id, version)
+    except ArtifactError as exc:
+        raise ApiError(422, "invalid_chart_spec", str(exc)) from None
+    if chart is None:
+        raise not_found("chart_spec")
     return chart
 
 

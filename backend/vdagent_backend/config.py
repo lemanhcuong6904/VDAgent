@@ -56,6 +56,7 @@ class Config:
     max_depth: int = 4
     max_steps: int = 12
     plugins: list[PluginSpec] = field(default_factory=list)
+    re_warehouse_db: str = "./var/re_warehouse.db"  # real-estate DW mock (D7)
 
 
 _PLUGIN_KEYS = frozenset({"module", "opts", "enabled", "mcp_tools"})

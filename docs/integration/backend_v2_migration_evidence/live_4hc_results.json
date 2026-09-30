@@ -1,0 +1,106 @@
+{
+ "HC1": {
+  "task": "t_03ae934efcef",
+  "status": "completed",
+  "outcome": "partial",
+  "secs": 13.3,
+  "agents": [
+   [
+    "orchestrator",
+    "completed"
+   ],
+   [
+    "data",
+    "completed"
+   ],
+   [
+    "insight",
+    "completed"
+   ]
+  ],
+  "answer": "Phân tích căn A12-08 @ SNAP-2026-09-28 / sc-1 (một phần — xem hạn chế bên dưới).\n- OVERPRICED_VS_PEER: Căn A12-08 đã tồn 138 ngày; giá cao hơn nhóm tương đồng có khả năng liên quan, với +12,4% so với 7 căn. [art_5d12eaf9be75]\n- Chưa thể đánh giá subsidy_duration_mo do trường dữ liệu thiếu quá nhiều nên không được sử dụng; dữ liệu thiếu không ngẫu nhiên giữa căn quá hạn và căn đã bán. [art_5d12eaf9be75]\n\n| Bước | Agent | Trạng thái | Artifact |\n|---|---|---|---|\n| B1 | data.fetch_units | hoàn tất | art_2cd7febd14b5, art_aa9b35df9945, art_e878dca7ecfe |\n| B2 | insight.explain_unit | hoàn tất | art_5d12eaf9be75 |\n\nHạn chế: BLOCKED:D2b_segment_mapping, CONFIG_PENDING:min_group_size, FIELD_UNAVAILABLE:asking_price_per_m2, METRIC_UNAVAILABLE:discount_pct, METRIC_UNAVAILABLE:subsidy_duration_mo, SYNTHETIC_SOURCE:net_area_m2, WINDOW_INCOMPLETE:inquiry_leads_30d:3\n\nrun_state: art_c139646913a3 · plan pl_1b0eb7359b09"
+ },
+ "HC2": {
+  "task": "t_6abdaca3e649",
+  "status": "completed",
+  "outcome": "partial",
+  "secs": 9.6,
+  "agents": [
+   [
+    "orchestrator",
+    "completed"
+   ],
+   [
+    "data",
+    "completed"
+   ],
+   [
+    "compare",
+    "completed"
+   ]
+  ],
+  "answer": "Phân tích căn A12-08 @ SNAP-2026-09-28 / sc-1 (một phần — xem hạn chế bên dưới).\n- net_asking_price_per_m2: 72.500.000 VND/m² so với trung vị 64.500.000 VND/m² của 5 căn tương đồng (chênh 12,40%) [art_1fd6c8a7ec81]\n- dom: 138 ngày so với trung vị 61 ngày của 5 căn tương đồng (chênh 126,23%) [art_1fd6c8a7ec81]\n- Nhóm tương đồng theo luật hiện hành của Compare: 5 căn (A12-11, A10-02, A14-03, B09-05, B11-07) [art_63e838f221dc]. Tập 7 căn golden chưa có luật được duyệt (B-11).\n\n| Bước | Agent | Trạng thái | Artifact |\n|---|---|---|---|\n| B1 | data.fetch_units | hoàn tất | art_7a9d5fe35c9f, art_cc31d7681d89, art_f453e817f0b8 |\n| B2 | compare.compare_to_peers | hoàn tất | art_63e838f221dc, art_1fd6c8a7ec81 |\n\nHạn chế: BLOCKED:B-2_min_peer_count, BLOCKED:D2b_segment_mapping, CONFIG_PENDING:min_group_size, DQ_MISSING:asking_price_vnd:12, METRIC_UNAVAILABLE:discount_pct, METRIC_UNAVAILABLE:subsidy_duration_mo, SYNTHETIC_SOURCE:net_area_m2, WINDOW_INCOMPLETE:inquiry_leads_30d:3\n\nrun_state: art_ac0ef8651731 · plan pl_005e19042881"
+ },
+ "HC3": {
+  "task": "t_324d918b704f",
+  "status": "completed",
+  "outcome": "partial",
+  "secs": 19.3,
+  "agents": [
+   [
+    "orchestrator",
+    "completed"
+   ],
+   [
+    "data",
+    "completed"
+   ],
+   [
+    "insight",
+    "completed"
+   ],
+   [
+    "compare",
+    "completed"
+   ],
+   [
+    "chart",
+    "completed"
+   ]
+  ],
+  "answer": "Phân tích căn A12-08 @ SNAP-2026-09-28 / sc-1 (một phần — xem hạn chế bên dưới).\n- net_asking_price_per_m2: 72.500.000 VND/m² so với trung vị 64.500.000 VND/m² của 5 căn tương đồng (chênh 12,40%) [art_24c8caf04053]\n- dom: 138 ngày so với trung vị 61 ngày của 5 căn tương đồng (chênh 126,23%) [art_24c8caf04053]\n- Nhóm tương đồng theo luật hiện hành của Compare: 5 căn (A12-11, A10-02, A14-03, B09-05, B11-07) [art_0c3e5ad25ea5]. Tập 7 căn golden chưa có luật được duyệt (B-11).\n- OVERPRICED_VS_PEER: Căn A12-08 đã tồn 138 ngày; giá cao hơn nhóm tương đồng có khả năng liên quan, với mức chênh lệch so với peer là +12,4%. [art_13482e5ffa0e]\n- Chưa thể đánh giá đầy đủ subsidy_duration_mo do dữ liệu bị thiếu và không ngẫu nhiên. [art_13482e5ffa0e]\n- Biểu đồ: art_7822e992e911, art_b8590d6d83d3, art_7a0a1da85064, art_72a3bf84d92d, art_6f9579330e11\n\n| Bước | Agent | Trạng thái | Artifact |\n|---|---|---|---|\n| B1 | data.fetch_units | hoàn tất | art_381578f44c1c, art_1d907c4cdc9a, art_9b3897699687 |\n| B2 | insight.explain_unit | hoàn tất | art_13482e5ffa0e |\n| B3 | compare.compare_to_peers | hoàn tất | art_0c3e5ad25ea5, art_24c8caf04053 |\n| B4 | chart.draw_chart | hoàn tất | art_7822e992e911, art_b8590d6d83d3, art_7a0a1da85064, art_72a3bf84d92d, art_6f9579330e11 |\n\nHạn chế: BLOCKED:B-2_min_peer_count, BLOCKED:D2b_segment_mapping, CONFIG_PENDING:min_group_size, DQ_MISSING:asking_price_vnd:12, FIELD_UNAVAILABLE:asking_price_per_m2, METRIC_UNAVAILABLE:discount_pct, METRIC_UNAVAILABLE:subsidy_duration_mo, SYNTHETIC_SOURCE:net_area_m2, WINDOW_INCOMPLETE:inquiry_leads_30d:3\n\nrun_state: art_1a7c1f845a84 · plan pl_7c4048f0e2a9"
+ },
+ "HC4": {
+  "task": "t_83903208ef05",
+  "status": "completed",
+  "outcome": "partial",
+  "secs": 25.3,
+  "agents": [
+   [
+    "orchestrator",
+    "completed"
+   ],
+   [
+    "data",
+    "completed"
+   ],
+   [
+    "insight",
+    "completed"
+   ],
+   [
+    "compare",
+    "completed"
+   ],
+   [
+    "chart",
+    "completed"
+   ],
+   [
+    "report",
+    "completed"
+   ]
+  ],
+  "answer": "Phân tích căn A12-08 @ SNAP-2026-09-28 / sc-1 (một phần — xem hạn chế bên dưới).\n- net_asking_price_per_m2: 72.500.000 VND/m² so với trung vị 64.500.000 VND/m² của 5 căn tương đồng (chênh 12,40%) [art_d52fdfa01646]\n- dom: 138 ngày so với trung vị 61 ngày của 5 căn tương đồng (chênh 126,23%) [art_d52fdfa01646]\n- Nhóm tương đồng theo luật hiện hành của Compare: 5 căn (A12-11, A10-02, A14-03, B09-05, B11-07) [art_58fdadc44a95]. Tập 7 căn golden chưa có luật được duyệt (B-11).\n- OVERPRICED_VS_PEER: Căn A12-08 đã tồn 138 ngày; yếu tố có khả năng liên quan là giá cao hơn nhóm tương đồng, với mức chênh so với nhóm tương đồng là +12,4%. [art_31c944be2be3]\n- Thông tin về thời hạn trợ giá bị thiếu. [art_31c944be2be3]\n- Biểu đồ: art_71956a8c7408, art_3447ab990dc4, art_ae29e6242a92, art_91d545d46b91, art_34bd84c02334\n- Báo cáo đã lưu: art_3bd065dbe498\n\n| Bước | Agent | Trạng thái | Artifact |\n|---|---|---|---|\n| B1 | data.fetch_units | hoàn tất | art_f8d8a4a49335, art_3bc66fd16c35, art_1bc49c70a67b |\n| B2 | insight.explain_unit | hoàn tất | art_31c944be2be3 |\n| B3 | compare.compare_to_peers | hoàn tất | art_58fdadc44a95, art_d52fdfa01646 |\n| B4 | chart.draw_chart | hoàn tất | art_71956a8c7408, art_3447ab990dc4, art_ae29e6242a92, art_91d545d46b91, art_34bd84c02334 |\n| B5 | report.draft_report | hoàn tất | art_3bd065dbe498 |\n\nHạn chế: BLOCKED:B-2_min_peer_count, BLOCKED:D2b_segment_mapping, CONFIG_PENDING:min_group_size, DQ_MISSING:asking_price_vnd:12, FIELD_UNAVAILABLE:asking_price_per_m2, METRIC_UNAVAILABLE:discount_pct, METRIC_UNAVAILABLE:subsidy_duration_mo, SYNTHETIC_SOURCE:net_area_m2, WINDOW_INCOMPLETE:inquiry_leads_30d:3\n\nrun_state: art_b32d28954c3a · plan pl_332969939600"
+ }
+}

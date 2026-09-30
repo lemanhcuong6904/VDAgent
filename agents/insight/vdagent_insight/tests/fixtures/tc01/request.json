@@ -1,0 +1,67 @@
+{
+  "run_id": "0f8fad5b-d9cb-469f-a165-70867728950e",
+  "task_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "attempt": 1,
+  "fencing_token": 1,
+  "intent": "SLOW_MOVING_INVESTIGATION",
+  "tasks": [
+    "T1",
+    "T6",
+    "T7"
+  ],
+  "question_normalized": "Vì sao căn SAPPHIRE1-16.231 bán chậm?",
+  "analysis_scope": {
+    "level": "UNIT",
+    "project_ids": [
+      "PRJ-VHOP"
+    ],
+    "zone_ids": [
+      "ZN-SAPPHIRE1"
+    ],
+    "unit_ids": [
+      "U00231"
+    ]
+  },
+  "snapshot_id": "SNAP-20260630-01",
+  "semantic_config_version": "3.1.0",
+  "user_context": {
+    "user_id": "usr_sales_ops_01",
+    "role": "SALES_OPS",
+    "authorized_scope": {
+      "project_ids": [
+        "PRJ-VHOP"
+      ],
+      "zone_ids": [
+        "ZN-SAPPHIRE1"
+      ]
+    }
+  },
+  "input_artifact_refs": [
+    {
+      "artifact_id": "ART-METRIC-TC01",
+      "artifact_type": "metric",
+      "version": 1,
+      "status": "VALID",
+      "content_hash": "a1c836e94134c991aaa5fdb3c0fc9be2db10e38d0487ad7b1e688a1e1a7a2557"
+    },
+    {
+      "artifact_id": "ART-DQ-TC01",
+      "artifact_type": "dq",
+      "version": 1,
+      "status": "VALID",
+      "content_hash": "07657512cb1b68bc9d4a6ad6b941905529b0414440dc0f7586052fee241f6ea2"
+    },
+    {
+      "artifact_id": "ART-DATASET-TC01",
+      "artifact_type": "dataset",
+      "version": 1,
+      "status": "VALID",
+      "content_hash": "512b787c0312b4415061ce63ca7c67dee3a73e6ea63f057487130ba23c6a5ce8"
+    }
+  ],
+  "constraints": {
+    "language": "vi",
+    "deadline_ms": 60000
+  },
+  "conversation_id": "3b241101-e2bb-4255-8caf-4136c566a962"
+}

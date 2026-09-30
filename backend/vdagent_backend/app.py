@@ -4,8 +4,9 @@
 from tests) has no side effects. The app MUST run as a single process.
 
 `create_app` checks the plugin grants against the MCP catalog, then builds what needs no plugins:
-the database engine (no connection yet), SSE bus, MCP tokens, `ArtifactService`, `Warehouse` and
-the MCP server. The lifespan migrates the database (worker thread), loads the plugins, builds the
+the database engine (no connection yet), SSE bus, MCP tokens, `ArtifactService`, `Warehouse`, the
+real-estate `RealEstateWarehouse`, `UserScopes` and the MCP server. Startup recovery reconciles the run_states of
+interrupted tasks through `ArtifactService.interrupt_run`. The lifespan migrates the database (worker thread), loads the plugins, builds the
 `Engine`, runs startup recovery and starts the MCP session manager; request-time objects live in
 one `Services` on `app.state.services`. On exit: stop the engine, run the plugins' shutdown hooks,
 dispose the database engine. `/mcp` is routed ahead of everything else; the built frontend is
@@ -32,7 +33,8 @@ from vdagent_backend.mcp import TOOL_NAMES, McpServer, McpTools
 from vdagent_backend.persistence import create_database, migrate, sqlite_url
 from vdagent_backend.plugins import PluginManager
 from vdagent_backend.runtime import Engine
-from vdagent_backend.warehouse import Warehouse
+from vdagent_backend.scopes import UserScopes
+from vdagent_backend.warehouse import RealEstateWarehouse, Warehouse
 
 
 def create_app(cfg: Config | None = None) -> FastAPI:
@@ -47,14 +49,20 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     db = create_database(url)
     bus, tokens = EventBus(), TokenRegistry()
     artifacts = ArtifactService(db)
-    mcp = McpServer(McpTools(artifacts, Warehouse(cfg.warehouse_db)), tokens)
+    tools = McpTools(
+        artifacts,
+        Warehouse(cfg.warehouse_db),
+        re_warehouse=RealEstateWarehouse(cfg.re_warehouse_db) if cfg.re_warehouse_db else None,
+        scopes=UserScopes(db),
+    )
+    mcp = McpServer(tools, tokens)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await asyncio.to_thread(migrate, url)
         plugins = PluginManager()
         registry = await plugins.load(cfg.plugins)
-        engine = Engine(cfg, db, bus, tokens, registry)
+        engine = Engine(cfg, db, bus, tokens, registry, on_interrupted=artifacts.interrupt_run)
         app.state.services = http.Services(
             users=Users(db), tasks=Tasks(db), messages=Messages(db), artifacts=artifacts, engine=engine, bus=bus
         )
