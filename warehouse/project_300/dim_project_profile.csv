@@ -1,0 +1,2 @@
+project_key,project_id,project_name,market_id,market_name,province_city,district,developer_name,developer_tier,developer_origin,segment,construction_status,construction_progress_pct,is_sales_permit_issued,is_bank_guarantee_issued,max_foreign_quota_exceeded,primary_infra_id,distance_to_primary_infra_m,partner_bank_name,expected_handover_date
+300,PRJ-VGP,Vinhomes Grand Park,MKT-THUDUC-VGP,Thu Duc - Vinhomes Grand Park,TP. Ho Chi Minh,TP. Thu Duc,Vingroup (Vinhomes),TIER_1,DOMESTIC,MID_HIGH,SUPERSTRUCTURE,92.5,True,False,False,INF-METRO-01,1405,Techcombank,2028-12-31

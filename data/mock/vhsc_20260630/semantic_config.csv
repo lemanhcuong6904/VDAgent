@@ -1,0 +1,13 @@
+config_key,config_value,value_type,semantic_version,approval_status,description
+overdue_threshold_days,90,INTEGER,3.1.0,APPROVED,Synthetic POC rule: overdue_threshold_days
+peer_min_size,5,INTEGER,3.1.0,APPROVED,Synthetic POC rule: peer_min_size
+peer_area_tolerance_pct,10,DECIMAL,3.1.0,APPROVED,Synthetic POC rule: peer_area_tolerance_pct
+secondary_gap_threshold_pct,15,DECIMAL,3.1.0,APPROVED,Synthetic POC rule: secondary_gap_threshold_pct
+overpriced_peer_threshold_pct,8,DECIMAL,3.1.0,APPROVED,Synthetic POC rule: overpriced_peer_threshold_pct
+physical_penalty_threshold,25,INTEGER,3.1.0,APPROVED,Synthetic POC rule: physical_penalty_threshold
+thermal_penalty_threshold,40,INTEGER,3.1.0,APPROVED,Synthetic POC rule: thermal_penalty_threshold
+pir_threshold,25,DECIMAL,3.1.0,APPROVED,Synthetic POC rule: pir_threshold
+low_commission_threshold_pct,1.5,DECIMAL,3.1.0,APPROVED,Synthetic POC rule: low_commission_threshold_pct
+funnel_dropoff_threshold_pct,60,DECIMAL,3.1.0,APPROVED,Synthetic POC rule: funnel_dropoff_threshold_pct
+secondary_comp_max_age_days,90,INTEGER,3.1.0,APPROVED,Synthetic POC rule: secondary_comp_max_age_days
+max_attribution_rank,3,INTEGER,3.1.0,APPROVED,Synthetic POC rule: max_attribution_rank

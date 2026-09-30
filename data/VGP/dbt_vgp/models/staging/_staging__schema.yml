@@ -1,0 +1,112 @@
+version: 2
+
+models:
+  - name: stg_snapshot_manifest
+    description: >
+      Metadata tung ky snapshot, gom cot is_active (MO RONG so voi schema v3
+      goc - danh dau kỳ nao dang la kỳ CHINH THUC dung de bao cao, theo yeu
+      cau nghiep vu; khac voi kỳ moi NAP gan nhat = MAX(snapshot_date)).
+    columns:
+      - name: snapshot_id
+        tests:
+          - unique
+          - not_null
+      - name: is_active
+        tests:
+          - not_null
+
+  - name: stg_bridge_unit_channel_history
+    description: >
+      Bridge table (mo rong ngoai schema v3 goc) - giai quyet quan he N-N
+      "can ho <-> san phan phoi theo thoi gian". Grain: 1 dong / 1 giai doan
+      1 san phu trach lien tuc 1 can. Nguon: 16_bridge_unit_channel_history.csv.
+    columns:
+      - name: bridge_id
+        description: Surrogate key, 1 dong / 1 giai doan phu trach.
+        tests:
+          - unique
+          - not_null
+      - name: unit_key
+        description: FK toi dim_unit_master.
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_dim_unit_master')
+              field: unit_key
+      - name: channel_key
+        description: FK toi dim_sales_channel.
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_dim_sales_channel')
+              field: channel_key
+      - name: is_current
+        description: Co dung TRUE cho dung 1 giai doan/1 can (giai doan dang phu trach hien tai).
+        tests:
+          - not_null
+      - name: assignment_type
+        description: "Loai phan cong: EXCLUSIVE (doc quyen) hoac CO_LISTING (dong ky gui)."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['EXCLUSIVE', 'CO_LISTING']
+
+  - name: stg_fact_funnel_attribution
+    description: >
+      Attribution table (mo rong ngoai schema v3 goc) - mo hinh LINEAR gan trong
+      so dong gop cho tung touchpoint phau (fact_sales_funnel_daily) dan toi 1
+      giao dich ban thanh cong. Grain: 1 dong / 1 touchpoint duoc gan attribution.
+      Nguon: 17_fact_funnel_attribution.csv.
+    columns:
+      - name: attribution_id
+        description: Surrogate key, 1 dong / 1 touchpoint duoc gan attribution.
+        tests:
+          - unique
+          - not_null
+      - name: funnel_event_id
+        description: FK toi fact_sales_funnel_daily - touchpoint goc duoc gan cong.
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_fact_sales_funnel_daily')
+              field: funnel_event_id
+      - name: unit_key
+        description: FK toi dim_unit_master - can da chuyen doi (SOLD).
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_dim_unit_master')
+              field: unit_key
+      - name: channel_key
+        description: >
+          Kenh duoc ghi cong tai dung thoi diem touchpoint (xac dinh qua
+          bridge_unit_channel_history, khong phai channel_key hien tai).
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_dim_sales_channel')
+              field: channel_key
+      - name: attribution_model
+        description: Mo hinh phan bo cong. Hien tai chi ho tro LINEAR (chia deu).
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['LINEAR']
+      - name: attribution_weight
+        description: >
+          Trong so dong gop cua touchpoint nay (0 < weight <= 1). Voi mo hinh
+          LINEAR: weight = 1 / so touchpoint cua cung 1 can. Tong weight theo
+          tung unit_key phai xap xi 1.0 - xem test rieng
+          assert_attribution_weight_sums_to_one.sql.
+        tests:
+          - not_null
+      - name: outcome_type
+        description: Ket qua chuyen doi duoc gan cong. Hien tai chi co SOLD (attribution chi tinh cho can da ban).
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['SOLD']
+      - name: outcome_date_key
+        description: Ngay xay ra outcome (FK toi dim_date).
+        tests:
+          - not_null
