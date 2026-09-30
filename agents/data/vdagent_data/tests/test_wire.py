@@ -334,3 +334,11 @@ def test_an_internal_warning_becomes_a_typed_warning_that_keeps_the_original(raw
     w = map_warning(raw)
     assert w["code"] == code and w.get("target") == target and 0 < len(w["message"]) <= 300
     assert w["details"]["raw"] == raw
+
+
+def test_every_operation_of_the_agent_has_a_package_kind() -> None:
+    from vdagent_data.v1 import OPERATIONS  # noqa: PLC0415
+    from vdagent_data.wire import PACKAGE_OF_OPERATION  # noqa: PLC0415
+
+    assert set(PACKAGE_OF_OPERATION) == set(OPERATIONS)
+    assert {kind for _, kind in PACKAGE_OF_OPERATION.values()} == {"unit_set", "metric_table", "peer_set", "context_bundle"}
