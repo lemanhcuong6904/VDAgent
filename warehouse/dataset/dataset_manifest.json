@@ -4,7 +4,8 @@
   "dataset_version": "3.1.0",
   "snapshot_id": "SNAP-20260630-01",
   "snapshot_date": "2026-06-30",
-  "assembled_at": "2026-09-30T13:08:46.602699",
+  "snapshot_frozen_date_key": "20260630",
+  "assembled_at": "2026-09-30T16:10:27.211825",
   "projects_assembled": [
     100,
     200,
@@ -60,9 +61,11 @@
       "table_type": "master_concatenated"
     },
     "fact_unit_inventory_snapshot": {
-      "rows": 339786,
-      "sha256": "ad718a4865b74e4913c271adfa0684ad3c1bafdcaf378c364353b133518c289a",
-      "table_type": "master_concatenated"
+      "rows": 47522,
+      "sha256": "0e9135140a63d3de5c2a61dba918caec60b86c0e26f629f42f253e4e87e3e03d",
+      "table_type": "master_concatenated",
+      "snapshot_frozen": "20260630",
+      "dropped_offsnapshot_rows": 292264
     },
     "fact_sales_funnel_daily": {
       "rows": 89136,
@@ -80,19 +83,25 @@
       "table_type": "master_concatenated"
     },
     "fact_sales_channel_performance": {
-      "rows": 202,
-      "sha256": "ecd74b83956210698ee8a9b74c3ec9b034275388a1423c49829bfc76470b2a38",
-      "table_type": "master_concatenated"
+      "rows": 27,
+      "sha256": "b50eea3a544a38f82f5cdb8732cc1a8d823d05839883799143d728452b50e016",
+      "table_type": "master_concatenated",
+      "snapshot_frozen": "20260630",
+      "dropped_offsnapshot_rows": 175
     },
     "dm_unit_friction_diagnostics": {
-      "rows": 6848,
-      "sha256": "9b595c4ed6478b5a681d0a03cc11036ade1db9e18ed2e96ff58a0fedac4a0601",
-      "table_type": "master_concatenated"
+      "rows": 5051,
+      "sha256": "3bb1575e8446dc240b36fb30020fa368d742f2f316be006c2486b5560f23f651",
+      "table_type": "master_concatenated",
+      "snapshot_frozen": "20260630",
+      "dropped_offsnapshot_rows": 1797
     },
     "unit_diagnostic_causes": {
-      "rows": 12594,
-      "sha256": "7cead5162489d2129d064f3014b9316a323a0721a80a23815ab06ef52150d8fa",
-      "table_type": "master_concatenated"
+      "rows": 10797,
+      "sha256": "3bcb20204a2e1c5593d230b86491cd6f3c3f3fc495d0785e84d2df12b498faa2",
+      "table_type": "master_concatenated",
+      "snapshot_frozen": "20260630",
+      "dropped_offsnapshot_rows": 1797
     }
   }
 }

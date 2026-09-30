@@ -16,6 +16,13 @@ PROJECT_KEYS = [100, 200, 300, 400, 500]
 SHARED_DIR = BASE_DIR / "shared"
 DATASET_DIR = BASE_DIR / "dataset"
 
+# M4 SNAPSHOT FREEZE — contract invariant: snapshot_date_key toàn bộ = 20260630.
+# Một số pack (project_300 monthly, project_400 weekly) bàn giao dưới dạng
+# time-series nhiều snapshot. Khi gom Master Dataset, chỉ giữ lát cắt đóng băng
+# 2026-06-30 cho MỌI bảng có cột snapshot_date_key. Các bảng dùng date/time key
+# khác (funnel daily, price history, macro monthly) giữ nguyên chuỗi thời gian.
+SNAPSHOT_FREEZE = "20260630"
+
 # Ensure UTF-8 output encoding on Windows terminal
 if sys.stdout.encoding != 'utf-8':
     try:
@@ -132,7 +139,11 @@ def assemble_dataset():
     project_tables = [t for t in EXPECTED_HEADERS.keys() if t not in shared_tables]
     for ptname in project_tables:
         expected_cols = EXPECTED_HEADERS[ptname]
+        # Bảng có cột snapshot_date_key thì áp dụng đóng băng 2026-06-30.
+        snap_idx = expected_cols.index("snapshot_date_key") \
+            if "snapshot_date_key" in expected_cols else None
         combined_rows = []
+        dropped_offsnapshot = 0
 
         for pkey in PROJECT_KEYS:
             p_file = BASE_DIR / f"project_{pkey}" / f"{ptname}.csv"
@@ -143,6 +154,10 @@ def assemble_dataset():
             header, rows = read_csv_clean(p_file)
             if header != expected_cols:
                 print(f"⚠️ Cảnh báo: Lệch header ở project_{pkey}/{ptname}.csv")
+            if snap_idx is not None:
+                kept = [r for r in rows if len(r) > snap_idx and r[snap_idx] == SNAPSHOT_FREEZE]
+                dropped_offsnapshot += len(rows) - len(kept)
+                rows = kept
             combined_rows.extend(rows)
 
         dst = DATASET_DIR / f"{ptname}.csv"
@@ -155,9 +170,15 @@ def assemble_dataset():
         table_stats[ptname] = {
             "rows": len(combined_rows),
             "sha256": sha,
-            "table_type": "master_concatenated"
+            "table_type": "master_concatenated",
         }
-        print(f"  📦 [Master] {ptname}.csv: {len(combined_rows)} dòng (tổng hợp từ 5 projects) -> {dst.name}")
+        if snap_idx is not None:
+            table_stats[ptname]["snapshot_frozen"] = SNAPSHOT_FREEZE
+            table_stats[ptname]["dropped_offsnapshot_rows"] = dropped_offsnapshot
+            print(f"  📦 [Master] {ptname}.csv: {len(combined_rows)} dòng "
+                  f"(đóng băng {SNAPSHOT_FREEZE}, loại {dropped_offsnapshot} dòng off-snapshot) -> {dst.name}")
+        else:
+            print(f"  📦 [Master] {ptname}.csv: {len(combined_rows)} dòng (tổng hợp từ 5 projects) -> {dst.name}")
 
     # 3. Sinh file dataset_manifest.json
     manifest_data = {
@@ -166,6 +187,7 @@ def assemble_dataset():
         "dataset_version": "3.1.0",
         "snapshot_id": "SNAP-20260630-01",
         "snapshot_date": "2026-06-30",
+        "snapshot_frozen_date_key": SNAPSHOT_FREEZE,
         "assembled_at": datetime.now().isoformat(),
         "projects_assembled": PROJECT_KEYS,
         "total_tables": len(table_stats),
