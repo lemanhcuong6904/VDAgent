@@ -1,0 +1,5 @@
+1 t_bd00872bb83d completed ['orchestrator', 'data', 'insight', 'compare', 'chart', 'report'] | Phân tích căn A12-08 @ SNAP-2026-09-28 / sc-1 (một phần — xem hạn chế bên dưới). - net_asking_price_per_m2: 72.500.000 V
+1 t_fb1986b3cbe3 completed ['orchestrator', 'data', 'insight', 'compare', 'chart', 'report'] | Phân tích căn A12-08 @ SNAP-2026-09-28 / sc-1 (một phần — xem hạn chế bên dưới). - net_asking_price_per_m2: 72.500.000 V
+2 t_1896e0f58544 completed ['orchestrator', 'data'] | Không hoàn thành phân tích căn A12-08: bước B1 (data) thất bại — UNIT_NOT_FOUND: unit A12-08 was not found in your autho
+1 t_a9b418ae0076 completed ['orchestrator', 'data', 'insight'] | Phân tích căn A12-08 @ SNAP-2026-09-28 / sc-1 (một phần — xem hạn chế bên dưới). - OVERPRICED_VS_PEER: Căn A12-08 tồn 13
+ALL_TIDS [["u_000000000001", "t_bd00872bb83d"], ["u_000000000001", "t_fb1986b3cbe3"], ["u_000000000002", "t_1896e0f58544"], ["u_000000000001", "t_a9b418ae0076"]]

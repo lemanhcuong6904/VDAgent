@@ -50,8 +50,19 @@ tasks = Table(
     Column("status", Text, nullable=False),
     _created_at(),
     Column("finished_at", UtcTimestamp),
+    Column("outcome", Text),  # completed | partial | failed | interrupted (NULL: not reported) — WS7 F-03/F-04
+    Column("idempotency_key", Text),  # client Idempotency-Key of the triggering message — WS7 F-11
     CheckConstraint("status IN ('running','completed','failed','cancelled')"),
     Index("ix_tasks_user", "user_id", "created_at"),
+)
+# One task per (user, agent, key): a retried request returns the first task instead of running again.
+Index(
+    "ux_tasks_idempotency",
+    tasks.c.user_id,
+    tasks.c.root_agent,
+    tasks.c.idempotency_key,
+    unique=True,
+    sqlite_where=tasks.c.idempotency_key.isnot(None),
 )
 
 invocations = Table(
@@ -142,7 +153,7 @@ charts = Table(
     Column("invocation_id", Text, ForeignKey("invocations.id"), nullable=False),
     Column("dataset_id", Text, ForeignKey("datasets.id"), nullable=False),
     Column("title", Text, nullable=False),
-    Column("spec_json", Json, nullable=False),  # Vega-Lite v5, data inlined
+    Column("spec_json", Json, nullable=False),  # Vega-Lite v6, data inlined
     _created_at(),
 )
 
@@ -172,4 +183,46 @@ memories = Table(
     _created_at(),
     Index("ix_memories_scope", "user_id", "agent", "id"),
     sqlite_autoincrement=True,
+)
+
+# Artifact envelopes (D5): immutable, versioned, content-hashed; owned by one user. A correction is a new version of
+# the same artifact_id and the previous version's status becomes SUPERSEDED — the only update the SQLite triggers
+# (in the migrations, like the memory index) allow; deletes are refused.
+artifacts = Table(
+    "artifacts",
+    metadata,
+    Column("artifact_id", Text, nullable=False),  # art_…
+    Column("version", Integer, nullable=False),
+    Column("run_id", Text, nullable=False),
+    Column("task_id", Text, nullable=False),
+    Column("user_id", Text, ForeignKey("users.id"), nullable=False),
+    Column("artifact_type", Text, nullable=False),
+    Column("schema_version", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("producer_json", Text, nullable=False),
+    Column("content_hash", Text, nullable=False),
+    Column("snapshot_refs_json", Text, nullable=False),
+    Column("semantic_config_version", Text),
+    Column("source_refs_json", Text, nullable=False),
+    Column("input_refs_json", Text, nullable=False),
+    Column("evidence_refs_json", Text, nullable=False),
+    Column("limitations_json", Text, nullable=False),
+    Column("reason_code", Text),
+    Column("reason", Text),
+    Column("payload_json", Text, nullable=False),  # canonical JSON, Decimal as string
+    Column("created_at", Text, nullable=False),
+    PrimaryKeyConstraint("artifact_id", "version"),
+    CheckConstraint("version >= 1"),
+    CheckConstraint("status IN ('DRAFT','VALID','PARTIAL','INVALID','SUPERSEDED')"),
+    Index("ix_artifacts_run", "user_id", "run_id", "artifact_type"),
+)
+
+# Authorized scope per user (D8): a whole project (zone_id NULL) or one zone of it; unique per
+# (user, project, zone) through an expression index in the migrations.
+user_scopes = Table(
+    "user_scopes",
+    metadata,
+    Column("user_id", Text, ForeignKey("users.id"), nullable=False),
+    Column("project_id", Text, nullable=False),
+    Column("zone_id", Text),
 )

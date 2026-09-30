@@ -1,0 +1,249 @@
+{
+  "agent": "data",
+  "contract_version": "1.0.0",
+  "catalog_version": "1.4.0",
+  "operations": [
+    {
+      "operation": "fetch_units",
+      "description": "Đọc re_warehouse theo snapshot APPROVED: căn mục tiêu (và ứng viên cùng loại căn) → dataset/metric/dq (re_*@1).",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "subject_unit_code"
+        ],
+        "properties": {
+          "subject_unit_code": {
+            "type": "string"
+          },
+          "population": {
+            "enum": [
+              "subject",
+              "peer_candidates"
+            ]
+          },
+          "project_ids": {
+            "type": "array"
+          }
+        }
+      },
+      "requires": [],
+      "produces": [
+        "dataset",
+        "metric",
+        "dq"
+      ],
+      "outputs": [],
+      "serves": [
+        "LOOKUP"
+      ],
+      "deadline_s": 60,
+      "error_codes": {
+        "EMPTY_POPULATION": "NO_DATA",
+        "INTERNAL_ERROR": "FATAL",
+        "INVALID_SPEC": "SPEC_ISSUE",
+        "INVALID_STEPSPEC": "SPEC_ISSUE",
+        "RESULT_TRUNCATED": "DATA_QUALITY",
+        "SEMANTIC_VERSION_MISMATCH": "SPEC_ISSUE",
+        "SEMANTIC_VERSION_REQUIRED": "SPEC_ISSUE",
+        "SNAPSHOT_NOT_APPROVED": "SPEC_ISSUE",
+        "SNAPSHOT_REQUIRED": "SPEC_ISSUE",
+        "SNAPSHOT_UNKNOWN": "SPEC_ISSUE",
+        "SUBJECT_AREA_UNAVAILABLE": "DATA_QUALITY",
+        "TOOL_FAILED": "TRANSIENT",
+        "UNIT_AMBIGUOUS": "NEED_INPUT",
+        "UNIT_NOT_FOUND": "NO_DATA",
+        "UNKNOWN_METRIC": "SPEC_ISSUE",
+        "UNKNOWN_OPERATION": "SPEC_ISSUE",
+        "UNSUPPORTED_CONTRACT": "SPEC_ISSUE",
+        "USER_CONTEXT_MISMATCH": "NO_ACCESS"
+      }
+    },
+    {
+      "operation": "aggregate_metrics",
+      "description": "Trung vị metric theo nhóm trong scope (re_warehouse, snapshot APPROVED) → dataset/metric/dq.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "metrics"
+        ],
+        "properties": {
+          "metrics": {
+            "type": "array"
+          },
+          "group_by": {
+            "type": "array"
+          },
+          "filters": {
+            "type": "object"
+          }
+        }
+      },
+      "requires": [],
+      "produces": [
+        "dataset",
+        "metric",
+        "dq"
+      ],
+      "outputs": [],
+      "serves": [
+        "LOOKUP"
+      ],
+      "deadline_s": 60,
+      "error_codes": {
+        "EMPTY_POPULATION": "NO_DATA",
+        "INTERNAL_ERROR": "FATAL",
+        "INVALID_SPEC": "SPEC_ISSUE",
+        "INVALID_STEPSPEC": "SPEC_ISSUE",
+        "RESULT_TRUNCATED": "DATA_QUALITY",
+        "SEMANTIC_VERSION_MISMATCH": "SPEC_ISSUE",
+        "SEMANTIC_VERSION_REQUIRED": "SPEC_ISSUE",
+        "SNAPSHOT_NOT_APPROVED": "SPEC_ISSUE",
+        "SNAPSHOT_REQUIRED": "SPEC_ISSUE",
+        "SNAPSHOT_UNKNOWN": "SPEC_ISSUE",
+        "SUBJECT_AREA_UNAVAILABLE": "DATA_QUALITY",
+        "TOOL_FAILED": "TRANSIENT",
+        "UNIT_AMBIGUOUS": "NEED_INPUT",
+        "UNIT_NOT_FOUND": "NO_DATA",
+        "UNKNOWN_METRIC": "SPEC_ISSUE",
+        "UNKNOWN_OPERATION": "SPEC_ISSUE",
+        "UNSUPPORTED_CONTRACT": "SPEC_ISSUE",
+        "USER_CONTEXT_MISMATCH": "NO_ACCESS"
+      }
+    }
+  ],
+  "vocabulary": {
+    "metrics": [
+      {
+        "name": "absorption_rate",
+        "description": "Tỷ lệ hấp thụ: căn đã bán / căn đã mở bán"
+      },
+      {
+        "name": "avg_dom_unsold",
+        "description": "DOM trung bình của căn còn trống (ngày)"
+      },
+      {
+        "name": "slow_moving_count",
+        "description": "Số căn bán chậm (quá ngưỡng)"
+      },
+      {
+        "name": "slow_moving_rate",
+        "description": "Tỷ lệ căn bán chậm trên căn còn trống"
+      },
+      {
+        "name": "avg_net_price_per_m2",
+        "description": "Đơn giá ròng trung bình (VND/m²)"
+      },
+      {
+        "name": "unit_count",
+        "description": "Số căn"
+      }
+    ],
+    "dimensions": [
+      {
+        "name": "project",
+        "description": "Dự án"
+      },
+      {
+        "name": "zone",
+        "description": "Phân khu / tòa"
+      },
+      {
+        "name": "market",
+        "description": "Thị trường / khu vực"
+      },
+      {
+        "name": "floor_band",
+        "description": "Nhóm tầng LOW/MID/HIGH/TOP"
+      },
+      {
+        "name": "balcony_orientation",
+        "description": "Hướng ban công"
+      },
+      {
+        "name": "view_primary_type",
+        "description": "Loại view chính"
+      },
+      {
+        "name": "unit_type",
+        "description": "Loại căn (1PN/2PN/3PN)"
+      },
+      {
+        "name": "launch_batch",
+        "description": "Đợt mở bán"
+      },
+      {
+        "name": "channel",
+        "description": "Kênh / sàn phân phối"
+      }
+    ],
+    "filters": [
+      {
+        "name": "released",
+        "description": "Căn đã mở bán"
+      },
+      {
+        "name": "available",
+        "description": "Căn còn trống"
+      },
+      {
+        "name": "sold",
+        "description": "Căn đã bán"
+      },
+      {
+        "name": "slow_moving",
+        "description": "Căn bán chậm: còn trống và DOM vượt ngưỡng quá hạn"
+      }
+    ],
+    "attributes": [
+      {
+        "name": "unit_code",
+        "description": "Mã căn"
+      },
+      {
+        "name": "zone",
+        "description": "Phân khu"
+      },
+      {
+        "name": "unit_type",
+        "description": "Loại căn"
+      },
+      {
+        "name": "area_m2",
+        "description": "Diện tích (m²)"
+      },
+      {
+        "name": "floor_band",
+        "description": "Nhóm tầng"
+      },
+      {
+        "name": "balcony_orientation",
+        "description": "Hướng ban công"
+      },
+      {
+        "name": "view_primary_type",
+        "description": "View chính"
+      },
+      {
+        "name": "launch_batch",
+        "description": "Đợt mở bán"
+      },
+      {
+        "name": "inventory_status",
+        "description": "Trạng thái tồn kho"
+      },
+      {
+        "name": "unsold_days_dom",
+        "description": "DOM (ngày)"
+      },
+      {
+        "name": "asking_price_vnd",
+        "description": "Giá chào (VND)"
+      },
+      {
+        "name": "net_price_per_m2",
+        "description": "Đơn giá ròng (VND/m²)"
+      }
+    ]
+  },
+  "fixture": false
+}

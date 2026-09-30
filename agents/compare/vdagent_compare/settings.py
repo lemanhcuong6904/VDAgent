@@ -1,7 +1,8 @@
-"""LLM settings: this plugin folder's `.env` over the Backend's process environment.
+"""Model settings: this plugin folder's `.env` over the Backend's process environment.
 
 Every plugin shares the Backend's process, so the `.env` is read with `dotenv_values()` into a
-mapping and `os.environ` is never modified (it is shared with every other plugin).
+mapping and `os.environ` is never modified (it is shared with every other plugin). The model is optional:
+without `OPENAI_API_KEY` (or with `COMPARE_LLM=off`) Compare answers with rules and templates only.
 """
 
 from __future__ import annotations
@@ -15,15 +16,17 @@ from dotenv import dotenv_values
 from vdagent_sdk import PluginConfigError
 
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"  # agents/<name>/.env
-REQUIRED_VARS: tuple[str, ...] = ("OPENAI_API_KEY", "OPENAI_BASE_URL", "LLM_MODEL")
-DEFAULT_LLM_TIMEOUT_S = 120.0
+DEFAULT_BASE_URL = "https://api.openai.com/v1"
+DEFAULT_MODEL = "gpt-6-luna"  # spec §1.9: planning and wording
+DEFAULT_FALLBACK_MODEL = "gpt-4o-mini"
+DEFAULT_LLM_TIMEOUT_S = 20.0  # the step deadline is 30 s (spec §3.4); two calls must fit
 
 
 @dataclass(frozen=True)
-class Settings:
+class LLMSettings:
     openai_api_key: str
     openai_base_url: str
-    llm_model: str
+    models: tuple[str, ...]
     llm_timeout_s: float
 
 
@@ -33,21 +36,24 @@ def read_env(env_file: Path = ENV_FILE) -> dict[str, str]:
     return {**os.environ, **{k: v for k, v in from_file.items() if v is not None}}
 
 
-def load_settings(env: Mapping[str, str]) -> Settings:
-    """Read and validate the LLM settings; `PluginConfigError` names the offending variable."""
-    for var in REQUIRED_VARS:
-        if not env.get(var, "").strip():
-            raise PluginConfigError(f"missing required environment variable {var}")
+def load_llm_settings(env: Mapping[str, str]) -> LLMSettings | None:
+    """`None` when no model should be used; `PluginConfigError` names a malformed variable."""
+    key = env.get("OPENAI_API_KEY", "").strip()
+    if not key or env.get("COMPARE_LLM", "").strip().lower() in {"off", "0", "false", "no"}:
+        return None
     raw_timeout = env.get("LLM_TIMEOUT_S", "").strip()
     try:
-        llm_timeout_s = float(raw_timeout) if raw_timeout else DEFAULT_LLM_TIMEOUT_S
+        timeout = float(raw_timeout) if raw_timeout else DEFAULT_LLM_TIMEOUT_S
     except ValueError:
         raise PluginConfigError(f"LLM_TIMEOUT_S must be a number; got {raw_timeout!r}") from None
-    if llm_timeout_s <= 0:
-        raise PluginConfigError(f"LLM_TIMEOUT_S must be positive; got {llm_timeout_s:g}")
-    return Settings(
-        openai_api_key=env["OPENAI_API_KEY"].strip(),
-        openai_base_url=env["OPENAI_BASE_URL"].strip(),
-        llm_model=env["LLM_MODEL"].strip(),
-        llm_timeout_s=llm_timeout_s,
+    if timeout <= 0:
+        raise PluginConfigError(f"LLM_TIMEOUT_S must be positive; got {timeout:g}")
+    primary = env.get("LLM_MODEL", "").strip() or DEFAULT_MODEL
+    fallback = env.get("LLM_FALLBACK_MODEL", DEFAULT_FALLBACK_MODEL).strip()
+    models = tuple(dict.fromkeys(m for m in (primary, fallback) if m))
+    return LLMSettings(
+        openai_api_key=key,
+        openai_base_url=env.get("OPENAI_BASE_URL", "").strip() or DEFAULT_BASE_URL,
+        models=models,
+        llm_timeout_s=timeout,
     )

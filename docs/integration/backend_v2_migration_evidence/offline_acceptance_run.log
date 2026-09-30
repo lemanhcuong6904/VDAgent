@@ -1,0 +1,323 @@
+ Image vdagent-python:latest Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.12kB done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile.python
+#2 transferring dockerfile: 3.20kB done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.8s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/node:22-slim
+#5 DONE 0.0s
+
+#6 [internal] load metadata for ghcr.io/astral-sh/uv:0.11
+#6 ...
+
+#7 [internal] load metadata for docker.io/library/python:3.12-slim
+#7 DONE 0.8s
+
+#6 [internal] load metadata for ghcr.io/astral-sh/uv:0.11
+#6 DONE 1.0s
+
+#8 [internal] load .dockerignore
+#8 transferring context: 172B done
+#8 DONE 0.0s
+
+#9 FROM ghcr.io/astral-sh/uv:0.11@sha256:77280f2f771df71f90786c314fe1bbc1e023feac652969bbf139c280babf2eb7
+#9 DONE 0.0s
+
+#10 [frontend 1/6] FROM docker.io/library/node:22-slim
+#10 DONE 0.0s
+
+#11 [base  1/15] FROM docker.io/library/python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
+#11 DONE 0.0s
+
+#12 [internal] load build context
+#12 transferring context: 290.05kB 0.0s done
+#12 DONE 0.0s
+
+#13 [base 12/15] COPY agents/compare/pyproject.toml agents/compare/pyproject.toml
+#13 CACHED
+
+#14 [base  3/15] WORKDIR /app
+#14 CACHED
+
+#15 [base  9/15] COPY agents/_template/pyproject.toml agents/_template/pyproject.toml
+#15 CACHED
+
+#16 [base  7/15] COPY backend/pyproject.toml backend/pyproject.toml
+#16 CACHED
+
+#17 [base  8/15] COPY agents/_shared/pyproject.toml agents/_shared/pyproject.toml
+#17 CACHED
+
+#18 [base 11/15] COPY agents/data/pyproject.toml agents/data/pyproject.toml
+#18 CACHED
+
+#19 [base  6/15] COPY contracts/pyproject.toml contracts/pyproject.toml
+#19 CACHED
+
+#20 [base  2/15] COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /bin/
+#20 CACHED
+
+#21 [base 14/15] COPY agents/report/pyproject.toml agents/report/pyproject.toml
+#21 CACHED
+
+#22 [base 10/15] COPY agents/orchestrator/pyproject.toml agents/orchestrator/pyproject.toml
+#22 CACHED
+
+#23 [base  5/15] COPY sdk/pyproject.toml sdk/pyproject.toml
+#23 CACHED
+
+#24 [base 13/15] COPY agents/insight/pyproject.toml agents/insight/pyproject.toml
+#24 CACHED
+
+#25 [base  4/15] COPY pyproject.toml uv.lock .python-version ./
+#25 CACHED
+
+#26 [frontend 4/6] RUN npm ci
+#26 CACHED
+
+#27 [frontend 5/6] COPY frontend/ ./
+#27 CACHED
+
+#28 [frontend 2/6] WORKDIR /frontend
+#28 CACHED
+
+#29 [frontend 3/6] COPY frontend/package.json frontend/package-lock.json ./
+#29 CACHED
+
+#30 [base 15/15] COPY agents/chart/pyproject.toml agents/chart/pyproject.toml
+#30 CACHED
+
+#31 [frontend 6/6] RUN npm run build
+#31 CACHED
+
+#32 [runtime 1/9] RUN --mount=type=cache,target=/root/.cache/uv     uv sync --frozen --no-dev --no-install-workspace
+#32 0.222 Using CPython 3.12.14 interpreter at: /usr/local/bin/python3.12
+#32 0.223 Creating virtual environment at: .venv
+#32 1.766 Installed 102 packages in 1.47s
+#32 4.553 Bytecode compiled 7472 files in 2.78s
+#32 4.554  + aiohappyeyeballs==2.7.1
+#32 4.554  + aiohttp==3.14.3
+#32 4.554  + aiosignal==1.4.0
+#32 4.554  + aiosqlite==0.22.1
+#32 4.554  + alembic==1.20.0
+#32 4.554  + annotated-doc==0.0.5
+#32 4.554  + annotated-types==0.8.0
+#32 4.554  + anyio==4.15.1
+#32 4.554  + attrs==26.1.0
+#32 4.554  + boto3==1.43.101
+#32 4.554  + botocore==1.43.101
+#32 4.554  + certifi==2026.7.22
+#32 4.554  + cffi==2.1.1
+#32 4.554  + charset-normalizer==3.5.1
+#32 4.554  + click==8.5.0
+#32 4.554  + cryptography==50.0.1
+#32 4.554  + distro==1.9.0
+#32 4.554  + fastapi==0.141.1
+#32 4.554  + fastuuid==0.14.0
+#32 4.554  + filelock==4.0.3
+#32 4.554  + frozenlist==1.8.0
+#32 4.554  + fsspec==2026.9.0
+#32 4.554  + google-auth==2.59.0
+#32 4.554  + google-genai==2.25.0
+#32 4.554  + greenlet==3.5.6
+#32 4.554  + h11==0.16.0
+#32 4.554  + hf-xet==1.6.0
+#32 4.554  + httpcore==1.0.9
+#32 4.554  + httpcore2==2.13.1
+#32 4.554  + httptools==0.8.0
+#32 4.554  + httpx==0.28.1
+#32 4.554  + httpx2==2.13.1
+#32 4.554  + huggingface-hub==1.32.0
+#32 4.554  + idna==3.20
+#32 4.555  + importlib-metadata==8.9.0
+#32 4.555  + jinja2==3.1.6
+#32 4.555  + jiter==0.17.0
+#32 4.555  + jmespath==1.1.0
+#32 4.555  + jsonpatch==1.33
+#32 4.555  + jsonpointer==3.1.1
+#32 4.555  + jsonschema==4.26.0
+#32 4.555  + jsonschema-specifications==2025.9.1
+#32 4.555  + langchain-core==1.6.5
+#32 4.555  + langchain-openai==1.6.6
+#32 4.555  + langchain-protocol==0.0.19
+#32 4.555  + langgraph==1.2.12
+#32 4.555  + langgraph-checkpoint==4.2.0
+#32 4.555  + langgraph-prebuilt==1.1.0
+#32 4.555  + langgraph-sdk==0.4.5
+#32 4.555  + langsmith==0.14.1
+#32 4.555  + litellm==1.102.1
+#32 4.555  + mako==1.4.3
+#32 4.555  + markupsafe==3.0.3
+#32 4.555  + mcp==2.2.0
+#32 4.555  + mcp-types==2.2.0
+#32 4.555  + multidict==6.9.1
+#32 4.555  + openai==2.54.0
+#32 4.555  + opentelemetry-api==1.44.0
+#32 4.555  + orjson==3.12.0
+#32 4.555  + ormsgpack==1.12.2
+#32 4.555  + packaging==26.3
+#32 4.555  + propcache==0.5.4
+#32 4.556  + pyasn1==0.6.4
+#32 4.556  + pyasn1-modules==0.4.2
+#32 4.556  + pycparser==3.0
+#32 4.556  + pydantic==2.13.5
+#32 4.556  + pydantic-core==2.46.5
+#32 4.556  + pydantic-settings==2.15.0
+#32 4.556  + pyjwt==2.15.0
+#32 4.556  + python-dateutil==2.9.0.post0
+#32 4.556  + python-dotenv==1.2.3
+#32 4.556  + python-multipart==0.0.32
+#32 4.556  + pyyaml==6.0.3
+#32 4.556  + referencing==0.37.0
+#32 4.556  + regex==2026.9.10
+#32 4.556  + requests==2.34.2
+#32 4.556  + requests-toolbelt==1.0.0
+#32 4.556  + rpds-py==2026.6.3
+#32 4.556  + s3transfer==0.19.2
+#32 4.556  + six==1.17.0
+#32 4.556  + sniffio==1.3.1
+#32 4.556  + sqlalchemy==2.0.54
+#32 4.556  + sqlite-vec==0.1.9
+#32 4.556  + sse-starlette==3.4.11
+#32 4.556  + starlette==1.7.0
+#32 4.556  + tenacity==9.1.4
+#32 4.556  + tiktoken==0.14.0
+#32 4.556  + tokenizers==0.23.2
+#32 4.557  + tqdm==4.70.1
+#32 4.557  + truststore==0.10.4
+#32 4.557  + typing-extensions==4.16.0
+#32 4.557  + typing-inspection==0.4.4
+#32 4.557  + urllib3==2.8.0
+#32 4.557  + uuid-utils==0.17.1
+#32 4.557  + uvicorn==0.53.0
+#32 4.557  + uvloop==0.22.1
+#32 4.557  + watchfiles==1.3.0
+#32 4.557  + websockets==16.1.1
+#32 4.557  + xxhash==4.0.1
+#32 4.557  + yarl==1.25.1
+#32 4.557  + zipp==4.1.0
+#32 4.557  + zstandard==0.25.0
+#32 DONE 5.2s
+
+#33 [runtime 2/9] COPY sdk/ sdk/
+#33 DONE 0.0s
+
+#34 [runtime 3/9] COPY contracts/ contracts/
+#34 DONE 0.0s
+
+#35 [runtime 4/9] COPY backend/ backend/
+#35 DONE 0.0s
+
+#36 [runtime 5/9] COPY agents/ agents/
+#36 DONE 0.1s
+
+#37 [runtime 6/9] COPY data/ data/
+#37 DONE 0.0s
+
+#38 [runtime 7/9] COPY docker/ docker/
+#38 DONE 0.0s
+
+#39 [runtime 8/9] RUN --mount=type=cache,target=/root/.cache/uv     uv sync --frozen --no-dev     && python -c "import vdagent_backend.app, vdagent_contracts, vdagent_orchestrator, vdagent_data, vdagent_compare, vdagent_insight, vdagent_chart, vdagent_report"
+#39 0.236    Building vdagent-agent-template @ file:///app/agents/_template
+#39 0.237    Building vdagent-data @ file:///app/agents/data
+#39 0.237    Building vdagent-agentkit @ file:///app/agents/_shared
+#39 0.237    Building vdagent-chart @ file:///app/agents/chart
+#39 0.237    Building vdagent-compare @ file:///app/agents/compare
+#39 0.237    Building vdagent-insight @ file:///app/agents/insight
+#39 0.237    Building vdagent-report @ file:///app/agents/report
+#39 0.237    Building vdagent-sdk @ file:///app/sdk
+#39 0.238    Building vdagent-backend @ file:///app/backend
+#39 0.238    Building vdagent-contracts @ file:///app/contracts
+#39 0.238    Building vdagent-orchestrator @ file:///app/agents/orchestrator
+#39 1.199       Built vdagent-report @ file:///app/agents/report
+#39 1.213       Built vdagent-orchestrator @ file:///app/agents/orchestrator
+#39 1.216       Built vdagent-sdk @ file:///app/sdk
+#39 1.216       Built vdagent-data @ file:///app/agents/data
+#39 1.221       Built vdagent-compare @ file:///app/agents/compare
+#39 1.223       Built vdagent-contracts @ file:///app/contracts
+#39 1.225       Built vdagent-chart @ file:///app/agents/chart
+#39 1.226       Built vdagent-backend @ file:///app/backend
+#39 1.227       Built vdagent-agentkit @ file:///app/agents/_shared
+#39 1.232       Built vdagent-agent-template @ file:///app/agents/_template
+#39 1.233       Built vdagent-insight @ file:///app/agents/insight
+#39 1.234 Prepared 11 packages in 1.00s
+#39 1.238 Installed 11 packages in 4ms
+#39 1.539 Bytecode compiled 7472 files in 301ms
+#39 1.539  + vdagent-agent-template==0.1.0 (from file:///app/agents/_template)
+#39 1.539  + vdagent-agentkit==0.1.0 (from file:///app/agents/_shared)
+#39 1.539  + vdagent-backend==0.1.0 (from file:///app/backend)
+#39 1.539  + vdagent-chart==0.1.0 (from file:///app/agents/chart)
+#39 1.540  + vdagent-compare==0.1.0 (from file:///app/agents/compare)
+#39 1.540  + vdagent-contracts==0.1.0 (from file:///app/contracts)
+#39 1.540  + vdagent-data==0.1.0 (from file:///app/agents/data)
+#39 1.540  + vdagent-insight==0.1.0 (from file:///app/agents/insight)
+#39 1.540  + vdagent-orchestrator==0.1.0 (from file:///app/agents/orchestrator)
+#39 1.540  + vdagent-report==0.1.0 (from file:///app/agents/report)
+#39 1.540  + vdagent-sdk==0.1.0 (from file:///app/sdk)
+#39 DONE 8.6s
+
+#40 [runtime 9/9] COPY --from=frontend /frontend/dist frontend/dist
+#40 DONE 0.1s
+
+#41 exporting to image
+#41 exporting layers
+#41 exporting layers 2.4s done
+#41 writing image sha256:7bbe0f26c201166adb6bb1a43524b45f10e3ca12111e86c70f8f2297e878a491 done
+#41 naming to docker.io/library/vdagent-python:latest done
+#41 DONE 2.4s
+
+#42 resolving provenance for metadata file
+#42 DONE 0.0s
+ Image vdagent-python:latest Built 
+ Network vdagent_ws7acc_default Creating 
+ Volume vdagent_ws7acc_var Creating 
+ Volume vdagent_ws7acc_var Creating 
+ Network vdagent_ws7acc_default Creating 
+ Volume vdagent_ws7acc_var Created 
+ Volume vdagent_ws7acc_var Created 
+ Network vdagent_ws7acc_default Created 
+ Network vdagent_ws7acc_default Created 
+ Container vdagent_ws7acc-seed-offline-1 Creating 
+ Container vdagent_ws7acc-seed-offline-1 Created 
+ Container vdagent_ws7acc-backend-offline-1 Creating 
+ Container vdagent_ws7acc-backend-offline-1 Created 
+ Container vdagent_ws7acc-seed-offline-1 Starting 
+ Container vdagent_ws7acc-seed-offline-1 Started 
+ Container vdagent_ws7acc-seed-offline-1 Waiting 
+ Container vdagent_ws7acc-seed-offline-1 Exited 
+ Container vdagent_ws7acc-backend-offline-1 Starting 
+ Container vdagent_ws7acc-backend-offline-1 Started 
+== 1. golden request over REST
+....                                                                     [100%]
+4 passed in 2.31s
+== 2. real browser
+.                                                                        [100%]
+1 passed in 4.10s
+== 3. store: hashes, lineage, evidence
+ vdagent_ws7acc-backend-offline-1 Copying vdagent_ws7acc-backend-offline-1:/tmp/ws7.db to acceptance/ws7/out/backend.db
+ vdagent_ws7acc-backend-offline-1 Copied vdagent_ws7acc-backend-offline-1:/tmp/ws7.db to acceptance/ws7/out/backend.db
+.......                                                                  [100%]
+7 passed in 0.47s
+== 4. kill -9 mid-run, restart
+ Container vdagent_ws7acc-backend-offline-1 Killing 
+ Container vdagent_ws7acc-backend-offline-1 Killed 
+ Container vdagent_ws7acc-seed-offline-1 Starting 
+ Container vdagent_ws7acc-seed-offline-1 Started 
+ Container vdagent_ws7acc-seed-offline-1 Waiting 
+ Container vdagent_ws7acc-seed-offline-1 Exited 
+ Container vdagent_ws7acc-backend-offline-1 Starting 
+ Container vdagent_ws7acc-backend-offline-1 Started 
+ vdagent_ws7acc-backend-offline-1 Copying vdagent_ws7acc-backend-offline-1:/tmp/ws7.db to acceptance/ws7/out/backend.db
+ vdagent_ws7acc-backend-offline-1 Copied vdagent_ws7acc-backend-offline-1:/tmp/ws7.db to acceptance/ws7/out/backend.db
+..                                                                       [100%]
+2 passed in 0.10s
+WS7 acceptance: PASS (evidence in acceptance/ws7/out)

@@ -1,0 +1,8 @@
+backend-offline-1  | 2026-09-30 02:27:41,533 INFO vdagent_backend.plugins: plugin vdagent_orchestrator loaded: orchestrator
+backend-offline-1  | 2026-09-30 02:27:41,543 INFO vdagent_backend.plugins: plugin vdagent_data loaded: data
+backend-offline-1  | 2026-09-30 02:27:41,588 INFO vdagent_backend.plugins: plugin vdagent_compare loaded: compare
+backend-offline-1  | 2026-09-30 02:27:42,147 INFO vdagent_backend.plugins: plugin vdagent_insight loaded: insight
+backend-offline-1  | 2026-09-30 02:27:43,128 INFO vdagent_backend.plugins: plugin vdagent_report loaded: report
+backend-offline-1  | 2026-09-30 02:27:43,151 INFO vdagent_backend.plugins: plugin vdagent_chart loaded: chart
+backend-offline-1  | 2026-09-30 02:28:07,857 INFO vdagent.plugin.vdagent_insight: {"event": "INSIGHT_LLM_CALLED", "run_id": "dcafcc11-9092-501c-9192-5b4dbef30742", "task_id": "b3a1e429-5890-583f-b3f4-3df77626dbe6", "attempt": 1, "agent": "insight_agent", "ts": "2026-09-30T09:28:07.857720+07:00", "provider": "openai", "model_id": "gpt-6-luna", "call_type": "MAIN", "input_tokens": 2861, "cached_input_tokens": 0, "output_tokens": 178, "thinking_tokens": 0, "cost_usd": "0.0003751", "latency_ms": 4032, "finish_reason": "completed"}
+backend-offline-1  | 2026-09-30 02:28:07,878 INFO vdagent.plugin.vdagent_insight: {"event": "INSIGHT_TASK_COMPLETED", "run_id": "dcafcc11-9092-501c-9192-5b4dbef30742", "task_id": "b3a1e429-5890-583f-b3f4-3df77626dbe6", "attempt": 1, "agent": "insight_agent", "ts": "2026-09-30T09:28:07.878610+07:00", "status": "VALID", "reused": false, "duration_ms": 5689, "task_cost_usd": "0.0003751", "llm_calls": 1, "narrative_mode": "LLM", "candidates_in": 2, "candidates_sent": 2, "insights_out": 2}

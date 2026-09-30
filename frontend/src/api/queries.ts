@@ -73,6 +73,15 @@ export function useChart(id: string) {
   });
 }
 
+export function useChartSpec(id: string, version: number) {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.chartSpec(id, version),
+    queryFn: () => api.getChartSpec(id, version),
+    staleTime: Infinity,
+  });
+}
+
 export function useReports() {
   const api = useApi();
   return useQuery({ queryKey: queryKeys.reports, queryFn: () => api.listReports() });

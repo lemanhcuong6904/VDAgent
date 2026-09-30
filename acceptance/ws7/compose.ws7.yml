@@ -1,0 +1,13 @@
+# Isolated WS7 acceptance stack: own project name (set by run.sh), port and volume; never touches other stacks.
+services:
+  seed-offline:
+    volumes: !override
+      - ws7-var:/app/var
+  backend-offline:
+    ports: !override
+      - "${WS7_PORT:-8021}:8000"
+    volumes: !override
+      - ws7-var:/app/var
+volumes:
+  ws7-var:
+    name: vdagent_ws7acc_var

@@ -1,39 +1,146 @@
-# vdagent PoC (spec §12). `docker compose up --build`, then open http://localhost:8000.
-# The backend runs the five agents in-process as plugins (backend/config.compose.yaml). Each plugin
-# reads its own agents/<name>/.env (OPENAI_API_KEY, OPENAI_BASE_URL, LLM_MODEL); .env files are kept
-# out of the image, so they are mounted read-only where the plugins look for them.
+# vdagent (spec §12). One application image; the Backend runs all agent plugins in-process (no per-agent services).
+#
+# Default (development):   docker compose up --build            → http://localhost:8000, data in ./var
+#   Needs agents/<name>/.env for every mounted plugin (make docker-env copies the .env.example files, never
+#   overwriting). .env files are mounted read-only at runtime and never baked into the image.
+# Offline smoke (isolated): docker compose --profile offline up --build -d backend-offline   → http://localhost:8001
+#   Named volume, no .env files, no LLM keys: orchestrator (ORCH_LLM=off: DAG only), data (DATA_LLM=off: StepSpec
+#   only), insight (TEMPLATE), compare (rules), chart (StepSpec; demo off) and report (deterministic WS6) load.
+# Live-AI demo (isolated):  make docker-live-up → http://localhost:8022 (profile live; needs agents/<name>/.env keys)
+# Offline tests:           docker compose --profile test run --rm tests
+#
+# Seeding never overwrites a populated database (docker/seed-if-missing.sh).
 
 x-python: &python
   build:
     context: .
     dockerfile: Dockerfile.python
+    target: runtime
   image: vdagent-python:latest
-  volumes:
-    - ./var:/app/var
+
+x-env-file: &env-file
+  type: bind
+  read_only: true
+  bind:
+    create_host_path: false   # a missing agents/<name>/.env fails loudly instead of creating a directory
 
 services:
   seed:
     <<: *python
-    command: ["sh", "-c", "python data/seed_warehouse.py && python data/seed_users.py"]
-    environment:
-      VDAGENT_CONFIG: /app/backend/config.compose.yaml
-    restart: "no"
-
-  backend:
-    <<: *python
-    command: ["uvicorn", "vdagent_backend.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["sh", "docker/seed-if-missing.sh"]
     environment:
       VDAGENT_CONFIG: /app/backend/config.compose.yaml
     volumes:
       - ./var:/app/var
-      - ./agents/orchestrator/.env:/app/agents/orchestrator/.env:ro
-      - ./agents/data/.env:/app/agents/data/.env:ro
-      - ./agents/compare/.env:/app/agents/compare/.env:ro
-      - ./agents/insight/.env:/app/agents/insight/.env:ro
-      - ./agents/report/.env:/app/agents/report/.env:ro
+    restart: "no"
+
+  backend:
+    <<: *python
+    environment:
+      VDAGENT_CONFIG: /app/backend/config.compose.yaml
+      # explicit pins for the Orchestrator's LLM planner (it never picks a snapshot); without them it answers
+      # SNAPSHOT_REQUIRED. The live demo stack (profile live, make docker-live-up) sets the same values.
+      ORCH_SNAPSHOT_ID: "SNAP-2026-09-28"
+      ORCH_SEMANTIC_VERSION: "sc-1"
+    volumes:
+      - ./var:/app/var
+      - {<<: *env-file, source: ./agents/orchestrator/.env, target: /app/agents/orchestrator/.env}
+      - {<<: *env-file, source: ./agents/data/.env, target: /app/agents/data/.env}
+      - {<<: *env-file, source: ./agents/compare/.env, target: /app/agents/compare/.env}
+      - {<<: *env-file, source: ./agents/insight/.env, target: /app/agents/insight/.env}
+      - {<<: *env-file, source: ./agents/report/.env, target: /app/agents/report/.env}
+      - {<<: *env-file, source: ./agents/chart/.env, target: /app/agents/chart/.env}
     ports:
       - "8000:8000"
     depends_on:
       seed:
         condition: service_completed_successfully
     restart: unless-stopped
+
+  # ---- isolated offline smoke environment (profile: offline) -------------------------------------------------
+  seed-offline:
+    <<: *python
+    profiles: ["offline"]
+    command: ["sh", "docker/seed-if-missing.sh"]
+    environment:
+      VDAGENT_CONFIG: /app/backend/config.compose.yaml
+    volumes:
+      - offline-var:/app/var
+    restart: "no"
+
+  backend-offline:
+    <<: *python
+    profiles: ["offline"]
+    environment:
+      VDAGENT_CONFIG: /app/backend/config.compose.yaml
+      INSIGHT_LLM: "off"
+      COMPARE_LLM: "off"
+      DATA_LLM: "off"          # data serves StepSpec@1 deterministically without keys (WS2)
+      ORCH_LLM: "off"          # orchestrator runs the deterministic DAG without keys (WS5)
+      REPORT_LLM: "off"        # report serves evidence-checked StepSpec@1 without keys (WS6)
+      ORCH_SNAPSHOT_ID: "SNAP-2026-09-28"   # explicit pin for free-text DAG runs; never "latest" (golden snapshot)
+      ORCH_SEMANTIC_VERSION: "sc-1"
+    volumes:
+      - offline-var:/app/var
+    ports:
+      - "8001:8000"
+    depends_on:
+      seed-offline:
+        condition: service_completed_successfully
+
+  # ---- live-AI demo (profile: live) — make docker-live-up ------------------------------------------------------
+  # Orchestrator plans with its LLM (validated by code, AGENTS.md §20); Insight narrates with its LLM (§19);
+  # Data / Compare / Chart / Report stay deterministic on the DAG path. Keys come only from agents/<name>/.env.
+  seed-live:
+    <<: *python
+    profiles: ["live"]
+    command: ["sh", "docker/seed-if-missing.sh"]
+    environment:
+      VDAGENT_CONFIG: /app/backend/config.compose.yaml
+    volumes:
+      - live-var:/app/var
+    restart: "no"
+
+  backend-live:
+    <<: *python
+    profiles: ["live"]
+    environment:
+      VDAGENT_CONFIG: /app/backend/config.compose.yaml
+      ORCH_LLM: "on"                        # LLM planner → validated plan → DAG (never the legacy loop)
+      ORCH_SNAPSHOT_ID: "SNAP-2026-09-28"   # explicit pin; the LLM never chooses a snapshot
+      ORCH_SEMANTIC_VERSION: "sc-1"
+      ORCH_DAG_TIMEOUT_S: "300"
+    volumes:
+      - live-var:/app/var
+      - {<<: *env-file, source: ./agents/orchestrator/.env, target: /app/agents/orchestrator/.env}
+      - {<<: *env-file, source: ./agents/data/.env, target: /app/agents/data/.env}
+      - {<<: *env-file, source: ./agents/compare/.env, target: /app/agents/compare/.env}
+      - {<<: *env-file, source: ./agents/insight/.env, target: /app/agents/insight/.env}
+      - {<<: *env-file, source: ./agents/report/.env, target: /app/agents/report/.env}
+      - {<<: *env-file, source: ./agents/chart/.env, target: /app/agents/chart/.env}
+    ports:
+      - "8022:8000"
+    depends_on:
+      seed-live:
+        condition: service_completed_successfully
+
+  # ---- offline test suite (profile: test) ----------------------------------------------------------------------
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+      target: test
+    image: vdagent-python-test:latest
+    profiles: ["test"]
+    environment:
+      INSIGHT_LLM: "off"
+      COMPARE_LLM: "off"
+    tmpfs:
+      - /app/var
+    network_mode: none   # offline by construction: no external API can be reached
+
+volumes:
+  live-var:
+    name: vdagent_live_var
+  offline-var:
+    name: ${VDAGENT_OFFLINE_VOLUME:-vdagent_offline_var}   # disposable; override for isolated verification runs

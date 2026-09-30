@@ -1,0 +1,216 @@
+ Image vdagent-python:latest Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.12kB done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile.python
+#2 transferring dockerfile: 3.20kB done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.8s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+#4 CACHED
+
+#5 [internal] load metadata for ghcr.io/astral-sh/uv:0.11
+#5 ...
+
+#6 [internal] load metadata for docker.io/library/node:22-slim
+#6 DONE 0.0s
+
+#7 [internal] load metadata for docker.io/library/python:3.12-slim
+#7 DONE 0.8s
+
+#5 [internal] load metadata for ghcr.io/astral-sh/uv:0.11
+#5 DONE 1.1s
+
+#8 [internal] load .dockerignore
+#8 transferring context: 172B done
+#8 DONE 0.0s
+
+#9 FROM ghcr.io/astral-sh/uv:0.11@sha256:77280f2f771df71f90786c314fe1bbc1e023feac652969bbf139c280babf2eb7
+#9 DONE 0.0s
+
+#10 [frontend 1/6] FROM docker.io/library/node:22-slim
+#10 DONE 0.0s
+
+#11 [base  1/15] FROM docker.io/library/python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
+#11 DONE 0.0s
+
+#12 [internal] load build context
+#12 transferring context: 288.49kB 0.0s done
+#12 DONE 0.0s
+
+#13 [base  8/15] COPY agents/_shared/pyproject.toml agents/_shared/pyproject.toml
+#13 CACHED
+
+#14 [base  4/15] COPY pyproject.toml uv.lock .python-version ./
+#14 CACHED
+
+#15 [base  9/15] COPY agents/_template/pyproject.toml agents/_template/pyproject.toml
+#15 CACHED
+
+#16 [base  2/15] COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /bin/
+#16 CACHED
+
+#17 [base  5/15] COPY sdk/pyproject.toml sdk/pyproject.toml
+#17 CACHED
+
+#18 [base 13/15] COPY agents/insight/pyproject.toml agents/insight/pyproject.toml
+#18 CACHED
+
+#19 [base 11/15] COPY agents/data/pyproject.toml agents/data/pyproject.toml
+#19 CACHED
+
+#20 [base 12/15] COPY agents/compare/pyproject.toml agents/compare/pyproject.toml
+#20 CACHED
+
+#21 [base  3/15] WORKDIR /app
+#21 CACHED
+
+#22 [base 15/15] COPY agents/chart/pyproject.toml agents/chart/pyproject.toml
+#22 CACHED
+
+#23 [base  7/15] COPY backend/pyproject.toml backend/pyproject.toml
+#23 CACHED
+
+#24 [runtime 2/9] COPY sdk/ sdk/
+#24 CACHED
+
+#25 [base 10/15] COPY agents/orchestrator/pyproject.toml agents/orchestrator/pyproject.toml
+#25 CACHED
+
+#26 [runtime 1/9] RUN --mount=type=cache,target=/root/.cache/uv     uv sync --frozen --no-dev --no-install-workspace
+#26 CACHED
+
+#27 [base 14/15] COPY agents/report/pyproject.toml agents/report/pyproject.toml
+#27 CACHED
+
+#28 [base  6/15] COPY contracts/pyproject.toml contracts/pyproject.toml
+#28 CACHED
+
+#29 [frontend 2/6] WORKDIR /frontend
+#29 CACHED
+
+#30 [frontend 4/6] RUN npm ci
+#30 CACHED
+
+#31 [frontend 5/6] COPY frontend/ ./
+#31 CACHED
+
+#32 [frontend 3/6] COPY frontend/package.json frontend/package-lock.json ./
+#32 CACHED
+
+#33 [runtime 3/9] COPY contracts/ contracts/
+#33 CACHED
+
+#34 [frontend 6/6] RUN npm run build
+#34 CACHED
+
+#35 [runtime 4/9] COPY backend/ backend/
+#35 DONE 0.0s
+
+#36 [runtime 5/9] COPY agents/ agents/
+#36 DONE 0.1s
+
+#37 [runtime 6/9] COPY data/ data/
+#37 DONE 0.0s
+
+#38 [runtime 7/9] COPY docker/ docker/
+#38 DONE 0.0s
+
+#39 [runtime 8/9] RUN --mount=type=cache,target=/root/.cache/uv     uv sync --frozen --no-dev     && python -c "import vdagent_backend.app, vdagent_contracts, vdagent_orchestrator, vdagent_data, vdagent_compare, vdagent_insight, vdagent_chart, vdagent_report"
+#39 0.295    Building vdagent-agent-template @ file:///app/agents/_template
+#39 0.295    Building vdagent-agentkit @ file:///app/agents/_shared
+#39 0.295    Building vdagent-chart @ file:///app/agents/chart
+#39 0.296    Building vdagent-backend @ file:///app/backend
+#39 0.296    Building vdagent-compare @ file:///app/agents/compare
+#39 0.296    Building vdagent-contracts @ file:///app/contracts
+#39 0.296    Building vdagent-insight @ file:///app/agents/insight
+#39 0.297    Building vdagent-data @ file:///app/agents/data
+#39 0.297    Building vdagent-orchestrator @ file:///app/agents/orchestrator
+#39 0.297    Building vdagent-report @ file:///app/agents/report
+#39 0.297    Building vdagent-sdk @ file:///app/sdk
+#39 1.367       Built vdagent-agentkit @ file:///app/agents/_shared
+#39 1.367       Built vdagent-data @ file:///app/agents/data
+#39 1.375       Built vdagent-compare @ file:///app/agents/compare
+#39 1.375       Built vdagent-backend @ file:///app/backend
+#39 1.377       Built vdagent-agent-template @ file:///app/agents/_template
+#39 1.379       Built vdagent-report @ file:///app/agents/report
+#39 1.379       Built vdagent-insight @ file:///app/agents/insight
+#39 1.379       Built vdagent-chart @ file:///app/agents/chart
+#39 1.379       Built vdagent-sdk @ file:///app/sdk
+#39 1.381       Built vdagent-orchestrator @ file:///app/agents/orchestrator
+#39 1.385       Built vdagent-contracts @ file:///app/contracts
+#39 1.386 Prepared 11 packages in 1.09s
+#39 1.392 Installed 11 packages in 5ms
+#39 1.979 Bytecode compiled 7472 files in 587ms
+#39 1.980  + vdagent-agent-template==0.1.0 (from file:///app/agents/_template)
+#39 1.980  + vdagent-agentkit==0.1.0 (from file:///app/agents/_shared)
+#39 1.980  + vdagent-backend==0.1.0 (from file:///app/backend)
+#39 1.980  + vdagent-chart==0.1.0 (from file:///app/agents/chart)
+#39 1.980  + vdagent-compare==0.1.0 (from file:///app/agents/compare)
+#39 1.980  + vdagent-contracts==0.1.0 (from file:///app/contracts)
+#39 1.980  + vdagent-data==0.1.0 (from file:///app/agents/data)
+#39 1.980  + vdagent-insight==0.1.0 (from file:///app/agents/insight)
+#39 1.980  + vdagent-orchestrator==0.1.0 (from file:///app/agents/orchestrator)
+#39 1.980  + vdagent-report==0.1.0 (from file:///app/agents/report)
+#39 1.980  + vdagent-sdk==0.1.0 (from file:///app/sdk)
+#39 DONE 9.4s
+
+#40 [runtime 9/9] COPY --from=frontend /frontend/dist frontend/dist
+#40 DONE 0.0s
+
+#41 exporting to image
+#41 exporting layers 0.1s done
+#41 writing image sha256:33bdca6f71935c351f46ba6942e9fb1625a4a21b56abc5c6f6280b9b9d848c26 done
+#41 naming to docker.io/library/vdagent-python:latest done
+#41 DONE 0.1s
+
+#42 resolving provenance for metadata file
+#42 DONE 0.0s
+ Image vdagent-python:latest Built 
+ Network vdagent_ws7acc_default Creating 
+ Network vdagent_ws7acc_default Creating 
+ Volume vdagent_ws7acc_var Creating 
+ Volume vdagent_ws7acc_var Creating 
+ Volume vdagent_ws7acc_var Created 
+ Volume vdagent_ws7acc_var Created 
+ Network vdagent_ws7acc_default Created 
+ Network vdagent_ws7acc_default Created 
+ Container vdagent_ws7acc-seed-offline-1 Creating 
+ Container vdagent_ws7acc-seed-offline-1 Created 
+ Container vdagent_ws7acc-backend-offline-1 Creating 
+ Container vdagent_ws7acc-backend-offline-1 Created 
+ Container vdagent_ws7acc-seed-offline-1 Starting 
+ Container vdagent_ws7acc-seed-offline-1 Started 
+ Container vdagent_ws7acc-seed-offline-1 Waiting 
+ Container vdagent_ws7acc-seed-offline-1 Exited 
+ Container vdagent_ws7acc-backend-offline-1 Starting 
+ Container vdagent_ws7acc-backend-offline-1 Started 
+== 1. golden request over REST
+....                                                                     [100%]
+4 passed in 2.28s
+== 2. real browser
+.                                                                        [100%]
+1 passed in 3.56s
+== 3. store: hashes, lineage, evidence
+ vdagent_ws7acc-backend-offline-1 Copying vdagent_ws7acc-backend-offline-1:/tmp/ws7.db to acceptance/ws7/out/backend.db
+ vdagent_ws7acc-backend-offline-1 Copied vdagent_ws7acc-backend-offline-1:/tmp/ws7.db to acceptance/ws7/out/backend.db
+.......                                                                  [100%]
+7 passed in 0.46s
+== 4. kill -9 mid-run, restart
+ Container vdagent_ws7acc-backend-offline-1 Killing 
+ Container vdagent_ws7acc-backend-offline-1 Killed 
+ Container vdagent_ws7acc-seed-offline-1 Starting 
+ Container vdagent_ws7acc-seed-offline-1 Started 
+ Container vdagent_ws7acc-seed-offline-1 Waiting 
+ Container vdagent_ws7acc-seed-offline-1 Exited 
+ Container vdagent_ws7acc-backend-offline-1 Starting 
+ Container vdagent_ws7acc-backend-offline-1 Started 
+ vdagent_ws7acc-backend-offline-1 Copying vdagent_ws7acc-backend-offline-1:/tmp/ws7.db to acceptance/ws7/out/backend.db
+ vdagent_ws7acc-backend-offline-1 Copied vdagent_ws7acc-backend-offline-1:/tmp/ws7.db to acceptance/ws7/out/backend.db
+..                                                                       [100%]
+2 passed in 0.10s
+WS7 acceptance: PASS (evidence in acceptance/ws7/out)

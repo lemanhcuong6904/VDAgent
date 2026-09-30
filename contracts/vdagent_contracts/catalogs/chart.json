@@ -1,0 +1,62 @@
+{
+  "agent": "chart",
+  "contract_version": "1.0.0",
+  "catalog_version": "ws5-1",
+  "fixture": false,
+  "operations": [
+    {
+      "operation": "draw_chart",
+      "description": "Biểu đồ từ insight và/hoặc comparison thật (không tính lại số) → chart_spec@1 với source_ref từng giá trị.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "chart_type": {
+            "type": "string"
+          }
+        }
+      },
+      "input_fields": {
+        "insight": "input_refs",
+        "comparison": "input_refs",
+        "peer_definition": "input_refs"
+      },
+      "requires": [],
+      "uses_if_present": [
+        "insight",
+        "comparison",
+        "peer_definition"
+      ],
+      "produces": [
+        "chart_spec"
+      ],
+      "outputs": [
+        "CHART"
+      ],
+      "serves": [],
+      "deadline_s": 60,
+      "error_codes": {
+        "CHART_FAILED": "DATA_QUALITY",
+        "INPUT_HASH_MISMATCH": "WRONG_RESULT",
+        "INPUT_HASH_REQUIRED": "SPEC_ISSUE",
+        "INPUT_INVALID": "DATA_QUALITY",
+        "INPUT_NOT_FOUND": "NO_DATA",
+        "INPUT_SCHEMA_UNSUPPORTED": "SPEC_ISSUE",
+        "INPUT_TYPE_MISMATCH": "WRONG_RESULT",
+        "INPUT_TYPE_UNSUPPORTED": "SPEC_ISSUE",
+        "INVALID_SPEC": "SPEC_ISSUE",
+        "LINEAGE_MISMATCH": "WRONG_RESULT",
+        "MISSING_INPUT": "SPEC_ISSUE",
+        "NOTHING_TO_CHART": "DATA_QUALITY",
+        "SCOPE_VIOLATION": "NO_ACCESS",
+        "SEMANTIC_VERSION_MISMATCH": "SPEC_ISSUE",
+        "SEMANTIC_VERSION_REQUIRED": "SPEC_ISSUE",
+        "SNAPSHOT_MISMATCH": "SPEC_ISSUE",
+        "SNAPSHOT_REQUIRED": "SPEC_ISSUE",
+        "TOOL_FAILED": "TRANSIENT",
+        "UNKNOWN_OPERATION": "SPEC_ISSUE",
+        "UNSUPPORTED_CHART_TYPE": "SPEC_ISSUE",
+        "USER_CONTEXT_MISMATCH": "NO_ACCESS"
+      }
+    }
+  ]
+}

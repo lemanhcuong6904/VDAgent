@@ -1,0 +1,63 @@
+{
+  "agent": "report",
+  "contract_version": "1.0.0",
+  "catalog_version": "ws6-1",
+  "fixture": false,
+  "operations": [
+    {
+      "operation": "draft_report",
+      "description": "Báo cáo 6 phần từ insight/comparison/chart_spec thật; mọi số có source_ref đã kiểm chứng → report@1 + rp_ (save_report).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "input_fields": {
+        "insight": "input_refs",
+        "comparison": "input_refs",
+        "peer_definition": "input_refs",
+        "chart_spec": "input_refs"
+      },
+      "requires": [],
+      "uses_if_present": [
+        "insight",
+        "comparison",
+        "peer_definition",
+        "chart_spec"
+      ],
+      "produces": [
+        "report"
+      ],
+      "outputs": [
+        "REPORT"
+      ],
+      "serves": [],
+      "deadline_s": 60,
+      "error_codes": {
+        "EVIDENCE_INVALID": "WRONG_RESULT",
+        "INPUT_HASH_MISMATCH": "WRONG_RESULT",
+        "INPUT_HASH_REQUIRED": "SPEC_ISSUE",
+        "INPUT_INVALID": "DATA_QUALITY",
+        "INPUT_NOT_FOUND": "NO_DATA",
+        "INPUT_SCHEMA_UNSUPPORTED": "SPEC_ISSUE",
+        "INPUT_TYPE_MISMATCH": "WRONG_RESULT",
+        "INPUT_TYPE_UNSUPPORTED": "SPEC_ISSUE",
+        "INVALID_SPEC": "SPEC_ISSUE",
+        "LINEAGE_MISMATCH": "WRONG_RESULT",
+        "MISSING_INPUT": "SPEC_ISSUE",
+        "REPORT_SAVE_FAILED": "TRANSIENT",
+        "SCOPE_VIOLATION": "NO_ACCESS",
+        "SEMANTIC_VERSION_MISMATCH": "SPEC_ISSUE",
+        "SEMANTIC_VERSION_REQUIRED": "SPEC_ISSUE",
+        "SNAPSHOT_MISMATCH": "SPEC_ISSUE",
+        "SNAPSHOT_REQUIRED": "SPEC_ISSUE",
+        "TOOL_FAILED": "TRANSIENT",
+        "UNKNOWN_OPERATION": "SPEC_ISSUE",
+        "USER_CONTEXT_MISMATCH": "NO_ACCESS"
+      }
+    }
+  ]
+}

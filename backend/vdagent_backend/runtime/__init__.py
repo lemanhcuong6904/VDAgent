@@ -11,6 +11,22 @@ Named invariants it upholds:
 May import: `core`, `config`, `conversations`, `memory`, `plugins`.
 """
 
-from vdagent_backend.runtime.engine import Engine, TaskFinishedError, TaskNotFoundError, UnknownAgentError
+from vdagent_backend.runtime.context import RUN_OUTCOMES
+from vdagent_backend.runtime.engine import (
+    Engine,
+    IdempotencyConflictError,
+    InterruptedHook,
+    TaskFinishedError,
+    TaskNotFoundError,
+    UnknownAgentError,
+)
 
-__all__ = ["Engine", "TaskFinishedError", "TaskNotFoundError", "UnknownAgentError"]
+__all__ = [
+    "RUN_OUTCOMES",
+    "Engine",
+    "IdempotencyConflictError",
+    "InterruptedHook",
+    "TaskFinishedError",
+    "TaskNotFoundError",
+    "UnknownAgentError",
+]

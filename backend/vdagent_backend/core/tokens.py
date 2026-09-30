@@ -12,11 +12,13 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class McpIdentity:
-    """Who is calling `/mcp`: the task's user, the agent in its turn, and that invocation."""
+    """Who is calling `/mcp`: the task's user, the agent in its turn, that invocation, and its task (the run the
+    invocation serves: artifacts it stores are filed under it)."""
 
     user_id: str
     agent: str
     invocation_id: str
+    task_id: str = ""
 
 
 class TokenRegistry:
@@ -25,9 +27,9 @@ class TokenRegistry:
     def __init__(self) -> None:
         self._tokens: dict[str, McpIdentity] = {}
 
-    def issue(self, user_id: str, agent: str, invocation_id: str) -> str:
+    def issue(self, user_id: str, agent: str, invocation_id: str, task_id: str = "") -> str:
         token = secrets.token_urlsafe(32)
-        self._tokens[token] = McpIdentity(user_id, agent, invocation_id)
+        self._tokens[token] = McpIdentity(user_id, agent, invocation_id, task_id)
         return token
 
     def resolve(self, token: str) -> McpIdentity | None:

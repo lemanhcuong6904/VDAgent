@@ -28,8 +28,10 @@ callee's stack and resolves the caller's `call_agent` with the child's answer.
 | `persistence/` | `create_database`, table metadata, dialect types, query helpers, Alembic `migrate` |
 | `plugins/` | `PluginManager`, immutable `AgentRegistry` with `tools_for(agent)` |
 | `conversations/` | `Users`, `Tasks`, `Messages` repositories and their DTOs |
-| `artifacts/` | `Artifacts` repository, `ArtifactService`, chart builder |
-| `warehouse/` | read-only SQL (`sql.py`) behind the async `Warehouse` |
+| `artifacts/` | `Artifacts` repository, `ArtifactService`, chart builder (Vega-Lite v6), `EnvelopeStore` + `verify_envelope` (versioned, hashed artifact envelopes of the six-agent DAG) |
+| `warehouse/` | read-only SQL (`sql.py`) behind the async `Warehouse`; user-scoped SQL over the real-estate DW (`re_sql.py`) behind `RealEstateWarehouse` |
+| `scopes/` | `UserScopes` (the only source of `get_user_context`), demo scope seeding (B-10) |
+| `re_warehouse/` | builder of the real-estate DW mock (seed scripts, tests) |
 | `memory/` | `ScopedMemory` (`ctx.memory`) and `MemorySearch` (the only dialect-specific queries) |
 | `runtime/` | `Engine`, `Scheduler`, `CallRouter`, contract checks, compaction, `Publisher` |
 | `http/` | one router per resource, SSE, SPA mount, `Services` |
@@ -39,10 +41,10 @@ callee's stack and resolves the caller's `call_agent` with the child's answer.
 flowchart TD
   app[app.py] --> http & mcp & runtime & plugins & persistence
   http --> runtime & conversations & artifacts
-  mcp --> artifacts & warehouse & plugins
+  mcp --> artifacts & warehouse & plugins & scopes
   runtime --> conversations & memory & plugins
   artifacts --> warehouse & persistence
-  conversations & memory --> persistence
+  conversations & memory & scopes --> persistence
   persistence & plugins & warehouse --> core
 ```
 
@@ -118,8 +120,17 @@ the task. A second cancel while one is in progress waits for it.
 
 `Engine.recover()` runs in the lifespan before serving: every `queued`/`running` invocation left by
 the previous process gets its stack patched with reason `backend restarted` and becomes `failed`;
-every `running` task becomes `failed`. `Engine.stop()` on shutdown only cancels run tasks; the next
-startup's recovery fixes their rows.
+every `running` task becomes `failed` with outcome `interrupted`, and the `on_interrupted` hook wired by
+`app.py` (`ArtifactService.interrupt_run`) writes a new `interrupted` version of each of the task's run_states that was
+still running (history kept). There is no automatic resume. `Engine.stop()` on shutdown only cancels run tasks; the
+next startup's recovery fixes their rows.
+
+### Run outcome and idempotency
+
+A root turn may report its run's business outcome with `ctx.report_outcome("completed" | "partial" | "failed")`:
+`failed` fails the task, `partial` keeps it `completed`; `tasks.outcome` holds it (plus `interrupted` from recovery).
+`POST /api/agents/{agent}/messages` accepts `Idempotency-Key`: a retry with the same (user, agent, key) returns the first
+task (`200`, `deduplicated: true`); the same key with other content is `409 idempotency_conflict`.
 
 ### MCP tool call
 
@@ -131,12 +142,12 @@ sequenceDiagram
   participant T as McpTools
   participant D as ArtifactService / Warehouse
   P->>A: POST /mcp (Authorization: Bearer ctx.mcp.token)
-  A->>A: TokenRegistry.resolve → McpIdentity(user, agent, invocation) or 401 invalid_token
+  A->>A: TokenRegistry.resolve → McpIdentity(user, agent, invocation, task) or 401 invalid_token
   A->>M: tools/list or tools/call
   M->>M: registry.tools_for(agent)
   M->>T: call(identity, granted, name, args)
   T->>T: unknown tool / not granted / bad args → "error: …"
-  T->>D: domain call (owner = identity.user_id)
+  T->>D: domain call (owner = identity.user_id; artifact_put: only the agent's WRITABLE_TYPES, filed under identity.task_id)
   D-->>P: JSON result text, or "error: <reason>"
 ```
 
@@ -155,7 +166,13 @@ erDiagram
   datasets ||--o{ charts : charts
   invocations ||--o{ reports : creates
   users ||--o{ memories : "notes per (user, agent)"
+  users ||--o{ artifacts : "envelopes (artifact_id, version)"
+  users ||--o{ user_scopes : "authorized projects / zones"
 ```
+
+`artifacts` rows are immutable (SQLite triggers): the only update sets `SUPERSEDED` on older versions; deletes are
+refused. `tasks` carries `outcome` and `idempotency_key` (unique per user, agent, key). Revision `0003` adds all of this
+and adopts databases created by staging-agent's `schema.sql` in place.
 
 Tables are declared in `persistence/tables.py`. Timestamps are written by Python
 (`core.utcnow()`) and read in the API format `YYYY-MM-DDTHH:MM:SS.mmmZ`.

@@ -21,12 +21,14 @@ ALLOWED: dict[str, set[str]] = {
     "persistence": {"core"},
     "plugins": {"core", "config"},
     "warehouse": {"core"},
+    "scopes": {"core", "persistence"},
+    "re_warehouse": set(),  # the real-estate DW mock builder (seed scripts, tests)
     "conversations": {"core", "persistence"},
     "memory": {"core", "persistence"},
     "artifacts": {"core", "persistence", "warehouse"},
     "runtime": {"core", "config", "conversations", "memory", "plugins"},
     "http": {"core", "conversations", "artifacts", "runtime"},
-    "mcp": {"core", "config", "artifacts", "warehouse", "plugins"},
+    "mcp": {"core", "config", "artifacts", "warehouse", "plugins", "scopes"},
 }
 
 

@@ -29,14 +29,21 @@ class Tasks:
 
     # ------------------------------------------------------------------ tasks
 
-    async def create_task(self, user_id: str, root_agent: str, inbound_text: str) -> tuple[Row, Row]:
-        """A running task and its queued root invocation, in one transaction."""
+    async def create_task(
+        self, user_id: str, root_agent: str, inbound_text: str, idempotency_key: str | None = None
+    ) -> tuple[Row, Row]:
+        """A running task and its queued root invocation, in one transaction.
+
+        Raises:
+            IntegrityError: `idempotency_key` is already used by this user with this agent (a concurrent retry won).
+        """
         now = utcnow()
         task_id = new_id("t")
         async with self._db.begin() as conn:
             task = await conn.execute(
                 _tasks.insert()
-                .values(id=task_id, user_id=user_id, root_agent=root_agent, status="running", created_at=now)
+                .values(id=task_id, user_id=user_id, root_agent=root_agent, status="running", created_at=now,
+                        idempotency_key=idempotency_key)
                 .returning(_tasks)
             )
             task_row = dict(task.mappings().one())
@@ -57,6 +64,22 @@ class Tasks:
             )
             return task_row, dict(inv.mappings().one())
 
+    async def find_keyed_task(self, user_id: str, root_agent: str, idempotency_key: str) -> tuple[Row, Row] | None:
+        """The task (and its root invocation) this user started with `idempotency_key` on `root_agent` (WS7 F-11)."""
+        task = await fetch_one(
+            self._db,
+            select(_tasks).where(
+                _tasks.c.user_id == user_id, _tasks.c.root_agent == root_agent, _tasks.c.idempotency_key == idempotency_key
+            ),
+        )
+        if task is None:
+            return None
+        root = await fetch_one(
+            self._db, select(_invs).where(_invs.c.task_id == task["id"], _invs.c.depth == 0).order_by(_invs.c.created_at)
+        )
+        assert root is not None
+        return task, root
+
     async def get_task(self, task_id: str, user_id: str | None = None) -> Row | None:
         """A task by id; with `user_id`, only if owned by that user."""
         stmt = select(_tasks).where(_tasks.c.id == task_id)
@@ -72,21 +95,25 @@ class Tasks:
         stmt = stmt.order_by(_tasks.c.created_at.desc(), _tasks.c.id.desc()).limit(limit)
         return await fetch_all(self._db, stmt)
 
-    async def finish_task(self, task_id: str, status: str) -> Row | None:
-        """Move a running task to a terminal status; the updated row, or None if it was not running."""
+    async def finish_task(self, task_id: str, status: str, outcome: str | None = None) -> Row | None:
+        """Move a running task to a terminal status (with the run's `outcome`, WS7 F-03); the updated row, or None if it
+        was not running."""
         return await write_returning(
             self._db,
             _tasks.update()
             .where(_tasks.c.id == task_id, _tasks.c.status == "running")
-            .values(status=status, finished_at=utcnow())
+            .values(status=status, outcome=outcome, finished_at=utcnow())
             .returning(_tasks),
         )
 
     async def fail_running_tasks(self) -> list[Row]:
-        """Startup recovery: every running task → failed."""
+        """Startup recovery: every running task → failed, outcome `interrupted` (WS7 F-04)."""
         return await write_returning_all(
             self._db,
-            _tasks.update().where(_tasks.c.status == "running").values(status="failed", finished_at=utcnow()).returning(_tasks),
+            _tasks.update()
+            .where(_tasks.c.status == "running")
+            .values(status="failed", outcome="interrupted", finished_at=utcnow())
+            .returning(_tasks),
         )
 
     # ------------------------------------------------------------------ invocations

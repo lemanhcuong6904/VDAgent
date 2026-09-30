@@ -8,7 +8,7 @@ from typing import Any
 
 from vdagent_backend.artifacts.errors import ArtifactError
 
-VEGA_LITE_SCHEMA = "https://vega.github.io/schema/vega-lite/v5.json"
+VEGA_LITE_SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json"  # the major version the frontend bundles (WS7 F-09)
 CHART_KINDS = ("bar", "line", "pie")
 MAX_CHART_ROWS = 10_000
 _ISO_DATE_PREFIX = re.compile(r"\d{4}-\d{2}-\d{2}")
