@@ -38,12 +38,13 @@ class Ctx:
         self.history = [{"role": "user", "content": f"[from: orchestrator] {text}"}]
         self.mcp = McpEndpoint(url="http://mcp.test/mcp", token="tok")
         self.steps: list[tuple[str, list[Any]]] = []
+        self.results: list[tuple[str, str]] = []
 
     async def emit_assistant(self, content: str, tool_calls: Any = ()) -> None:
         self.steps.append((content, list(tool_calls)))
 
-    async def emit_tool_result(self, tool_call_id: str, content: str) -> None:  # pragma: no cover - not used here
-        raise AssertionError("the deterministic path emits no tool calls")
+    async def emit_tool_result(self, tool_call_id: str, content: str) -> None:
+        self.results.append((tool_call_id, content))
 
     async def call_agent(self, tool_call_id: str, target: str, message: str) -> str:  # pragma: no cover
         raise AssertionError("the deterministic path calls no peer")
@@ -58,7 +59,8 @@ def factory(tools: McpTools) -> Any:
 
 
 def the_report(ctx: Ctx) -> AgentReport:
-    [(content, calls)] = ctx.steps
+    """The answer is the last step (without tool calls); the steps before it narrate the work (test_agent_narration.py)."""
+    content, calls = ctx.steps[-1]
     assert calls == []
     report = parse_agent_report(content)
     assert isinstance(report, AgentReport), report

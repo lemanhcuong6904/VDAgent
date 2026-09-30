@@ -1,7 +1,9 @@
 """This agent's brain.
 
 A `StepSpec@1` message (WS2, D4) runs the deterministic real-estate path in `steps.py`: no LLM, one
-`AgentReport@1` answer. Any other message keeps the legacy behaviour, a thin tool-calling loop over LiteLLM
+`AgentReport@1` answer. While it runs, the agent narrates its real work to the person watching, one assistant step per
+pipeline phase with the tool calls of that phase (`narrate.py`, `DATA_NARRATE=off` to disable; `DATA_NARRATE_LLM=off`
+for template sentences only). The answer, the last step, is unchanged: a closing line and the JSON report. Any other message keeps the legacy behaviour, a thin tool-calling loop over LiteLLM
 with the Backend's MCP tools: open an MCP session, offer its tools plus `send_to_agent`, and step the model up
 to `ctx.max_steps` times (`tool_choice="none"` on the last step). Every assistant step and tool result is
 reported through `ctx`; tool calls of one step run concurrently. With `DATA_LLM=off` the plugin loads without
@@ -32,6 +34,7 @@ from .mcp_client import (
     run_mcp_tool,
 )
 from .settings import load_settings
+from .narrate import LlmNarrator, NarrationStream, Narrator, TemplateNarrator
 from .steps import ToolFailure, rejection, run_step
 
 NAME = "data"
@@ -238,6 +241,18 @@ def _summary_vi(report: AgentReport) -> str:
     return f"Data không thực hiện bước này ({report.state}: {code})."
 
 
+class _CtxSink:
+    """Shows a narrated beat as an SDK step: the step first, then the result of each of its tool calls."""
+
+    def __init__(self, ctx: InvocationContext) -> None:
+        self._ctx = ctx
+
+    async def step(self, text: str, calls: list[tuple[ToolCall, str]]) -> None:
+        await self._ctx.emit_assistant(text, [call for call, _ in calls])
+        for call, result in calls:
+            await self._ctx.emit_tool_result(call.id, result)
+
+
 class DataAgent(LiteLLMAgent):
     """Deterministic StepSpec path in front of the legacy LLM loop; `llm=None` serves StepSpec only."""
 
@@ -248,10 +263,16 @@ class DataAgent(LiteLLMAgent):
         mcp_session_factory: McpSessionFactory = open_mcp_session,
         system_prompt: str,
         compact_prompt: str,
+        narrate: bool = True,
+        narrate_llm: bool = True,
+        narrator_prompt: str | None = None,
     ) -> None:
         super().__init__(llm=llm, mcp_session_factory=mcp_session_factory,  # pyright: ignore[reportArgumentType]
                          system_prompt=system_prompt, compact_prompt=compact_prompt)
         self._has_llm = llm is not None
+        self._narrate = narrate
+        self._narrate_llm = narrate_llm
+        self._narrator_prompt = narrator_prompt
 
     @property
     def has_llm(self) -> bool:
@@ -263,23 +284,38 @@ class DataAgent(LiteLLMAgent):
         except ValueError:
             incoming = None  # JSON without `contract`: legacy free text, as before WS2
         if isinstance(incoming, ContractMessage):
-            report = await self._contract(ctx, incoming)
-            await ctx.emit_assistant(render_agent_report(_summary_vi(report), report))
+            report, closing = await self._contract(ctx, incoming)
+            await ctx.emit_assistant(render_agent_report(closing or _summary_vi(report), report))
             return
         if not self._has_llm:
             await ctx.emit_assistant(NO_LLM_TEXT)
             return
         await super().invoke(ctx)
 
-    async def _contract(self, ctx: InvocationContext, message: ContractMessage) -> AgentReport:
+    def _narrator(self) -> Narrator:
+        template = TemplateNarrator()
+        if self._narrate_llm and self._has_llm:
+            return LlmNarrator(self._llm, template, system_prompt=self._narrator_prompt or load_prompt("narrator"))
+        return template
+
+    async def _contract(self, ctx: InvocationContext, message: ContractMessage) -> tuple[AgentReport, str]:
+        """The report and, when narrating, the closing line of the narration (`""` otherwise)."""
         if message.contract != STEPSPEC:
-            return rejection("UNSUPPORTED_CONTRACT", f"the data agent accepts {STEPSPEC}, not {message.contract}")
+            return rejection("UNSUPPORTED_CONTRACT", f"the data agent accepts {STEPSPEC}, not {message.contract}"), ""
         try:
             step = StepSpec.model_validate(message.data)
         except ValidationError as exc:
-            return rejection("INVALID_STEPSPEC", f"not a valid {STEPSPEC}: {exc.error_count()} error(s)")
+            return rejection("INVALID_STEPSPEC", f"not a valid {STEPSPEC}: {exc.error_count()} error(s)"), ""
         async with self._mcp_session_factory(ctx.mcp.url, ctx.mcp.token) as mcp:
-            return await run_step(step, SessionTools(mcp))
+            tools = SessionTools(mcp)
+            if not self._narrate:
+                return await run_step(step, tools), ""
+            stream = NarrationStream(self._narrator(), _CtxSink(ctx))
+            try:
+                report = await run_step(step, tools, observer=stream)
+                return report, await stream.close()
+            finally:
+                await stream.abort()
 
     async def compact(self, previous_summary: str, messages: list[Message]) -> str:
         if not self._has_llm:
@@ -287,10 +323,20 @@ class DataAgent(LiteLLMAgent):
         return await super().compact(previous_summary, messages)
 
 
+def _on(env: Mapping[str, str], name: str) -> bool:
+    """A switch that is on unless it says `off`."""
+    return (env.get(name) or "").strip().lower() != "off"
+
+
 def build_agent(env: Mapping[str, str]) -> Agent:
-    """Raises `PluginConfigError` naming the missing or invalid setting (unless `DATA_LLM=off`)."""
+    """Raises `PluginConfigError` naming the missing or invalid setting (unless `DATA_LLM=off`).
+
+    `DATA_NARRATE=off` turns the narration of StepSpec turns off (one answer step, as before);
+    `DATA_NARRATE_LLM=off` keeps the narration but never sends it to the LLM.
+    """
+    narration = {"narrate": _on(env, "DATA_NARRATE"), "narrate_llm": _on(env, "DATA_NARRATE_LLM")}
     if (env.get("DATA_LLM") or "").strip().lower() == "off":
-        return DataAgent(llm=None, system_prompt=load_prompt("system"), compact_prompt=load_prompt("compact"))
+        return DataAgent(llm=None, system_prompt=load_prompt("system"), compact_prompt=load_prompt("compact"), **narration)
     settings = load_settings(env)
     for noisy in ("httpx", "httpx2", "LiteLLM"):  # per-request INFO lines drown out agent logs
         logging.getLogger(noisy).setLevel(logging.WARNING)
@@ -300,4 +346,4 @@ def build_agent(env: Mapping[str, str]) -> Agent:
         api_key=settings.openai_api_key,
         timeout_s=settings.llm_timeout_s,
     )
-    return DataAgent(llm=llm, system_prompt=load_prompt("system"), compact_prompt=load_prompt("compact"))
+    return DataAgent(llm=llm, system_prompt=load_prompt("system"), compact_prompt=load_prompt("compact"), **narration)
