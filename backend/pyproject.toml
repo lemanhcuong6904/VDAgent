@@ -16,6 +16,8 @@ dependencies = [
   "pyyaml>=6",
   "sqlite-vec>=0.1.6",
   "alembic>=1.13",
+  "psycopg[binary]>=3.2",
+  "sqlglot>=25",
 ]
 
 [tool.uv.sources]
