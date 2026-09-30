@@ -107,6 +107,41 @@ export interface ChartSpecDTO {
   spec: Record<string, unknown>;
   plotly?: Record<string, unknown> | null;
 }
+
+export interface ArtifactRefDTO {
+  artifact_id: string;
+  version: number;
+  artifact_type: string;
+  content_hash: string | null;
+}
+
+export interface ArtifactEnvelopeDTO {
+  artifact_id: string;
+  run_id: string;
+  task_id: string;
+  user_id: string;
+  artifact_type: string;
+  schema_version: string;
+  version: number;
+  status: string;
+  producer: {
+    agent: string;
+    agent_version: string;
+    prompt_version?: string | null;
+    model_id?: string | null;
+  };
+  content_hash: string | null;
+  snapshot_refs: string[];
+  semantic_config_version: string | null;
+  source_refs: string[];
+  input_artifact_refs: ArtifactRefDTO[];
+  evidence_refs: ArtifactRefDTO[];
+  limitations: string[];
+  reason_code: string | null;
+  reason: string | null;
+  payload: Record<string, unknown>;
+  created_at: string | null;
+}
 export interface CancelTaskResponseDTO {
   task: TaskDTO;
 }

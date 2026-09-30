@@ -83,6 +83,17 @@ def presentation(spec: Mapping[str, Any]) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
 
+def legend_label(spec_presentation: Mapping[str, Any], raw: Any, fallback: str) -> str:
+    legend = spec_presentation.get("legend")
+    if not isinstance(legend, Mapping):
+        return fallback
+    items = legend.get("items")
+    if not isinstance(items, Mapping):
+        return fallback
+    value = items.get(str(raw)) or items.get(fallback)
+    return _plain_unit_text(str(value)) if value else fallback
+
+
 def layout(spec: Mapping[str, Any]) -> dict[str, Any]:
     spec_presentation = presentation(spec)
     theme = resolve_theme(str(spec_presentation.get("theme_ref") or "dashboard/default"))
@@ -103,10 +114,19 @@ def layout(spec: Mapping[str, Any]) -> dict[str, Any]:
         "margin": {"l": 72, "r": 28, "t": 72, "b": 64},
         "hovermode": "closest",
         "hoverlabel": {"bgcolor": "#ffffff", "bordercolor": theme["axis_line_color"], "font": {"color": "#0f172a"}},
+        "showlegend": False,
         "legend": {"orientation": "h", "x": 0, "y": -0.18, "xanchor": "left", "yanchor": "top"},
         "uniformtext": {"mode": "hide", "minsize": 10},
         "separators": ",.",
     }
+
+
+def apply_legend(rendered_layout: dict[str, Any], spec_presentation: Mapping[str, Any], trace_count: int) -> None:
+    show = trace_count > 1
+    rendered_layout["showlegend"] = show
+    legend = spec_presentation.get("legend")
+    if show and isinstance(legend, Mapping) and legend.get("title"):
+        rendered_layout.setdefault("legend", {})["title"] = {"text": _plain_unit_text(str(legend["title"]))}
 
 
 def cartesian_layout(spec: Mapping[str, Any], x_field: str, y_field: str) -> dict[str, Any]:

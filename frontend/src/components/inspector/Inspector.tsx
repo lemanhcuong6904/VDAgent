@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useReports, useTask } from "../../api/queries";
 import { artifactIds, artifactKind } from "../../ui/artifacts";
 import { ChartSpecView } from "./ChartSpecView";
+import { ArtifactEnvelopeView } from "./ArtifactEnvelopeView";
 import { ChartView } from "./ChartView";
 import { DatasetTable } from "./DatasetTable";
 import { formatDateTime } from "../../ui/format";
@@ -142,6 +143,7 @@ function ArtifactViewer({ id }: { id: string }) {
   switch (artifactKind(id)) {
     case "dataset": return <DatasetTable key={id} id={id} />;
     case "chart": return <ChartView key={id} id={id} />;
+    case "envelope": return <ArtifactEnvelopeView key={id} id={id} version={1} />;
     case "report": return <ReportView key={id} id={id} />;
   }
 }

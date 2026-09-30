@@ -172,6 +172,46 @@ def test_plotly_renderer_uses_dashboard_polish_defaults() -> None:
     assert rendered["data"][0]["marker"]["line"]["color"] == "#1d4ed8"
 
 
+def test_single_series_chart_hides_legend_and_uses_business_trace_label() -> None:
+    rendered = render_plotly(
+        {
+            "chart_type": "bar",
+            "dataset": {"records": [{"label": "A12-08", "value": 72_500_000}]},
+            "encoding": {"x": {"field": "label"}, "y": {"field": "value"}},
+            "presentation": {
+                "title_spec": {"format": "plain", "value": "A12-08 cao hơn trung vị peer"},
+                "legend": {"title": "Chỉ số", "items": {"value": "Giá bán ròng/m²"}},
+            },
+        }
+    )
+
+    assert rendered["layout"]["showlegend"] is False
+    assert rendered["data"][0]["name"] == "Giá bán ròng/m²"
+
+
+def test_grouped_chart_shows_legend_with_business_title() -> None:
+    rendered = render_plotly(
+        {
+            "chart_type": "grouped_bar",
+            "dataset": {
+                "records": [
+                    {"label": "A12-08", "series": "target", "value": 72_500_000},
+                    {"label": "Peer", "series": "median", "value": 64_500_000},
+                ],
+            },
+            "encoding": {"x": {"field": "label"}, "y": {"field": "value"}, "series": {"field": "series"}},
+            "presentation": {
+                "title_spec": {"format": "plain", "value": "Giá A12-08 so với peer"},
+                "legend": {"title": "Nhóm so sánh", "items": {"target": "A12-08", "median": "Trung vị peer"}},
+            },
+        }
+    )
+
+    assert rendered["layout"]["showlegend"] is True
+    assert rendered["layout"]["legend"]["title"]["text"] == "Nhóm so sánh"
+    assert [trace["name"] for trace in rendered["data"]] == ["A12-08", "Trung vị peer"]
+
+
 def test_plotly_renderer_preserves_funnel_order_and_values() -> None:
     rendered = render_plotly(
         {
