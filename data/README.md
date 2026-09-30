@@ -1,4 +1,37 @@
-# Vinhomes Smart City mock Data Pack
+# Data assets
+
+Thư mục `data/` chứa **raw input** (mock/synthetic) của từng dự án. Output chuẩn hoá (canonical) để nạp Data Warehouse nằm ở `warehouse/project_<key>/`. Tất cả dữ liệu là **synthetic** (một số hiệu chỉnh từ nguồn công khai), không chứa thông tin người bán, chủ nhà, môi giới, khách hàng hay số liệu production.
+
+Quy tắc Git và checklist trước PR: [`docs/GIT_WAREHOUSE_INTEGRATION_RULES.md`](../docs/GIT_WAREHOUSE_INTEGRATION_RULES.md).
+
+## Danh sách project
+
+| `project_key` | `project_id` | Dự án | Owner (task) | Raw input | Canonical | Tài liệu |
+|---|---|---|---|---|---|---|
+| 100 | `PRJ-VHOP` | Vinhomes Ocean Park | Lưu Xuân Dũng (N7) | `warehouse/vhop/` | `warehouse/project_100/` | [`vhop/scenario_coverage.md`](../warehouse/vhop/scenario_coverage.md) |
+| 200 | `PRJ-VHSC` | Vinhomes Smart City | Nguyễn Quang Huy (N4) | `data/mock/vhsc_20260630/` | `warehouse/project_200/` | [Mục Smart City bên dưới](#vinhomes-smart-city-project_key200) |
+| 300 | `PRJ-VGP` | Vinhomes Grand Park | Hà Duy Anh (N3) | `data/VGP/data/` | `warehouse/project_300/` | [`VGP/data/README.md`](VGP/data/README.md) |
+| 400 | `PRJ-MAS-CP` | Masteri Centre Point | Nguyễn Tuấn Anh (N6) | `data/masteri_cp/csv/` | `warehouse/project_400/` | – |
+| 500 | `PRJ-RISK-PHU-MY-BRVT` | Dự án Rủi ro Pháp lý – Phú Mỹ (BRVT) | Nguyễn Mai Huy (N5) | `data/risk_project_mock/csv/` | `warehouse/project_500/` | [`risk_project_mock/README.md`](risk_project_mock/README.md) |
+
+Mỗi project dùng dải khoá riêng, không chồng lấn: ví dụ project 300 có `unit_key` 300001–399999, `zone_key` 301–399, `unit_code` dạng `VGP-U00001`. Tiền tố `unit_code` của các project: `OCP-U`, `SMC-U`, `VGP-U`, `MAS-U`, `TST-U`.
+
+Bảng dùng chung cho mọi project (`dim_date`, `semantic_config`, `snapshot_manifest`) nằm ở `warehouse/shared/`. Dải khoá (`project_key`, `project_id`, `zone_key`, `channel_key`, `infra_key`) phải theo đúng [`warehouse/id_registry.json`](../warehouse/id_registry.json); DDL chuẩn 16 bảng ở [`warehouse/schema_final_16_tables.sql`](../warehouse/schema_final_16_tables.sql).
+
+## Quy trình thêm/cập nhật một project
+
+1. Đặt raw CSV dưới `data/<project>/csv/` (không commit log, cache, `.env`, file build hay database cục bộ).
+2. Sinh canonical pack và chạy quality gate từ root repo:
+
+   ```powershell
+   python warehouse/organize_pack.py
+   python warehouse/verify_warehouse.py
+   ```
+
+3. Quality gate phải pass cho **toàn bộ** project đã tích hợp; sau khi chạy `organize_pack.py`, `git status` không được có thay đổi ngoài ý muốn trong `warehouse/project_*`.
+4. Cập nhật bảng ở trên và mở PR theo checklist trong quy tắc Git.
+
+## Vinhomes Smart City (`project_key=200`)
 
 Generator [`generate_vhsc_mock.py`](generate_vhsc_mock.py) dùng seed cố định và kiểm tra [`id_registry.json`](../warehouse/id_registry.json) v3.1.1. Pack có **3.000 căn synthetic**, đúng một dự án `PRJ-VHSC`/`project_key=200`, `unit_key=200001–203000`, `unit_code=SMC-U00001–SMC-U03000` và snapshot 30/06/2026. Generator tạo 16 CSV, `pack_manifest.json` (thứ tự nạp, số dòng, định danh), `row_counts.json`, `expected_scenarios.json`, `negative_controls.json`, `eval_test_cases.json`, `tc_assumptions.json` và [`load_vhsc_mock.sql`](load_vhsc_mock.sql). Chạy từ root repo:
 

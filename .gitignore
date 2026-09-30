@@ -6,3 +6,9 @@ __pycache__/
 .pytest_cache/
 node_modules/
 frontend/dist/
+
+# dbt build artifacts (project 300)
+data/VGP/dbt_vgp/target/
+data/VGP/dbt_vgp/logs/
+data/VGP/dbt_vgp/*.duckdb
+data/VGP/dbt_vgp/profiles/.user.yml
