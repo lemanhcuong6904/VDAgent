@@ -220,6 +220,8 @@ class TemplateNarrator:
             return (f"Xong: đã lưu {f['artifacts']} gói kết quả"
                     + (f", có {f['warnings']} cảnh báo" if f.get("warnings") else "")
                     + (", kết quả một phần vì còn dữ liệu thiếu" if f.get("partial") else "") + ", báo lại cho Orchestrator.")
+        if e.stage == "fail" and f.get("state") == "input_required":
+            return f"Mình cần bạn chọn để tiếp tục: {f['question']} ({f['options']} lựa chọn). Chưa có gói dữ liệu nào được lưu."
         if e.stage == "fail":
             return f"Không hoàn thành: {f['code']} ({f['state']}); không gói nào được coi là kết quả."
         return e.purpose
