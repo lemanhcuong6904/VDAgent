@@ -307,6 +307,9 @@ async def _finish(tracer: Tracer, report: AgentReport) -> None:
     if report.state == "completed":
         await tracer.note("done", "Báo kết quả cho Orchestrator kèm mã các gói đã lưu", state=report.state,
                           artifacts=len(report.artifact_refs), warnings=len(report.warnings), partial=report.partial)
+    elif report.state == "input_required" and report.question is not None:
+        await tracer.note("fail", "Cần người dùng chọn một lựa chọn đóng để tiếp tục; chưa lưu gói nào", state=report.state,
+                          code="INPUT_REQUIRED", question=report.question.text, options=len(report.question.options))
     else:
         code = report.error.code if report.error else report.state.upper()
         await tracer.note("fail", "Dừng bước và báo lỗi cho Orchestrator; không gói nào được coi là kết quả", code=code, state=report.state)

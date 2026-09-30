@@ -82,3 +82,11 @@ async def test_the_real_profile_reaches_the_steps(mcp_tools: McpTools) -> None:
     _, raw = reply_of(ctx)
     codes = {w.details["raw"] for w in parse_message(raw).body.result.warnings}  # type: ignore[union-attr]
     assert "SNAPSHOT_STATUS_ASSUMED" in codes and "SYNTHETIC_SOURCE:net_area_m2" not in codes
+
+
+async def test_a_question_is_narrated_as_a_question_and_not_as_a_failure(mcp_tools: McpTools) -> None:
+    ctx = await turn(mcp_tools, json.dumps(dispatch()))
+    content, _ = ctx.steps[-1]
+    closing = content.split("```json")[0]
+    assert "chọn" in closing and "Không hoàn thành" not in closing and "INPUT_REQUIRED" not in closing
+    assert "Landmark" in closing  # says what it asks about
