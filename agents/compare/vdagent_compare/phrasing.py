@@ -22,7 +22,9 @@ _NOT_QUANTITIES = re.compile(r"\b[A-Z][A-Z0-9]*(?:[-.][A-Z0-9]+)+\b|\b\dPN\b|\bm
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 _THOUSANDS = re.compile(r"^\d{1,3}(?:\.\d{3})+(?:,\d+)?$")
 _FORBIDDEN = re.compile(
-    r"(?<!\w)(vì|do|bởi|khiến|dẫn đến|nguyên nhân|nên|hãy|khuyến nghị|đề xuất|cần phải)(?!\w)", re.IGNORECASE)
+    r"(?<!\w)(vì|do|bởi|khiến|dẫn đến|nguyên nhân|nên|hãy|khuyến nghị|đề xuất|cần phải"
+    r"|đắt|rẻ|tốt hơn|xấu hơn)(?!\w)",  # last four: a price is only "cao hơn"/"thấp hơn", never good or bad
+    re.IGNORECASE)
 
 
 def _value(token: str) -> Decimal | None:
