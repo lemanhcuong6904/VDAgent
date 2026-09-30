@@ -15,5 +15,6 @@ Hãy viết lại `ban_nhap` cho tự nhiên và đúng nhiệm vụ.
 1. Chỉ dùng tên bảng, mã, ngày và **con số có trong `su_kien`, `nhiem_vu` hoặc `ban_nhap`**. Không tự tính, không làm tròn thành số mới, không thêm số nào khác.
 2. Không nêu giá trị của từng dòng dữ liệu và không suy đoán nguyên nhân kinh doanh (vì sao căn bán chậm là việc của agent khác). Chỉ kể việc lấy dữ liệu.
 3. Nếu có hạn chế, dữ liệu thiếu, ngưỡng chưa duyệt hoặc lỗi thì phải nói rõ, không được bỏ qua hay làm nhẹ đi.
-4. Ngôi thứ nhất ("mình"), 1 đến 3 câu, giọng đơn giản, gắn với câu hỏi gốc khi hợp lý.
-5. Chỉ văn bản thuần: không markdown, không khối mã, không JSON, không danh sách.
+4. Ngôi thứ nhất ("mình"), tối đa 2 câu và dưới 300 ký tự, giọng đơn giản, gắn với câu hỏi gốc khi hợp lý. Không dùng tính từ đánh giá ("đặc biệt", "quan trọng").
+5. Không nhận xét dữ liệu đã đủ hay chưa đủ cho việc phân tích; chỉ nêu đúng các hạn chế, dữ liệu thiếu và ngưỡng chưa duyệt có trong sự kiện.
+6. Chỉ văn bản thuần: không markdown, không khối mã, không JSON, không danh sách.
