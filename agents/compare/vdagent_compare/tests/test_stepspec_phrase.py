@@ -5,7 +5,10 @@ The artifacts stay deterministic (no model text inside them); a missing or misbe
 
 from __future__ import annotations
 
+import asyncio
 import json
+
+import pytest
 from typing import Any
 
 from vdagent_compare.llm import LLMUnavailableError
@@ -57,6 +60,25 @@ async def test_invented_number_is_rewritten_once_then_dropped(alice: McpPort) ->
     assert [r.artifact_type.value for r in report.artifact_refs] == ["peer_definition", "comparison"]
 
 
+async def test_number_from_median_cannot_be_assigned_to_subject(alice: McpPort) -> None:
+    class MedianAsSubject:
+        calls = 0
+        wrong = ""
+
+        async def complete_json(self, messages, *, name, schema):
+            row = next(line for line in messages[1]["content"].splitlines() if line.startswith("| DOM |"))
+            cells = [cell.strip() for cell in row.split("|")[1:-1]]
+            assert cells[1] != cells[2]  # subject DOM and group median differ
+            self.wrong = f"A12-08 có DOM {cells[2]} ngày."
+            self.calls += 1
+            return writes(self.wrong)
+
+    llm = MedianAsSubject()
+    report = await run(alice, llm)
+    assert report.state == "completed" and llm.calls == 2
+    assert llm.wrong not in report.summary
+
+
 async def test_causal_wording_is_refused(alice: McpPort) -> None:
     bad = writes("A12-08 bán chậm vì giá cao hơn nhóm, nên hãy giảm giá.")
     report = await run(alice, FakeLLM({"comparison_answer": [bad, bad]}))
@@ -66,13 +88,53 @@ async def test_causal_wording_is_refused(alice: McpPort) -> None:
 async def test_model_down_still_returns_every_number(alice: McpPort) -> None:
     report = await run(alice, FakeLLM({"comparison_answer": [LLMUnavailableError("down")]}))
     assert report.state == "completed" and report.partial is True
+    sufficiency = (await stored(alice, report, "comparison"))["payload"]["dataSufficiency"]
+    assert report.summary.startswith(sufficiency["summary"])
     assert TEMPLATE in report.summary
     assert [r.artifact_type.value for r in report.artifact_refs] == ["peer_definition", "comparison"]
 
 
 async def test_no_model_means_no_call_and_the_template_summary(alice: McpPort) -> None:
     report = await run(alice, None)
-    assert report.state == "completed" and report.summary.startswith(TEMPLATE)
+    sufficiency = (await stored(alice, report, "comparison"))["payload"]["dataSufficiency"]
+    assert report.state == "completed" and report.summary.startswith(sufficiency["summary"])
+    assert TEMPLATE in report.summary
+
+
+async def test_render_failure_after_artifacts_keeps_completed_report(alice: McpPort, monkeypatch) -> None:
+    def broken_render(_result):
+        raise KeyError("missing display label")
+
+    monkeypatch.setattr("vdagent_compare.stepspec.render", broken_render)
+    report = await run(alice, FakeLLM({}))
+    assert report.state == "completed" and TEMPLATE in report.summary
+    assert [r.artifact_type.value for r in report.artifact_refs] == ["peer_definition", "comparison"]
+
+
+async def test_unexpected_model_error_after_artifacts_keeps_completed_report(alice: McpPort) -> None:
+    report = await run(alice, FakeLLM({"comparison_answer": [RuntimeError("model unavailable")]}))
+    assert report.state == "completed" and TEMPLATE in report.summary
+    assert [r.artifact_type.value for r in report.artifact_refs] == ["peer_definition", "comparison"]
+
+
+async def test_narration_timeout_keeps_completed_report(alice: McpPort, monkeypatch) -> None:
+    class SlowLLM:
+        async def complete_json(self, messages, *, name, schema):
+            await asyncio.sleep(1)
+            return writes(GOOD)
+
+    monkeypatch.setattr("vdagent_compare.stepspec.PHRASE_TIMEOUT_S", 0.001)
+    report = await run(alice, SlowLLM())
+    assert report.state == "completed" and TEMPLATE in report.summary
+
+
+async def test_orchestrator_cancellation_is_not_swallowed(alice: McpPort) -> None:
+    class CanceledLLM:
+        async def complete_json(self, messages, *, name, schema):
+            raise asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        await run(alice, CanceledLLM())
 
 
 async def test_invalid_subject_never_reaches_the_model(alice: McpPort) -> None:

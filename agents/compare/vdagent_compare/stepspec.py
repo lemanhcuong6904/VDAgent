@@ -33,7 +33,7 @@ from vdagent_contracts.reports import AgentReport, ReportError
 from vdagent_contracts.step_inputs import INPUT_ERROR_CLASSES, DataInputs, InputError, Tools, resolve_data_inputs
 
 from . import phrasing
-from .llm import JsonLLM, LLMUnavailableError
+from .llm import JsonLLM
 from .vh_chat import render
 from .vh_data import DataPackage, Unit
 from .vh_service import CompareService
@@ -237,10 +237,12 @@ async def _run(step: StepSpec, tools: Tools, llm: JsonLLM | None) -> AgentReport
             row["sourceRef"] = {**row["sourceRef"], "artifactId": dataset_ref.artifact_id, "version": dataset_ref.version}
     cmp_ref = await put(ArtifactType.COMPARISON, "comparison@1", cmp_payload, status, [*inputs.refs, pd_ref])
     peers = len(peer_def.get("peers") or [])
-    summary = f"So sánh {cmp_payload['subject']['entityCode']} với {peers} căn tương đồng @ {step.snapshot_id}."
+    sufficiency = comparison.get("dataSufficiency") or {}
+    limits = sufficiency.get("summary") if sufficiency.get("level") in {"LIMITED", "INSUFFICIENT"} else ""
+    template = f"So sánh {cmp_payload['subject']['entityCode']} với {peers} căn tương đồng @ {step.snapshot_id}."
     narration = await _narrate(llm, step.original_question or "", result)
-    return _report(step, "completed", refs=[pd_ref, cmp_ref], warnings=limitations, partial=True,
-                   summary=f"{summary} {narration}" if narration else summary)
+    summary = " ".join(part for part in (limits, template, narration) if part)
+    return _report(step, "completed", refs=[pd_ref, cmp_ref], warnings=limitations, partial=True, summary=summary)
 
 
 async def _narrate(llm: JsonLLM | None, question: str, result: dict[str, Any]) -> str:
@@ -251,15 +253,10 @@ async def _narrate(llm: JsonLLM | None, question: str, result: dict[str, Any]) -
     comparison = result["comparison"]
     if llm is None or comparison.get("clarification") or comparison.get("reason_code") == "INSUFFICIENT_EVIDENCE":
         return ""  # nothing to word: no model, a question, or "not enough data" (said by the engine)
-    facts = phrasing.facts_from(render(result))
     try:
+        facts = phrasing.facts_from(render(result))
         async with asyncio.timeout(PHRASE_TIMEOUT_S):
-            text = await phrasing.phrase(llm, question, facts)
-    except (LLMUnavailableError, TimeoutError, KeyError, TypeError, AttributeError, ValueError) as exc:
+            return await phrasing.phrase(llm, question, facts) or ""
+    except Exception as exc:  # narration is optional; CancelledError still propagates
         log.warning("compare: model unusable for this step, template summary kept: %r", exc)
         return ""
-    if not text:
-        return ""
-    sufficiency = comparison.get("dataSufficiency") or {}
-    limits = sufficiency.get("summary") if sufficiency.get("level") in {"LIMITED", "INSUFFICIENT"} else ""
-    return " ".join(part for part in (limits, text) if part)  # limits: never the model's call
