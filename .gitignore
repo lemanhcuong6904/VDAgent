@@ -8,3 +8,9 @@ node_modules/
 frontend/dist/
 docs/sdk/
 docs/Task Tracker*.xlsx
+
+# dbt build artifacts (project 300)
+data/VGP/dbt_vgp/target/
+data/VGP/dbt_vgp/logs/
+data/VGP/dbt_vgp/*.duckdb
+data/VGP/dbt_vgp/profiles/.user.yml
