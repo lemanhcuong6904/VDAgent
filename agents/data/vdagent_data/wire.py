@@ -126,17 +126,22 @@ class Confidence:
     reasons: list[str]
 
 
-_MISSING = ("METRIC_UNAVAILABLE", "DQ_MISSING", "DQ_VIOLATION", "WINDOW_INCOMPLETE", "PEER_AREA_UNAVAILABLE", "MACRO_MONTH_MISSING", "INFRA_MISSING",
+_MISSING = ("DQ_MISSING", "DQ_VIOLATION", "WINDOW_INCOMPLETE", "PEER_AREA_UNAVAILABLE", "MACRO_MONTH_MISSING", "INFRA_MISSING",
             "PEER_CRITERION_UNAVAILABLE")
-_TENTATIVE = ("PROVISIONAL_DEFINITION", "CONFIG_PENDING", "SMALL_SAMPLE", "SYNTHETIC_SOURCE", "SNAPSHOT_STATUS_ASSUMED", "BLOCKED",
+_TENTATIVE = ("METRIC_UNAVAILABLE", "PROVISIONAL_DEFINITION", "CONFIG_PENDING", "SMALL_SAMPLE", "SYNTHETIC_SOURCE", "SNAPSHOT_STATUS_ASSUMED", "BLOCKED",
               "OUT_OF_CATALOG_NEED_NOT_SERVED", "EMPTY_RESULT")
 
 
-def confidence(warnings: list[str]) -> Confidence:
-    """HIGH: every number comes from approved rules and complete data. MEDIUM: something is provisional or assumed. LOW: data is missing."""
+def confidence(warnings: list[str], requested: list[str] | tuple[str, ...] = ()) -> Confidence:
+    """HIGH: every number comes from approved rules and complete data. MEDIUM: something is provisional or assumed, or a metric
+    the step did not ask for is not in the warehouse. LOW: data the step needs is missing (a requested metric included)."""
+    def needed_missing(w: str) -> bool:
+        head, _, rest = w.partition(":")
+        return head in _MISSING or (head == "METRIC_UNAVAILABLE" and rest in requested)
+
     heads = [w.split(":")[0] for w in warnings]
-    missing = sorted({w.split(":")[1] for w in warnings if w.split(":")[0] in _MISSING and ":" in w})
-    if any(h in _MISSING for h in heads):
+    missing = sorted({w.split(":")[1] for w in warnings if needed_missing(w) and ":" in w})
+    if any(needed_missing(w) for w in warnings):
         reasons = [("Thiếu dữ liệu: " + ", ".join(missing))[:200]] if missing else ["Thiếu dữ liệu ở một số trường"]
         tentative = sorted({h for h in heads if h in _TENTATIVE})
         if tentative:
@@ -314,7 +319,7 @@ class Door:
         refs = {r.artifact_type.value: r for r in report.artifact_refs}
         main = refs[main_type]
         warnings = [map_warning(w) for w in report.warnings]
-        level = confidence(report.warnings)
+        level = confidence(report.warnings, requested=list(entry.message.body.spec.get("metrics", [])))
         body = {
             "kind": "DONE", "agent_state": "completed", "agent_ref": entry.agent_ref, "usage": usage,
             "result": {"package": {"package_id": f"{main.artifact_id}@{main.version}", "kind": kind, "status": "PARTIAL" if report.partial else "VALID",

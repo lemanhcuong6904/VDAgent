@@ -312,9 +312,17 @@ def test_confidence_is_high_without_limits_medium_with_provisional_or_assumed_an
     for w in ("PROVISIONAL_DEFINITION:absorption_rate", "CONFIG_PENDING:min_group_size", "SYNTHETIC_SOURCE:net_area_m2", "SNAPSHOT_STATUS_ASSUMED",
               "SMALL_SAMPLE:3", "OUT_OF_CATALOG_NEED_NOT_SERVED"):
         assert confidence([w]).level == "MEDIUM", w
-    for w in ("METRIC_UNAVAILABLE:discount_pct", "DQ_MISSING:net_price_per_m2:4", "WINDOW_INCOMPLETE:inquiry_leads_30d:2", "PEER_AREA_UNAVAILABLE:1"):
+    for w in ("DQ_MISSING:net_price_per_m2:4", "WINDOW_INCOMPLETE:inquiry_leads_30d:2", "PEER_AREA_UNAVAILABLE:1", "DQ_VIOLATION:negative_dom:2",
+              "MACRO_MONTH_MISSING:202609", "INFRA_MISSING:P1"):
         assert confidence(["SNAPSHOT_STATUS_ASSUMED", w]).level == "LOW", w
-    assert all(0 < len(r) <= 200 for r in confidence(["METRIC_UNAVAILABLE:x", "SNAPSHOT_STATUS_ASSUMED"]).reasons)
+    assert all(0 < len(r) <= 200 for r in confidence(["DQ_MISSING:x:1", "SNAPSHOT_STATUS_ASSUMED"]).reasons)
+
+
+def test_a_metric_the_warehouse_does_not_hold_lowers_confidence_only_when_the_step_asked_for_it() -> None:
+    warnings = ["METRIC_UNAVAILABLE:discount_pct"]
+    assert confidence(warnings).level == "MEDIUM"  # listed by the unit steps by default, not asked for
+    assert confidence(warnings, requested=["dom_days"]).level == "MEDIUM"
+    assert confidence(warnings, requested=["discount_pct"]).level == "LOW"
 
 
 @pytest.mark.parametrize("raw,code,target", [
