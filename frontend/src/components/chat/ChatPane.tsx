@@ -5,6 +5,7 @@ import { agentColor } from "../../ui/artifacts";
 import { CompactedDivider } from "./CompactedDivider";
 import { Composer } from "./Composer";
 import { MessageItem, PendingItem } from "./MessageItem";
+import { getChatPanelState } from "./chatState";
 
 /** Distance (px) from an edge that still counts as "at" that edge. */
 const EDGE_PX = 80;
@@ -50,6 +51,13 @@ export function ChatPane({ agent }: { agent: AgentDTO }) {
   const hasDivider = lastCompactedSeq !== null || Boolean(summary);
   // While compacted history is collapsed, don't page through hidden (compacted) history.
   const canAutoLoad = showCompacted || !messages[0]?.compacted;
+  const panelState = getChatPanelState({
+    isPending: query.isPending,
+    isError: query.isError,
+    messageCount: messages.length,
+    pendingCount: pending.length,
+    hasSummary: hasDivider,
+  });
 
   const loadOlder = () => {
     if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
@@ -138,7 +146,7 @@ export function ChatPane({ agent }: { agent: AgentDTO }) {
         </span>
       </header>
 
-      <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
+      <div className={`chat-scroll chat-state-${panelState}`} ref={scrollRef} onScroll={onScroll}>
         {hasNextPage && (
           <div className="load-older">
             {isFetchingNextPage ? (
