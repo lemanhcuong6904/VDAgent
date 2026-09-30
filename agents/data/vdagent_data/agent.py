@@ -36,6 +36,7 @@ from .mcp_client import (
 from .settings import load_settings
 from .narrate import LlmNarrator, NarrationStream, Narrator, TemplateNarrator
 from .steps import ToolFailure, rejection, run_step
+from .wire import Door, Reply, is_v1
 
 NAME = "data"
 DESCRIPTION = (
@@ -241,6 +242,10 @@ def _summary_vi(report: AgentReport) -> str:
     return f"Data không thực hiện bước này ({report.state}: {code})."
 
 
+def _render_v1(line: str, reply: Reply) -> str:
+    return "\n\n".join([line.strip(), f"```json\n{reply.json()}\n```"])
+
+
 class _CtxSink:
     """Shows a narrated beat as an SDK step: the step first, then the result of each of its tool calls."""
 
@@ -266,6 +271,7 @@ class DataAgent(LiteLLMAgent):
         narrate: bool = True,
         narrate_llm: bool = True,
         narrator_prompt: str | None = None,
+        profile: str = "mock",
     ) -> None:
         super().__init__(llm=llm, mcp_session_factory=mcp_session_factory,  # pyright: ignore[reportArgumentType]
                          system_prompt=system_prompt, compact_prompt=compact_prompt)
@@ -273,12 +279,22 @@ class DataAgent(LiteLLMAgent):
         self._narrate = narrate
         self._narrate_llm = narrate_llm
         self._narrator_prompt = narrator_prompt
+        self._profile = profile
+        self._door = Door(profile=profile)  # the steps of contract v1.0 seen so far (idempotency, open questions, pins)
 
     @property
     def has_llm(self) -> bool:
         return self._has_llm
 
+    @property
+    def profile(self) -> str:
+        """What the warehouse is: "mock" (synthetic) or "real" (the DATA team's), from DATA_DW_PROFILE."""
+        return self._profile
+
     async def invoke(self, ctx: InvocationContext) -> None:
+        if is_v1(_inbound(ctx)):
+            await self._contract_v1(ctx, _inbound(ctx))
+            return
         try:
             incoming = parse_incoming(_inbound(ctx))
         except ValueError:
@@ -297,6 +313,22 @@ class DataAgent(LiteLLMAgent):
         if self._narrate_llm and self._has_llm:
             return LlmNarrator(self._llm, template, system_prompt=self._narrator_prompt or load_prompt("narrator"))
         return template
+
+    async def _contract_v1(self, ctx: InvocationContext, text: str) -> None:
+        """A message of the Orchestrator contract v1.0: the work is narrated, the answer is the contract's reply."""
+        async with self._mcp_session_factory(ctx.mcp.url, ctx.mcp.token) as mcp:
+            tools = SessionTools(mcp)
+            closing = ""
+            if not self._narrate:
+                reply = await self._door.handle(text, tools)
+            else:
+                stream = NarrationStream(self._narrator(), _CtxSink(ctx))
+                try:
+                    reply = await self._door.handle(text, tools, observer=stream)
+                    closing = await stream.close()
+                finally:
+                    await stream.abort()
+        await ctx.emit_assistant(_render_v1(closing or reply.text, reply))
 
     async def _contract(self, ctx: InvocationContext, message: ContractMessage) -> tuple[AgentReport, str]:
         """The report and, when narrating, the closing line of the narration (`""` otherwise)."""
@@ -333,8 +365,10 @@ def build_agent(env: Mapping[str, str]) -> Agent:
 
     `DATA_NARRATE=off` turns the narration of StepSpec turns off (one answer step, as before);
     `DATA_NARRATE_LLM=off` keeps the narration but never sends it to the LLM.
+    `DATA_DW_PROFILE=real` says the warehouse is the DATA team's (no "synthetic" labels; its snapshot approval is assumed and said so).
     """
-    narration = {"narrate": _on(env, "DATA_NARRATE"), "narrate_llm": _on(env, "DATA_NARRATE_LLM")}
+    narration = {"narrate": _on(env, "DATA_NARRATE"), "narrate_llm": _on(env, "DATA_NARRATE_LLM"),
+                 "profile": (env.get("DATA_DW_PROFILE") or "mock").strip().lower()}
     if (env.get("DATA_LLM") or "").strip().lower() == "off":
         return DataAgent(llm=None, system_prompt=load_prompt("system"), compact_prompt=load_prompt("compact"), **narration)
     settings = load_settings(env)
