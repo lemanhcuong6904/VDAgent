@@ -411,6 +411,34 @@ def main():
     else:
         print("  - PASS: mọi PK/UK của 13 bảng project đều duy nhất khi hợp nhất")
 
+    # 4. Check assembled Central Master Dataset if present
+    ds_dir = BASE_DIR / "dataset"
+    if ds_dir.exists():
+        print("\n[4] Kiểm tra Central Master Dataset (warehouse/dataset):")
+        ds_manifest = ds_dir / "dataset_manifest.json"
+        if ds_manifest.exists():
+            print("  - PASS: dataset_manifest.json tồn tại")
+        else:
+            print("  - FAIL: Thiếu dataset_manifest.json")
+            total_errors += 1
+
+        ds_missing = []
+        for tname, exp_cols in EXPECTED_HEADERS.items():
+            t_file = ds_dir / f"{tname}.csv"
+            if not t_file.exists():
+                ds_missing.append(f"{tname}.csv")
+            else:
+                hdr, rows = read_csv_clean(t_file)
+                if hdr != exp_cols:
+                    print(f"  - FAIL HEADER ở dataset/{tname}.csv")
+                    total_errors += 1
+
+        if ds_missing:
+            print(f"  - FAIL: Thiếu {len(ds_missing)} bảng ở dataset/: {', '.join(ds_missing)}")
+            total_errors += len(ds_missing)
+        else:
+            print("  - PASS: Đủ 16 bảng Master Dataset với header chuẩn 100%")
+
     print("\n" + "=" * 60)
     if total_errors == 0:
         print("TỔNG KẾT: TẤT CẢ DỮ LIỆU ĐÃ TÍCH HỢP ĐẠT QUALITY GATE!")
@@ -422,3 +450,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
