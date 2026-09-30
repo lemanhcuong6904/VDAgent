@@ -1,0 +1,86 @@
+ Image vdagent-python:latest Building 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Image vdagent-python:latest Built 
+ Network vdagent_ws7acc_default Creating 
+ Volume vdagent_ws7acc_var Creating 
+ Volume vdagent_ws7acc_var Creating 
+ Network vdagent_ws7acc_default Creating 
+ Volume vdagent_ws7acc_var Created 
+ Volume vdagent_ws7acc_var Created 
+ Network vdagent_ws7acc_default Created 
+ Network vdagent_ws7acc_default Created 
+ Container vdagent_ws7acc-seed-offline-1 Creating 
+ Container vdagent_ws7acc-seed-offline-1 Created 
+ Container vdagent_ws7acc-backend-offline-1 Creating 
+ Container vdagent_ws7acc-backend-offline-1 Created 
+ Container vdagent_ws7acc-seed-offline-1 Starting 
+ Container vdagent_ws7acc-seed-offline-1 Started 
+ Container vdagent_ws7acc-seed-offline-1 Waiting 
+ Container vdagent_ws7acc-seed-offline-1 Exited 
+ Container vdagent_ws7acc-backend-offline-1 Starting 
+ Container vdagent_ws7acc-backend-offline-1 Started 
+== 1. golden request over REST
+....                                                                     [100%]
+4 passed in 2.39s
+== 2. real browser
+.                                                                        [100%]
+1 passed in 3.53s
+== 3. store: hashes, lineage, evidence
+ vdagent_ws7acc-backend-offline-1 Copying vdagent_ws7acc-backend-offline-1:/tmp/ws7.db to acceptance/ws7/out/backend.db
+ vdagent_ws7acc-backend-offline-1 Copied vdagent_ws7acc-backend-offline-1:/tmp/ws7.db to acceptance/ws7/out/backend.db
+.......                                                                  [100%]
+7 passed in 0.23s
+== 4. kill -9 mid-run, restart
+ Container vdagent_ws7acc-backend-offline-1 Killing 
+ Container vdagent_ws7acc-backend-offline-1 Killed 
+ Container vdagent_ws7acc-seed-offline-1 Starting 
+ Container vdagent_ws7acc-seed-offline-1 Started 
+ Container vdagent_ws7acc-seed-offline-1 Waiting 
+ Container vdagent_ws7acc-seed-offline-1 Exited 
+ Container vdagent_ws7acc-backend-offline-1 Starting 
+ Container vdagent_ws7acc-backend-offline-1 Started 
+ vdagent_ws7acc-backend-offline-1 Copying vdagent_ws7acc-backend-offline-1:/tmp/ws7.db to acceptance/ws7/out/backend.db
+ vdagent_ws7acc-backend-offline-1 Copied vdagent_ws7acc-backend-offline-1:/tmp/ws7.db to acceptance/ws7/out/backend.db
+..                                                                       [100%]
+2 passed in 0.08s
+WS7 acceptance: PASS (evidence in acceptance/ws7/out)

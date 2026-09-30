@@ -1,8 +1,11 @@
-"""This agent's brain: a thin tool-calling loop over LiteLLM with the Backend's MCP tools.
+"""This agent's brain.
 
-Per turn: open an MCP session, offer its tools plus `send_to_agent`, and step the model up to
-`ctx.max_steps` times (`tool_choice="none"` on the last step). Every assistant step and tool
-result is reported through `ctx`; tool calls of one step run concurrently.
+A `StepSpec@1` message (WS2, D4) runs the deterministic real-estate path in `steps.py`: no LLM, one
+`AgentReport@1` answer. Any other message keeps the legacy behaviour, a thin tool-calling loop over LiteLLM
+with the Backend's MCP tools: open an MCP session, offer its tools plus `send_to_agent`, and step the model up
+to `ctx.max_steps` times (`tool_choice="none"` on the last step). Every assistant step and tool result is
+reported through `ctx`; tool calls of one step run concurrently. With `DATA_LLM=off` the plugin loads without
+LLM settings and serves StepSpec requests only.
 """
 
 from __future__ import annotations
@@ -14,14 +17,33 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+from vdagent_contracts.messages import ContractMessage, StepSpec, parse_incoming
+from vdagent_contracts.reports import AgentReport, render_agent_report
 from vdagent_sdk import SEND_TO_AGENT, Agent, AgentTimeoutError, InvocationContext, Message, Peer, ToolCall
 
 from .llm import AssistantMessage, LiteLLMClient, LLMClient, LLMTimeoutError, ToolChoice
-from .mcp_client import McpSession, McpSessionFactory, open_mcp_session, openai_tool_schema, run_mcp_tool
+from .mcp_client import (
+    MCP_TOOL_TIMEOUT_S,
+    McpSession,
+    McpSessionFactory,
+    open_mcp_session,
+    openai_tool_schema,
+    run_mcp_tool,
+)
 from .settings import load_settings
+from .steps import ToolFailure, rejection, run_step
 
 NAME = "data"
-DESCRIPTION = "Queries the warehouse; returns dataset ids."
+DESCRIPTION = (
+    "Queries the warehouse; returns dataset ids. A StepSpec@1 JSON request (fetch_units, aggregate_metrics) reads the"
+    " real-estate DW deterministically and returns dataset/metric/dq artifacts in an AgentReport@1."
+)
+STEPSPEC = "StepSpec@1"
+NO_LLM_TEXT = (
+    "Data đang chạy ở chế độ không có LLM (DATA_LLM=off): chỉ nhận yêu cầu có cấu trúc StepSpec@1"
+    " (fetch_units, aggregate_metrics). Câu hỏi tự do cần cấu hình LLM trong agents/data/.env."
+)
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 SUMMARY_HEADING = "## Summary of earlier work with this user"
@@ -191,8 +213,84 @@ class _Turn:
         return f"error: unknown tool '{tc.name}'"
 
 
+class SessionTools:
+    """The `steps.Tools` port over one MCP session (full JSON results: no truncation for the model)."""
+
+    def __init__(self, session: McpSession) -> None:
+        self._session = session
+
+    async def call(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+        async with asyncio.timeout(MCP_TOOL_TIMEOUT_S):
+            outcome = await self._session.call_tool(name, args)
+        if outcome.is_error:
+            raise ToolFailure(outcome.text)
+        return json.loads(outcome.text)
+
+
+def _inbound(ctx: InvocationContext) -> str:
+    return str(ctx.history[-1].get("content") or "") if ctx.history else ""
+
+
+def _summary_vi(report: AgentReport) -> str:
+    if report.state == "completed":
+        return f"Data đã tạo {len(report.artifact_refs)} artifact cho {report.snapshot_id}." + (" Có hạn chế." if report.partial else "")
+    code = report.error.code if report.error else report.state
+    return f"Data không thực hiện bước này ({report.state}: {code})."
+
+
+class DataAgent(LiteLLMAgent):
+    """Deterministic StepSpec path in front of the legacy LLM loop; `llm=None` serves StepSpec only."""
+
+    def __init__(
+        self,
+        *,
+        llm: LLMClient | None,
+        mcp_session_factory: McpSessionFactory = open_mcp_session,
+        system_prompt: str,
+        compact_prompt: str,
+    ) -> None:
+        super().__init__(llm=llm, mcp_session_factory=mcp_session_factory,  # pyright: ignore[reportArgumentType]
+                         system_prompt=system_prompt, compact_prompt=compact_prompt)
+        self._has_llm = llm is not None
+
+    @property
+    def has_llm(self) -> bool:
+        return self._has_llm
+
+    async def invoke(self, ctx: InvocationContext) -> None:
+        try:
+            incoming = parse_incoming(_inbound(ctx))
+        except ValueError:
+            incoming = None  # JSON without `contract`: legacy free text, as before WS2
+        if isinstance(incoming, ContractMessage):
+            report = await self._contract(ctx, incoming)
+            await ctx.emit_assistant(render_agent_report(_summary_vi(report), report))
+            return
+        if not self._has_llm:
+            await ctx.emit_assistant(NO_LLM_TEXT)
+            return
+        await super().invoke(ctx)
+
+    async def _contract(self, ctx: InvocationContext, message: ContractMessage) -> AgentReport:
+        if message.contract != STEPSPEC:
+            return rejection("UNSUPPORTED_CONTRACT", f"the data agent accepts {STEPSPEC}, not {message.contract}")
+        try:
+            step = StepSpec.model_validate(message.data)
+        except ValidationError as exc:
+            return rejection("INVALID_STEPSPEC", f"not a valid {STEPSPEC}: {exc.error_count()} error(s)")
+        async with self._mcp_session_factory(ctx.mcp.url, ctx.mcp.token) as mcp:
+            return await run_step(step, SessionTools(mcp))
+
+    async def compact(self, previous_summary: str, messages: list[Message]) -> str:
+        if not self._has_llm:
+            return previous_summary  # nothing to fold without a model; the Backend keeps the raw history
+        return await super().compact(previous_summary, messages)
+
+
 def build_agent(env: Mapping[str, str]) -> Agent:
-    """Raises `PluginConfigError` naming the missing or invalid setting."""
+    """Raises `PluginConfigError` naming the missing or invalid setting (unless `DATA_LLM=off`)."""
+    if (env.get("DATA_LLM") or "").strip().lower() == "off":
+        return DataAgent(llm=None, system_prompt=load_prompt("system"), compact_prompt=load_prompt("compact"))
     settings = load_settings(env)
     for noisy in ("httpx", "httpx2", "LiteLLM"):  # per-request INFO lines drown out agent logs
         logging.getLogger(noisy).setLevel(logging.WARNING)
@@ -202,4 +300,4 @@ def build_agent(env: Mapping[str, str]) -> Agent:
         api_key=settings.openai_api_key,
         timeout_s=settings.llm_timeout_s,
     )
-    return LiteLLMAgent(llm=llm, system_prompt=load_prompt("system"), compact_prompt=load_prompt("compact"))
+    return DataAgent(llm=llm, system_prompt=load_prompt("system"), compact_prompt=load_prompt("compact"))

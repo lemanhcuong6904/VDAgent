@@ -1,0 +1,85 @@
+{
+ "HC2": {
+  "task": "t_4a34aa062d3c",
+  "status": "completed",
+  "outcome": "partial",
+  "secs": 9.6,
+  "agents": [
+   [
+    "orchestrator",
+    "completed"
+   ],
+   [
+    "data",
+    "completed"
+   ],
+   [
+    "compare",
+    "completed"
+   ]
+  ],
+  "answer": "Phân tích căn A12-08 @ SNAP-2026-09-28 / sc-1 (một phần — xem hạn chế bên dưới).\n- net_asking_price_per_m2: 72.500.000 VND/m² so với trung vị 64.500.000 VND/m² của 5 căn tương đồng (chênh 12,40%) [art_e31e6874c8ea]\n- dom: 138 ngày so với trung vị 61 ngày của 5 căn tương đồng (chênh 126,23%) [art_e31e6874c8ea]\n- Nhóm tương đồng theo luật hiện hành của Compare: 5 căn (A12-11, A10-02, A14-03, B09-05, B11-07) [art_b47b6d2a61c0]. Tập 7 căn golden chưa có luật được duyệt (B-11).\n\n| Bước | Agent | Trạng thái | Artifact |\n|---|---|---|---|\n| B1 | data.fetch_units | hoàn tất | art_06e1fd399f48, art_4ce8e16f20bb, art_c60131459c0f |\n| B2 | compare.compare_to_peers | hoàn tất | art_b47b6d2a61c0, art_e31e6874c8ea |\n\nHạn chế: BLOCKED:B-2_min_peer_count, BLOCKED:D2b_segment_mapping, CONFIG_PENDING:min_group_size, DQ_MISSING:asking_price_vnd:12, METRIC_UNAVAILABLE:discount_pct, METRIC_UNAVAILABLE:subsidy_duration_mo, SYNTHETIC_SOURCE:net_area_m2, WINDOW_INCOMPLETE:inquiry_leads_30d:3\n\nrun_state: art_d2246eb07556 · plan pl_e6b280188abd"
+ },
+ "HC3": {
+  "task": "t_455796e1e19d",
+  "status": "completed",
+  "outcome": "partial",
+  "secs": 18.7,
+  "agents": [
+   [
+    "orchestrator",
+    "completed"
+   ],
+   [
+    "data",
+    "completed"
+   ],
+   [
+    "insight",
+    "completed"
+   ],
+   [
+    "compare",
+    "completed"
+   ],
+   [
+    "chart",
+    "completed"
+   ]
+  ],
+  "answer": "Phân tích căn A12-08 @ SNAP-2026-09-28 / sc-1 (một phần — xem hạn chế bên dưới).\n- net_asking_price_per_m2: 72.500.000 VND/m² so với trung vị 64.500.000 VND/m² của 5 căn tương đồng (chênh 12,40%) [art_accdae78e8f8]\n- dom: 138 ngày so với trung vị 61 ngày của 5 căn tương đồng (chênh 126,23%) [art_accdae78e8f8]\n- Nhóm tương đồng theo luật hiện hành của Compare: 5 căn (A12-11, A10-02, A14-03, B09-05, B11-07) [art_36f275159acc]. Tập 7 căn golden chưa có luật được duyệt (B-11).\n- OVERPRICED_VS_PEER: Căn A12-08 đã tồn 138 ngày; yếu tố có khả năng liên quan là giá cao hơn nhóm tương đồng, với chênh lệch so với nhóm tương đồng +12,4%. [art_19872634015c]\n- Thông tin về subsidy_duration_mo bị loại khỏi phân tích do dữ liệu thiếu và khả năng thiếu không ngẫu nhiên. [art_19872634015c]\n- Biểu đồ: art_215d3f2c2f12, art_224bc94731d7, art_550a2d60b425, art_db06b06fec0c, art_4c4057a66a34\n\n| Bước | Agent | Trạng thái | Artifact |\n|---|---|---|---|\n| B1 | data.fetch_units | hoàn tất | art_533a041cebcb, art_ecc7166cc53f, art_0040b3327404 |\n| B2 | insight.explain_unit | hoàn tất | art_19872634015c |\n| B3 | compare.compare_to_peers | hoàn tất | art_36f275159acc, art_accdae78e8f8 |\n| B4 | chart.draw_chart | hoàn tất | art_215d3f2c2f12, art_224bc94731d7, art_550a2d60b425, art_db06b06fec0c, art_4c4057a66a34 |\n\nHạn chế: BLOCKED:B-2_min_peer_count, BLOCKED:D2b_segment_mapping, CONFIG_PENDING:min_group_size, DQ_MISSING:asking_price_vnd:12, FIELD_UNAVAILABLE:asking_price_per_m2, METRIC_UNAVAILABLE:discount_pct, METRIC_UNAVAILABLE:subsidy_duration_mo, SYNTHETIC_SOURCE:net_area_m2, WINDOW_INCOMPLETE:inquiry_leads_30d:3\n\nrun_state: art_7a91ddf6ba41 · plan pl_df8220a67160"
+ },
+ "HC4": {
+  "task": "t_2fa1d728cded",
+  "status": "completed",
+  "outcome": "partial",
+  "secs": 24.8,
+  "agents": [
+   [
+    "orchestrator",
+    "completed"
+   ],
+   [
+    "data",
+    "completed"
+   ],
+   [
+    "insight",
+    "completed"
+   ],
+   [
+    "compare",
+    "completed"
+   ],
+   [
+    "chart",
+    "completed"
+   ],
+   [
+    "report",
+    "completed"
+   ]
+  ],
+  "answer": "Phân tích căn A12-08 @ SNAP-2026-09-28 / sc-1 (một phần — xem hạn chế bên dưới).\n- net_asking_price_per_m2: 72.500.000 VND/m² so với trung vị 64.500.000 VND/m² của 5 căn tương đồng (chênh 12,40%) [art_2ee9ae28affa]\n- dom: 138 ngày so với trung vị 61 ngày của 5 căn tương đồng (chênh 126,23%) [art_2ee9ae28affa]\n- Nhóm tương đồng theo luật hiện hành của Compare: 5 căn (A12-11, A10-02, A14-03, B09-05, B11-07) [art_4f9a62cc3d24]. Tập 7 căn golden chưa có luật được duyệt (B-11).\n- OVERPRICED_VS_PEER: Căn A12-08 đã tồn 138 ngày; yếu tố có khả năng liên quan là giá cao hơn nhóm tương đồng, với mức giá so với trung vị peer +12,4%. [art_46e9891f3a23]\n- Không có dữ liệu về thời hạn trợ giá nên chưa thể đánh giá yếu tố này. [art_46e9891f3a23]\n- Biểu đồ: art_d51e0e2bf68d, art_4b0a8db67248, art_b6218f1207e3, art_990edb259b15, art_d9b9e7043674\n- Báo cáo đã lưu: art_759ec9cae278\n\n| Bước | Agent | Trạng thái | Artifact |\n|---|---|---|---|\n| B1 | data.fetch_units | hoàn tất | art_272229c12c4b, art_27f0f2c641e1, art_a5db7a68acb4 |\n| B2 | insight.explain_unit | hoàn tất | art_46e9891f3a23 |\n| B3 | compare.compare_to_peers | hoàn tất | art_4f9a62cc3d24, art_2ee9ae28affa |\n| B4 | chart.draw_chart | hoàn tất | art_d51e0e2bf68d, art_4b0a8db67248, art_b6218f1207e3, art_990edb259b15, art_d9b9e7043674 |\n| B5 | report.draft_report | hoàn tất | art_759ec9cae278 |\n\nHạn chế: BLOCKED:B-2_min_peer_count, BLOCKED:D2b_segment_mapping, CONFIG_PENDING:min_group_size, DQ_MISSING:asking_price_vnd:12, FIELD_UNAVAILABLE:asking_price_per_m2, METRIC_UNAVAILABLE:discount_pct, METRIC_UNAVAILABLE:subsidy_duration_mo, SYNTHETIC_SOURCE:net_area_m2, WINDOW_INCOMPLETE:inquiry_leads_30d:3\n\nrun_state: art_7bfccb3dedf8 · plan pl_a402bd840638"
+ }
+}

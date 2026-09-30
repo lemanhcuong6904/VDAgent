@@ -49,6 +49,7 @@ class LiteLLMClient:
     """`litellm.acompletion` against an OpenAI-compatible endpoint; credentials passed explicitly."""
 
     def __init__(self, *, model: str, api_base: str, api_key: str, timeout_s: float) -> None:
+        self.model = model  # recorded in plan provenance (no credentials)
         self._model = f"openai/{model}"
         self._api_base = api_base
         self._api_key = api_key

@@ -1,0 +1,1 @@
+{"code":"LLM_PLAN_MISSING_STEP","reason":"LLM wrote agent \"data.fetch_units\" (dotted catalog notation from prompt v0); rejected by code before any agent ran; prompt fixed, validation unchanged"}

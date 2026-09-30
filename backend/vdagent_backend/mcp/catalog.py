@@ -118,13 +118,74 @@ TOOLS: list[types.Tool] = [
     types.Tool(
         name="save_report",
         description=(
-            "Save a markdown report and return its report_id. Embed charts with {{chart:<chart_id>}} and"
-            " dataset tables with {{dataset:<dataset_id>}} on their own lines."
+            "Save a markdown report and return its report_id. Embed charts with {{chart:<chart_id>}},"
+            " chart_spec artifacts with {{chart_spec:<artifact_id>@<version>}} and dataset tables with"
+            " {{dataset:<dataset_id>}} on their own lines."
         ),
         input_schema=_schema(
             {"title": {"type": "string"}, "markdown": {"type": "string"}},
             ["title", "markdown"],
         ),
+    ),
+    types.Tool(
+        name="artifact_put",
+        description=(
+            "Store an immutable artifact envelope draft (JSON string: artifact_type, schema_version, status,"
+            " producer, payload, ...; decimal numbers are kept exact). Set artifact_id in the draft to store"
+            " a new version of that artifact. Returns the stored envelope."
+        ),
+        input_schema=_schema(
+            {
+                "draft_json": {"type": "string", "description": "ArtifactDraft as a JSON string."},
+                "run_id": {"type": "string", "description": "Run to file it under; default: the current task."},
+            },
+            ["draft_json"],
+        ),
+    ),
+    types.Tool(
+        name="artifact_get",
+        description="Read one artifact envelope with its payload (latest version unless version is given).",
+        input_schema=_schema(
+            {
+                "artifact_id": {"type": "string", "description": "Artifact id (art_...)."},
+                "version": {"type": "integer", "minimum": 1},
+            },
+            ["artifact_id"],
+        ),
+    ),
+    types.Tool(
+        name="artifact_list",
+        description="List your artifacts (latest versions, without payloads), optionally by run and type.",
+        input_schema=_schema({"run_id": {"type": "string"}, "artifact_type": {"type": "string"}}, []),
+    ),
+    types.Tool(
+        name="get_user_context",
+        description=(
+            "Your user's context: user_id, role and authorized_scope (project_ids, zone_ids). Pass it verbatim;"
+            " never take scope from the question."
+        ),
+        input_schema=_schema({}, []),
+    ),
+    types.Tool(
+        name="re_list_tables",
+        description="List the real-estate DW tables (DW v3.1.0 mock) with the row counts you are allowed to see.",
+        input_schema=_schema({}, []),
+    ),
+    types.Tool(
+        name="re_describe_table",
+        description="Columns and sample rows (within your scope) of one real-estate DW table.",
+        input_schema=_schema(
+            {"table": {"type": "string"}, "sample_rows": {"type": "integer", "minimum": 0, "maximum": 20}},
+            ["table"],
+        ),
+    ),
+    types.Tool(
+        name="re_run_query",
+        description=(
+            "Run one read-only SELECT on the real-estate DW; rows outside your user's scope are never visible,"
+            " not even as a count." + _DATASET_RESULT
+        ),
+        input_schema=_schema({"sql": {"type": "string"}, "name": _DATASET_NAME}, ["sql"]),
     ),
 ]
 
@@ -176,3 +237,44 @@ RESULT_FIELDS: dict[str, dict[str, str]] = {
         "title": "The report title.",
     },
 }
+
+_ENVELOPE_FIELDS: dict[str, str] = {
+    "artifact_id": "Artifact id (`art_…`).",
+    "run_id": "The run (task) the artifact is filed under.",
+    "task_id": "The task whose invocation wrote this version.",
+    "user_id": "The owning user.",
+    "artifact_type": "e.g. dataset, insight, comparison, chart_spec, report, run_state.",
+    "schema_version": "The payload schema, e.g. `re_dataset@1`.",
+    "version": "1 for a new artifact; each new version supersedes the previous ones.",
+    "status": "DRAFT, VALID, PARTIAL, INVALID or SUPERSEDED.",
+    "producer": "`{agent, agent_version, prompt_version, model_id}`.",
+    "content_hash": "sha256 of the canonical content, computed by the store.",
+    "snapshot_refs": "The data snapshot(s) the content is pinned to.",
+    "semantic_config_version": "The semantic config version, or null.",
+    "source_refs": "Source references of the content.",
+    "input_artifact_refs": "`[{artifact_id, version, artifact_type, content_hash}]` the content was built from.",
+    "evidence_refs": "Evidence artifact refs.",
+    "limitations": "Limitation codes (a PARTIAL artifact has at least one).",
+    "reason_code": "Why the status is not VALID, or null.",
+    "reason": "Human-readable reason, or null.",
+    "payload": "The producer's content (decimals as strings).",
+    "created_at": "When this version was stored.",
+}
+
+RESULT_FIELDS.update({
+    "artifact_put": _ENVELOPE_FIELDS,
+    "artifact_get": _ENVELOPE_FIELDS,
+    "artifact_list": {"artifacts": "Latest version of each artifact: every envelope field except `payload`."},
+    "get_user_context": {
+        "user_id": "Your user.",
+        "role": "The user's role, or null.",
+        "authorized_scope": "`{project_ids, zone_ids}` the user may see; never widen it.",
+    },
+    "re_list_tables": {"tables": "`[{name, row_count}]`; the counts include only rows inside your scope."},
+    "re_describe_table": {
+        "table": "The table name.",
+        "columns": "`[{name, type}]`.",
+        "sample_rows": "Up to `sample_rows` rows inside your scope.",
+    },
+    "re_run_query": _DATASET_FIELDS,
+})

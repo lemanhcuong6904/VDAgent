@@ -1,0 +1,198 @@
+[
+  {
+    "section": "key_metrics",
+    "source_ref": "art_0e8789905240@1#/metrics/0/subjectValue",
+    "statement_id": "S1",
+    "text": "Giá ròng/m² của A12-08",
+    "value_exact": "72500000"
+  },
+  {
+    "section": "key_metrics",
+    "source_ref": "art_0e8789905240@1#/metrics/0/benchmark/value",
+    "statement_id": "S2",
+    "text": "trung vị Giá ròng/m²",
+    "value_exact": "64500000"
+  },
+  {
+    "section": "key_metrics",
+    "source_ref": "art_0e8789905240@1#/metrics/0/benchmark/n",
+    "statement_id": "S3",
+    "text": "số căn tương đồng",
+    "value_exact": "5"
+  },
+  {
+    "section": "key_metrics",
+    "source_ref": "art_0e8789905240@1#/metrics/0/pctGap",
+    "statement_id": "S4",
+    "text": "chênh %",
+    "value_exact": "12.4"
+  },
+  {
+    "section": "executive_summary",
+    "source_ref": "art_0e8789905240@1#/metrics/0/subjectValue",
+    "statement_id": "S5",
+    "text": "",
+    "value_exact": "72500000"
+  },
+  {
+    "section": "executive_summary",
+    "source_ref": "art_0e8789905240@1#/metrics/0/benchmark/value",
+    "statement_id": "S6",
+    "text": "",
+    "value_exact": "64500000"
+  },
+  {
+    "section": "executive_summary",
+    "source_ref": "art_0e8789905240@1#/metrics/0/pctGap",
+    "statement_id": "S7",
+    "text": "",
+    "value_exact": "12.4"
+  },
+  {
+    "section": "key_metrics",
+    "source_ref": "art_0e8789905240@1#/metrics/1/subjectValue",
+    "statement_id": "S8",
+    "text": "DOM của A12-08",
+    "value_exact": "138"
+  },
+  {
+    "section": "key_metrics",
+    "source_ref": "art_0e8789905240@1#/metrics/1/benchmark/value",
+    "statement_id": "S9",
+    "text": "trung vị DOM",
+    "value_exact": "61"
+  },
+  {
+    "section": "key_metrics",
+    "source_ref": "art_0e8789905240@1#/metrics/1/benchmark/n",
+    "statement_id": "S10",
+    "text": "số căn tương đồng",
+    "value_exact": "5"
+  },
+  {
+    "section": "key_metrics",
+    "source_ref": "art_0e8789905240@1#/metrics/1/pctGap",
+    "statement_id": "S11",
+    "text": "chênh %",
+    "value_exact": "126.23"
+  },
+  {
+    "section": "executive_summary",
+    "source_ref": "art_0e8789905240@1#/metrics/1/subjectValue",
+    "statement_id": "S12",
+    "text": "",
+    "value_exact": "138"
+  },
+  {
+    "section": "executive_summary",
+    "source_ref": "art_0e8789905240@1#/metrics/1/benchmark/value",
+    "statement_id": "S13",
+    "text": "",
+    "value_exact": "61"
+  },
+  {
+    "section": "executive_summary",
+    "source_ref": "art_0e8789905240@1#/metrics/1/pctGap",
+    "statement_id": "S14",
+    "text": "",
+    "value_exact": "126.23"
+  },
+  {
+    "section": "analysis",
+    "source_ref": "art_fb76304c2a3a@1#/insight/insights/0/claim/numeric_bindings/0/value",
+    "statement_id": "S15",
+    "text": "dom",
+    "value_exact": "138"
+  },
+  {
+    "section": "analysis",
+    "source_ref": "art_fb76304c2a3a@1#/insight/insights/0/claim/numeric_bindings/1/value",
+    "statement_id": "S16",
+    "text": "spread",
+    "value_exact": "12.40"
+  },
+  {
+    "section": "evidence",
+    "source_ref": "art_0e8789905240@1#/peerValues/0/values/dom",
+    "statement_id": "S17",
+    "text": "",
+    "value_exact": "138"
+  },
+  {
+    "section": "evidence",
+    "source_ref": "art_0e8789905240@1#/peerValues/0/values/net_asking_price_per_m2",
+    "statement_id": "S18",
+    "text": "",
+    "value_exact": "72500000"
+  },
+  {
+    "section": "evidence",
+    "source_ref": "art_0e8789905240@1#/peerValues/1/values/dom",
+    "statement_id": "S19",
+    "text": "",
+    "value_exact": "46"
+  },
+  {
+    "section": "evidence",
+    "source_ref": "art_0e8789905240@1#/peerValues/1/values/net_asking_price_per_m2",
+    "statement_id": "S20",
+    "text": "",
+    "value_exact": "67000000"
+  },
+  {
+    "section": "evidence",
+    "source_ref": "art_0e8789905240@1#/peerValues/2/values/dom",
+    "statement_id": "S21",
+    "text": "",
+    "value_exact": "61"
+  },
+  {
+    "section": "evidence",
+    "source_ref": "art_0e8789905240@1#/peerValues/2/values/net_asking_price_per_m2",
+    "statement_id": "S22",
+    "text": "",
+    "value_exact": "64500000"
+  },
+  {
+    "section": "evidence",
+    "source_ref": "art_0e8789905240@1#/peerValues/3/values/dom",
+    "statement_id": "S23",
+    "text": "",
+    "value_exact": "42"
+  },
+  {
+    "section": "evidence",
+    "source_ref": "art_0e8789905240@1#/peerValues/3/values/net_asking_price_per_m2",
+    "statement_id": "S24",
+    "text": "",
+    "value_exact": "69000000"
+  },
+  {
+    "section": "evidence",
+    "source_ref": "art_0e8789905240@1#/peerValues/4/values/dom",
+    "statement_id": "S25",
+    "text": "",
+    "value_exact": "86"
+  },
+  {
+    "section": "evidence",
+    "source_ref": "art_0e8789905240@1#/peerValues/4/values/net_asking_price_per_m2",
+    "statement_id": "S26",
+    "text": "",
+    "value_exact": "61500000"
+  },
+  {
+    "section": "evidence",
+    "source_ref": "art_0e8789905240@1#/peerValues/5/values/dom",
+    "statement_id": "S27",
+    "text": "",
+    "value_exact": "105"
+  },
+  {
+    "section": "evidence",
+    "source_ref": "art_0e8789905240@1#/peerValues/5/values/net_asking_price_per_m2",
+    "statement_id": "S28",
+    "text": "",
+    "value_exact": "60000000"
+  }
+]

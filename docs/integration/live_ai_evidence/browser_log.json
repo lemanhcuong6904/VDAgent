@@ -1,0 +1,18 @@
+{
+  "console": [],
+  "pageerrors": [],
+  "failed_requests": [],
+  "answer_seconds": 6.4,
+  "sections": {
+    "1. Bối cảnh": true,
+    "2. Tóm tắt điều hành": true,
+    "3. Chỉ số chính": true,
+    "4. Phân tích & Insight": true,
+    "5. Bằng chứng & Trực quan hóa": true,
+    "6. Hạn chế & Chất lượng dữ liệu": true
+  },
+  "figures": 5,
+  "rendered_svgs": 5,
+  "chart_errors": [],
+  "raw_tokens": false
+}

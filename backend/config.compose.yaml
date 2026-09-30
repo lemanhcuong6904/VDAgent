@@ -3,18 +3,27 @@
 # working dir (/app).
 backend_db: ./var/backend.db
 warehouse_db: ./var/warehouse.db
+re_warehouse_db: ./var/re_warehouse.db             # real-estate DW mock (data/seed_re_warehouse.py)
 mcp_public_url: http://localhost:8000/mcp       # URL plugins' MCP clients use
 frontend_dist: ./frontend/dist                  # served at / if present
 max_depth: 4
 max_steps: 12
 plugins:
+  # mcp_tools = the WS1–WS7 permission matrix: every agent reads/writes artifacts (artifact_* : only its own types,
+  # enforced by the artifact handlers) and reads its user's scope; only Data queries the warehouses.
   - module: vdagent_orchestrator
-    mcp_tools: [describe_dataset, get_dataset_rows]
+    mcp_tools: [describe_dataset, get_dataset_rows, artifact_put, artifact_get, artifact_list, get_user_context]
   - module: vdagent_data
-    mcp_tools: [list_tables, describe_table, run_query, query_datasets, describe_dataset, get_dataset_rows]
+    mcp_tools: [list_tables, describe_table, run_query, query_datasets, describe_dataset, get_dataset_rows,
+                artifact_put, artifact_get, artifact_list, get_user_context, re_list_tables, re_describe_table, re_run_query]
   - module: vdagent_compare
-    mcp_tools: [query_datasets, describe_dataset, get_dataset_rows]
+    mcp_tools: [query_datasets, describe_dataset, get_dataset_rows, artifact_put, artifact_get, artifact_list, get_user_context]
   - module: vdagent_insight
-    mcp_tools: [query_datasets, describe_dataset, get_dataset_rows]
+    mcp_tools: [query_datasets, describe_dataset, get_dataset_rows, artifact_put, artifact_get, artifact_list, get_user_context]
   - module: vdagent_report
-    mcp_tools: [create_chart, save_report, describe_dataset, get_dataset_rows]
+    mcp_tools: [create_chart, save_report, describe_dataset, get_dataset_rows, artifact_put, artifact_get, artifact_list,
+                get_user_context]
+  # Chart (D6, WS4): StepSpec@1 draw_chart over real artifacts. Demo commands (`chart demo`, `chart ask`) are off
+  # unless CHART_DEMO=on in agents/chart/.env or `opts: {demo: true}` — never in production.
+  - module: vdagent_chart
+    mcp_tools: [describe_dataset, get_dataset_rows, artifact_put, artifact_get, artifact_list, get_user_context]

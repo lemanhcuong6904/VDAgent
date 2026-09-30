@@ -23,11 +23,13 @@ from mcp.shared._httpx_utils import create_mcp_http_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from conftest import NOW, migrated_database
+from vdagent_backend.re_warehouse import build as build_re_warehouse
+from vdagent_backend.scopes import UserScopes, seed_demo_scopes
 from vdagent_backend.artifacts import Artifacts, ArtifactService
 from vdagent_backend.mcp import RESULT_FIELDS, TOOLS, McpServer, McpTools
 from vdagent_backend.core import TokenRegistry
 from vdagent_backend.plugins import AgentRegistry, RegisteredAgent
-from vdagent_backend.warehouse import Warehouse
+from vdagent_backend.warehouse import RealEstateWarehouse, Warehouse
 
 ALICE, BOB = "u_000000000001", "u_000000000002"
 INVOCATION = {ALICE: "inv_00000000000a", BOB: "inv_00000000000b"}
@@ -43,12 +45,15 @@ SALES = [
     ("East", 2025, 45.5),
 ]
 # The test registry's grants (each agent's plugin entry `mcp_tools`); `echo` has none.
+_EVERYONE = {"describe_dataset", "get_dataset_rows", "artifact_put", "artifact_get", "artifact_list", "get_user_context"}
 EXPECTED_TOOLS = {
-    "orchestrator": {"describe_dataset", "get_dataset_rows"},
-    "data": {"list_tables", "describe_table", "run_query", "describe_dataset", "get_dataset_rows", "query_datasets"},
-    "compare": {"describe_dataset", "get_dataset_rows", "query_datasets"},
-    "insight": {"describe_dataset", "get_dataset_rows", "query_datasets"},
-    "report": {"describe_dataset", "get_dataset_rows", "create_chart", "save_report"},
+    "orchestrator": _EVERYONE,
+    "data": _EVERYONE
+    | {"list_tables", "describe_table", "run_query", "query_datasets", "re_list_tables", "re_describe_table", "re_run_query"},
+    "compare": _EVERYONE | {"query_datasets"},
+    "insight": _EVERYONE | {"query_datasets"},
+    "report": _EVERYONE | {"create_chart", "save_report"},
+    "chart": _EVERYONE,
     "echo": set(),
 }
 
@@ -94,17 +99,31 @@ class McpEnv:
     warehouse: Path
 
     def token(self, agent: str, user_id: str = ALICE) -> str:
-        return self.tokens.issue(user_id, agent, INVOCATION[user_id])
+        return self.tokens.issue(user_id, agent, INVOCATION[user_id], f"t_{user_id[-12:]}")
+
+
+@pytest.fixture(scope="module")
+def re_db(tmp_path_factory: pytest.TempPathFactory) -> str:
+    path = str(tmp_path_factory.mktemp("re") / "re.db")
+    build_re_warehouse(path)
+    return path
 
 
 @pytest.fixture
-async def env(tmp_path: Path) -> AsyncIterator[McpEnv]:
+async def env(tmp_path: Path, re_db: str) -> AsyncIterator[McpEnv]:
     warehouse, backend = tmp_path / "warehouse.db", tmp_path / "backend.db"
     build_warehouse(warehouse)
     db = await migrated_database(str(backend))
     seed_backend(backend)
+    seed_demo_scopes(str(backend))
     tokens = TokenRegistry()
-    mcp = McpServer(McpTools(ArtifactService(db), Warehouse(str(warehouse), SQL_TIMEOUT_S)), tokens)
+    tools = McpTools(
+        ArtifactService(db),
+        Warehouse(str(warehouse), SQL_TIMEOUT_S),
+        re_warehouse=RealEstateWarehouse(re_db, SQL_TIMEOUT_S),
+        scopes=UserScopes(db),
+    )
+    mcp = McpServer(tools, tokens)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -308,6 +327,9 @@ def test_every_tool_has_documented_result_fields() -> None:
 @pytest.mark.parametrize("tool", [t.name for t in TOOLS])
 async def test_successful_result_has_exactly_the_documented_fields(env: McpEnv, tool: str) -> None:
     ds = (await call_ok(env, "data", "run_query", {"sql": "SELECT region, revenue FROM sales"}))["dataset_id"]
+    draft = json.dumps({"artifact_type": "run_state", "schema_version": "run_state@1", "status": "VALID",
+                        "producer": {"agent": "orchestrator", "agent_version": "t"}, "payload": {"status": "running"}})
+    art = (await call_ok(env, "orchestrator", "artifact_put", {"draft_json": draft}))["artifact_id"]
     agent, args = {
         "list_tables": ("data", {}),
         "describe_table": ("data", {"table": "sales"}),
@@ -317,6 +339,13 @@ async def test_successful_result_has_exactly_the_documented_fields(env: McpEnv, 
         "query_datasets": ("compare", {"sql": f'SELECT * FROM "{ds}"', "dataset_ids": [ds]}),
         "create_chart": ("report", {"dataset_id": ds, "kind": "bar", "x": "region", "y": ["revenue"], "title": "Revenue"}),
         "save_report": ("report", {"title": "Revenue", "markdown": f"{{{{dataset:{ds}}}}}"}),
+        "artifact_put": ("orchestrator", {"draft_json": draft}),
+        "artifact_get": ("orchestrator", {"artifact_id": art}),
+        "artifact_list": ("chart", {}),
+        "get_user_context": ("insight", {}),
+        "re_list_tables": ("data", {}),
+        "re_describe_table": ("data", {"table": "dim_project_profile"}),
+        "re_run_query": ("data", {"sql": "SELECT project_key FROM dim_project_profile"}),
     }[tool]
     result = await call_ok(env, agent, tool, args)
     assert set(result) == set(RESULT_FIELDS[tool])

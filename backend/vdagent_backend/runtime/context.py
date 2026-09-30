@@ -53,6 +53,10 @@ class Ended:
 
 Event = Emit | ToolResult | Call | Ended
 
+# The business outcome a turn may report for its run (WS7 F-03). A root run reported `failed` fails its task; `partial`
+# keeps the task `completed` with outcome `partial`. Startup recovery sets `interrupted` itself (WS7 F-04).
+RUN_OUTCOMES = frozenset({"completed", "partial", "failed"})
+
 
 class TurnContext:
     """The `InvocationContext` of one turn; each method posts an event and awaits it."""
@@ -80,6 +84,7 @@ class TurnContext:
         self.memory = memory  # direct DB access: not a transcript event, not contract-checked
         self.max_steps = max_steps
         self.inbox: asyncio.Queue[Event] = asyncio.Queue()
+        self.outcome: str | None = None  # reported by the plugin through `report_outcome`
         self._closed = False
 
     def close(self) -> None:
@@ -96,6 +101,18 @@ class TurnContext:
         future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
         self.inbox.put_nowait(make(future))
         return future
+
+    def report_outcome(self, outcome: str) -> None:
+        """Report the business outcome of this turn's run: completed | partial | failed (WS7 F-03).
+
+        Not a transcript event: it only sets what the task records when a root turn ends; a child turn's outcome is
+        ignored (its reply carries the result). Raises `ContractViolation` after the turn or for an unknown outcome.
+        """
+        if self._closed:
+            raise ContractViolation("report_outcome: the turn is over")
+        if outcome not in RUN_OUTCOMES:
+            raise ContractViolation(f"report_outcome: unknown outcome {outcome!r}; use one of {sorted(RUN_OUTCOMES)}")
+        self.outcome = outcome
 
     async def emit_assistant(self, content: str, tool_calls: Sequence[ToolCall] = ()) -> None:
         await self._post("emit_assistant", lambda f: Emit(content, tuple(tool_calls), f))

@@ -1,0 +1,31 @@
+=== t_bd00872bb83d
+recomputed content_hash mismatches: [('art_a09610d987a6', 1), ('art_a09610d987a6', 2), ('art_a09610d987a6', 3), ('art_a09610d987a6', 4), ('art_a09610d987a6', 5)]
+owners: {'u_000000000001'} | snapshots: {('SNAP-2026-09-28',)} | semantics: {'sc-1'}
+types: {'run_state': 1, 'dataset': 1, 'metric': 1, 'dq': 1, 'peer_definition': 1, 'comparison': 1, 'insight': 1, 'chart_spec': 5, 'report': 1}
+schemas: [('chart_spec', 'chart_spec@1', 'PARTIAL'), ('comparison', 'comparison@1', 'PARTIAL'), ('dataset', 're_dataset@1', 'VALID'), ('dq', 're_dq@1', 'PARTIAL'), ('insight', 'insight.v2', 'PARTIAL'), ('metric', 're_metric@1', 'PARTIAL'), ('peer_definition', 'peer_definition@1', 'PARTIAL'), ('report', 'report@1', 'PARTIAL'), ('run_state', 'run_state@1', 'VALID')]
+all non-run_state artifacts reach the one dataset: True
+dangling input refs: []
+chart bindings resolved: 18 / 18 | chart types: ['bar', 'bar', 'scatter', 'kpi_card', 'kpi_card']
+report statements resolved: 28 / 28 | missing source_ref: 0
+PRJ-Y in any non-dataset payload: False | D12-09: False | demo ids: False
+run_state art_a09610d987a6 v 6 partial [['B1'], ['B2', 'B3'], ['B4'], ['B5']]
+  B1 data     completed 01:16:24.182-01:16:24.348 in=0 out=3 err=None
+  B5 report   completed 01:16:24.625-01:16:24.702 in=8 out=1 err=None
+=== t_fb1986b3cbe3
+recomputed content_hash mismatches: [('art_de0cc61e09d2', 1), ('art_de0cc61e09d2', 2), ('art_de0cc61e09d2', 3), ('art_de0cc61e09d2', 4), ('art_de0cc61e09d2', 5)]
+owners: {'u_000000000001'} | snapshots: {('SNAP-2026-09-28',)} | semantics: {'sc-1'}
+types: {'run_state': 1, 'dataset': 1, 'metric': 1, 'dq': 1, 'peer_definition': 1, 'comparison': 1, 'insight': 1, 'chart_spec': 5, 'report': 1}
+schemas: [('chart_spec', 'chart_spec@1', 'PARTIAL'), ('comparison', 'comparison@1', 'PARTIAL'), ('dataset', 're_dataset@1', 'VALID'), ('dq', 're_dq@1', 'PARTIAL'), ('insight', 'insight.v2', 'PARTIAL'), ('metric', 're_metric@1', 'PARTIAL'), ('peer_definition', 'peer_definition@1', 'PARTIAL'), ('report', 'report@1', 'PARTIAL'), ('run_state', 'run_state@1', 'VALID')]
+all non-run_state artifacts reach the one dataset: True
+dangling input refs: []
+chart bindings resolved: 18 / 18 | chart types: ['bar', 'bar', 'scatter', 'kpi_card', 'kpi_card']
+report statements resolved: 28 / 28 | missing source_ref: 0
+PRJ-Y in any non-dataset payload: False | D12-09: False | demo ids: False
+run_state art_de0cc61e09d2 v 6 partial [['B1'], ['B2', 'B3'], ['B4'], ['B5']]
+  B1 data     completed 01:16:23.557-01:16:23.736 in=0 out=3 err=None
+  B5 report   completed 01:16:24.025-01:16:24.110 in=8 out=1 err=None
+=== t_1896e0f58544
+recomputed content_hash mismatches: [('art_a8317e736d5c', 1), ('art_a8317e736d5c', 2), ('art_a8317e736d5c', 3), ('art_a8317e736d5c', 4), ('art_a8317e736d5c', 5)]
+owners: {'u_000000000002'} | snapshots: {('SNAP-2026-09-28',)} | semantics: {'sc-1'}
+types: {'run_state': 1}
+schemas: [('run_state', 'run_state@1', 'VALID')]
