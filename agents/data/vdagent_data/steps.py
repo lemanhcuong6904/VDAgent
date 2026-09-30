@@ -155,7 +155,7 @@ METRICS: dict[str, MetricDef] = {
     "inquiry_leads_30d": MetricDef("COUNT", "fact_sales_funnel_daily.leads", "calc_inquiry_leads_30d@1"),
     "subsidy_duration_mo": MetricDef("COUNT", "dm_unit_friction_diagnostics.subsidy_duration_mo", "calc_subsidy_duration@1"),
     "dw_peer_n": MetricDef("COUNT", "dm_unit_friction_diagnostics.peer_n", "dw_peer_n@1"),
-    "discount_pct": MetricDef("PCT", None, "calc_discount_pct@1"),
+    "discount_pct": MetricDef("PCT", "fact_unit_inventory_snapshot.discount_pct", "calc_discount_pct@1"),  # the real DW carries it; the mock does not
 }
 UNIT_METRICS = ("dom_days", "net_price_per_m2_vnd", "asking_price_vnd", "net_area_m2", "inquiry_leads_30d",
                 "subsidy_duration_mo", "discount_pct", "dw_peer_n")
@@ -536,9 +536,9 @@ async def _fetch_units(run: _Run, spec: FetchUnitsSpec, config: dict[str, Any], 
         "asking_price_vnd": inv and inv["asking_price_vnd"],
         "net_area_m2": str(peer_area(subject)),
         "inquiry_leads_30d": leads.get(subject["unit_key"]),
-        "subsidy_duration_mo": diag and diag["subsidy_duration_mo"],
+        "subsidy_duration_mo": _subsidy(inv, diag),
         "dw_peer_n": diag and diag["peer_n"],
-        "discount_pct": None,
+        "discount_pct": inv and inv.get("discount_pct"),  # null (+ limitation) when the warehouse has no such column, never 0
     }
     metric_limits: list[str] = []
     rows = []
@@ -547,10 +547,13 @@ async def _fetch_units(run: _Run, spec: FetchUnitsSpec, config: dict[str, Any], 
         if value is None:
             metric_limits.append(_null_reason(metric_id, coverage))
         definition = METRICS[metric_id]
+        source = definition.source
+        if metric_id == "subsidy_duration_mo" and inv is not None and "subsidy_duration_mo" in inv:
+            source = "fact_unit_inventory_snapshot.subsidy_duration_mo"  # the real DW holds it on the inventory row
         rows.append({"metric_id": metric_id, "calculation_ref": definition.calculation_ref,
                      "subject": {"type": "UNIT", "id": subject["unit_key"], "label": subject["unit_code"]},
                      "value": value, "unit": definition.unit,
-                     "source_ref": f"re:{definition.source}" if definition.source else None})
+                     "source_ref": f"re:{source}" if source else None})
     metric_ref, _ = await run.put(ArtifactType.METRIC, "re_metric@1", {"metrics": rows}, metric_limits, [dataset_ref],
                                   partial=bool(metric_limits))
 
@@ -562,6 +565,14 @@ async def _fetch_units(run: _Run, spec: FetchUnitsSpec, config: dict[str, Any], 
                f" {len(warnings)} hạn chế.")
     return _report(run.step, "completed", refs=[dataset_ref, metric_ref, dq_ref], warnings=warnings,
                    partial=bool(excluded or metric_limits or dq_limits), summary=summary)
+
+
+def _subsidy(inv: dict[str, Any] | None, diag: dict[str, Any] | None) -> Any:
+    """The subsidy months: the inventory row when the warehouse carries them there (every unit), else the diagnosis row
+    (only units that have a diagnosis)."""
+    if inv is not None and "subsidy_duration_mo" in inv:
+        return inv["subsidy_duration_mo"]
+    return diag and diag["subsidy_duration_mo"]
 
 
 def _null_reason(metric_id: str, coverage: dict[str, Any]) -> str:
@@ -605,6 +616,30 @@ def _snapshot_block(run: _Run) -> dict[str, Any]:
             "snapshot_date_key": run.snapshot_date_key, "semantic_config_version": run.semantic}
 
 
+def _sensors(units: Sequence[dict[str, Any]], inventory: Sequence[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+    """Compensating checks (SPEC §3.5): rules the schema does not enforce. A column the warehouse does not carry is skipped,
+    not counted as a violation. Each violation count becomes a `DQ_VIOLATION:<sensor>:<n>` limitation."""
+    unit_project = {u["unit_key"]: str(u["project_key"]) for u in units if u.get("project_key") is not None}
+
+    def dom_below_zero(r: dict[str, Any]) -> bool:
+        try:
+            return r.get("unsold_days_dom") is not None and Decimal(str(r["unsold_days_dom"])) < 0
+        except ArithmeticError:
+            return False
+
+    rules: dict[str, Any] = {
+        "sold_without_sold_date": lambda r: r.get("inventory_status") == "SOLD" and "sold_date" in r and not r["sold_date"],
+        "sold_date_on_available_unit": lambda r: r.get("inventory_status") == "AVAILABLE" and bool(r.get("sold_date")),
+        "negative_dom": dom_below_zero,
+        "inventory_project_mismatch": lambda r: (r.get("project_key") is not None and r["unit_key"] in unit_project
+                                                 and str(r["project_key"]) != unit_project[r["unit_key"]]),
+    }
+    found = [{"name": name, "violations": sum(1 for r in inventory if rule(r)), "total": len(inventory)} for name, rule in rules.items()]
+    for f in found:
+        f["status"] = "VALID" if f["violations"] == 0 else "PARTIAL"
+    return found, [f"DQ_VIOLATION:{f['name']}:{f['violations']}" for f in found if f["violations"]]
+
+
 def _dq(run: _Run, units: Sequence[dict[str, Any]], inventory: Sequence[dict[str, Any]],
         coverage: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     by_unit = {r["unit_key"]: r for r in inventory}
@@ -629,8 +664,10 @@ def _dq(run: _Run, units: Sequence[dict[str, Any]], inventory: Sequence[dict[str
     limitations = [f"DQ_MISSING:{f['field']}:{f['missing_count']}" for f in fields if f["missing_count"]]
     if not coverage["complete"]:
         limitations.append(f"WINDOW_INCOMPLETE:inquiry_leads_30d:{coverage['days_covered']}")
+    sensors, sensor_limits = _sensors(units, inventory)
+    limitations += sensor_limits
     dq = {"overall_status": "PARTIAL" if limitations else "VALID", "snapshot_date": _day(run.snapshot_date_key).isoformat(),
-          "data_as_of": run.loaded_at, "fields": fields, "coverage": {"fact_sales_funnel_daily": coverage}}
+          "data_as_of": run.loaded_at, "fields": fields, "sensors": sensors, "coverage": {"fact_sales_funnel_daily": coverage}}
     return dq, limitations
 
 

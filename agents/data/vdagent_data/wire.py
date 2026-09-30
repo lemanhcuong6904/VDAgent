@@ -82,11 +82,12 @@ _LIMITATION_TEXT = {
     "METRIC_UNAVAILABLE": "Kho dữ liệu không có chỉ số {0}; để trống, không điền 0.",
     "WINDOW_INCOMPLETE": "Bảng phễu chỉ phủ {1}/30 ngày nên không cộng số lead {0}; để trống, không điền thiếu.",
     "DQ_MISSING": "{1} dòng thiếu giá trị {0}.",
+    "DQ_VIOLATION": "{1} dòng vi phạm kiểm tra chất lượng {0}.",
     "PEER_AREA_UNAVAILABLE": "{0} căn thiếu diện tích ròng nên bị loại khỏi ứng viên.",
     "SYNTHETIC_SOURCE": "Trường {0} là dữ liệu mô phỏng.",
     "BLOCKED": "{0} đang chờ quyết định nghiệp vụ nên chưa áp dụng.",
 }
-_TARGET_FIRST = {"METRIC_UNAVAILABLE", "WINDOW_INCOMPLETE", "DQ_MISSING", "SYNTHETIC_SOURCE"}
+_TARGET_FIRST = {"METRIC_UNAVAILABLE", "WINDOW_INCOMPLETE", "DQ_MISSING", "DQ_VIOLATION", "SYNTHETIC_SOURCE"}
 
 
 def map_warning(raw: str) -> dict[str, Any]:
@@ -120,7 +121,7 @@ class Confidence:
     reasons: list[str]
 
 
-_MISSING = ("METRIC_UNAVAILABLE", "DQ_MISSING", "WINDOW_INCOMPLETE", "PEER_AREA_UNAVAILABLE")
+_MISSING = ("METRIC_UNAVAILABLE", "DQ_MISSING", "DQ_VIOLATION", "WINDOW_INCOMPLETE", "PEER_AREA_UNAVAILABLE")
 _TENTATIVE = ("PROVISIONAL_DEFINITION", "CONFIG_PENDING", "SMALL_SAMPLE", "SYNTHETIC_SOURCE", "SNAPSHOT_STATUS_ASSUMED", "BLOCKED",
               "OUT_OF_CATALOG_NEED_NOT_SERVED", "EMPTY_RESULT")
 
