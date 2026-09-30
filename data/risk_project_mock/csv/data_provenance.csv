@@ -1,0 +1,17 @@
+﻿table_name,snapshot_id,data_status,record_count,source_basis
+snapshot_manifest,SNAP-20260630-RISK-PHU-MY-TC-01,SYNTHETIC,1,"Deterministically generated risk-model data; no listing, buyer or CRM record was copied."
+semantic_config,SNAP-20260630-RISK-PHU-MY-TC-01,SYNTHETIC,19,"Deterministically generated risk-model data; no listing, buyer or CRM record was copied."
+dim_date,SNAP-20260630-RISK-PHU-MY-TC-01,SYNTHETIC,402,"Deterministically generated risk-model data; no listing, buyer or CRM record was copied."
+dim_project_profile,SNAP-20260630-RISK-PHU-MY-TC-01,MIXED_REFERENCE_AND_SYNTHETIC,1,Official project identity and historical permit evidence from Văn bản 3077/SXD-QLN ngày 26/06/2023; the current TC-01 suspension status and unit-level fields are synthetic.
+dim_zone_master,SNAP-20260630-RISK-PHU-MY-TC-01,MIXED_REFERENCE_AND_SYNTHETIC,2,Official project identity and historical permit evidence from Văn bản 3077/SXD-QLN ngày 26/06/2023; the current TC-01 suspension status and unit-level fields are synthetic.
+dim_unit_master,SNAP-20260630-RISK-PHU-MY-TC-01,SYNTHETIC,3000,"Deterministically generated risk-model data; no listing, buyer or CRM record was copied."
+dim_sales_channel,SNAP-20260630-RISK-PHU-MY-TC-01,SYNTHETIC,4,"Deterministically generated risk-model data; no listing, buyer or CRM record was copied."
+dim_infrastructure_assets,SNAP-20260630-RISK-PHU-MY-TC-01,SYNTHETIC,1,"Deterministically generated risk-model data; no listing, buyer or CRM record was copied."
+fact_unit_inventory_snapshot,SNAP-20260630-RISK-PHU-MY-TC-01,SYNTHETIC,3000,"Deterministically generated risk-model data; no listing, buyer or CRM record was copied."
+fact_sales_funnel_daily,SNAP-20260630-RISK-PHU-MY-TC-01,SYNTHETIC,3000,"Deterministically generated risk-model data; no listing, buyer or CRM record was copied."
+fact_unit_price_history,SNAP-20260630-RISK-PHU-MY-TC-01,SYNTHETIC,2195,"Deterministically generated risk-model data; no listing, buyer or CRM record was copied."
+dim_secondary_market_comps,SNAP-20260630-RISK-PHU-MY-TC-01,SYNTHETIC,300,"Deterministically generated risk-model data; no listing, buyer or CRM record was copied."
+fact_market_macro_monthly,SNAP-20260630-RISK-PHU-MY-TC-01,SYNTHETIC,12,"Deterministically generated risk-model data; no listing, buyer or CRM record was copied."
+fact_sales_channel_performance,SNAP-20260630-RISK-PHU-MY-TC-01,SYNTHETIC,4,"Deterministically generated risk-model data; no listing, buyer or CRM record was copied."
+dm_unit_friction_diagnostics,SNAP-20260630-RISK-PHU-MY-TC-01,SYNTHETIC,2411,"Deterministically generated risk-model data; no listing, buyer or CRM record was copied."
+unit_diagnostic_causes,SNAP-20260630-RISK-PHU-MY-TC-01,SYNTHETIC,6569,"Deterministically generated risk-model data; no listing, buyer or CRM record was copied."

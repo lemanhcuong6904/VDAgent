@@ -1,0 +1,5 @@
+﻿channel_key,channel_id,channel_name,channel_tier,active_brokers_count
+3201,RISK-PM-INHOUSE,Đội bán hàng nội bộ mô phỏng,INHOUSE,18
+3202,RISK-PM-EXCLUSIVE-A,Sàn độc quyền A mô phỏng,TIER_1_EXCLUSIVE,42
+3203,RISK-PM-GENERAL-B,Sàn tổng hợp B mô phỏng,TIER_2_GENERAL,55
+3204,RISK-PM-GENERAL-C,Sàn tổng hợp C mô phỏng,TIER_2_GENERAL,33
