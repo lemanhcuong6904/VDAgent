@@ -41,6 +41,18 @@ Mọi phép tính DOM căn cứ đúng mốc `snapshot_date`.
 | 400 | PRJ-MAS-CP | MAS-U | 400001-499999 | 401-499 | 4001-4099 | 4101-4199 | Nguyễn Tuấn Anh | N6 |
 | 500 | PRJ-RISK-PHU-MY-BRVT | TST-U | 500001-599999 | 501-599 | 5001-5099 | 5101-5199 | Nguyễn Mai Huy | N5 |
 
+### 3.1. Khóa sự kiện và comparable khi hợp nhất pack
+
+DDL dùng `funnel_event_id`, `price_event_id` và `comp_id` làm PK toàn bảng. Khi tạo pack canonical bằng `organize_pack.py`, giữ lại giá trị ID nguồn qua phép ánh xạ ổn định sau:
+
+| Pack | Cột | ID canonical | ID nguồn có thể khôi phục |
+|---|---|---|---|
+| 100 — Ocean Park | `funnel_event_id`, `price_event_id` | `10_000_000_000 + ID nguồn` | Trừ `10_000_000_000` |
+| 200 — Smart City | `funnel_event_id` | `20_000_000_000 + ID nguồn` | Trừ `20_000_000_000` |
+| 100 — Ocean Park | `comp_id` | `OCP-` + ID nguồn | Bỏ tiền tố `OCP-` |
+
+Các pack 300/400/500 giữ ID hiện có; riêng ID funnel của pack 300 còn được dùng trong attribution nguồn. Quality gate `verify_warehouse.py` kiểm PK/UK của cả 13 bảng project trên hợp của 5 pack trước bước assemble.
+
 ## 4. Bảng re-key Ocean Park (hiện -> đích) — cho N7
 
 | Đối tượng | Hiện tại (đã ship ở DATA) | Đích |

@@ -48,6 +48,52 @@ def standardize_file(src_file, dst_file, expected_cols):
         writer.writerows(rows)
 
 
+def rekey_numeric_event(csv_file, column_name, project_key):
+    """Move source-local event IDs into a stable, project-specific BIGINT band."""
+    band_size = 100_000_000
+    offset = project_key * band_size
+    with open(csv_file, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+
+    if not fieldnames or column_name not in fieldnames:
+        raise ValueError(f"{csv_file}: missing {column_name}")
+    for row in rows:
+        value = int(row[column_name])
+        if offset < value < offset + band_size:
+            continue
+        if not 0 < value < band_size:
+            raise ValueError(f"{csv_file}: {column_name}={value} is outside source band")
+        row[column_name] = str(offset + value)
+
+    with open(csv_file, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def rekey_comp_ids(csv_file, prefix):
+    """Namespace source-local comparable IDs without losing their source value."""
+    with open(csv_file, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+
+    if not fieldnames or "comp_id" not in fieldnames:
+        raise ValueError(f"{csv_file}: missing comp_id")
+    for row in rows:
+        if not row["comp_id"].startswith(prefix):
+            row["comp_id"] = prefix + row["comp_id"]
+        if len(row["comp_id"]) > 32:
+            raise ValueError(f"{csv_file}: comp_id exceeds VARCHAR(32)")
+
+    with open(csv_file, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def normalize_funnel_reservations(csv_file):
     """Preserve cancellation counts while enforcing the warehouse funnel contract."""
     with open(csv_file, "r", encoding="utf-8-sig", newline="") as f:
@@ -158,6 +204,10 @@ def deploy_project_100():
             standardize_file(src, dst, expected_cols)
             print(f"Standardized project_100: {dst.name}")
 
+    rekey_numeric_event(p100_dir / "fact_sales_funnel_daily.csv", "funnel_event_id", 100)
+    rekey_numeric_event(p100_dir / "fact_unit_price_history.csv", "price_event_id", 100)
+    rekey_comp_ids(p100_dir / "dim_secondary_market_comps.csv", "OCP-")
+
 
 def deploy_project_200():
     vhsc_dir = BASE_DIR.parent / "data" / "mock" / "vhsc_20260630"
@@ -172,6 +222,8 @@ def deploy_project_200():
         if src.exists():
             standardize_file(src, dst, expected_cols)
             print(f"Standardized project_200: {dst.name}")
+
+    rekey_numeric_event(p200_dir / "fact_sales_funnel_daily.csv", "funnel_event_id", 200)
 
 
 def deploy_project_300():
