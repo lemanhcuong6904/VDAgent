@@ -28,7 +28,7 @@ from .trace import TraceEvent
 
 log = logging.getLogger(__name__)
 
-MAX_SENTENCE_CHARS = 700
+MAX_SENTENCE_CHARS = 450
 DEFAULT_LLM_TIMEOUT_S = 10.0
 MAX_PURPOSES = 4  # purposes quoted in one beat; the rest are counted
 
