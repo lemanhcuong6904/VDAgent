@@ -1,2 +1,2 @@
 ﻿snapshot_id,dataset_id,dataset_version,semantic_version,snapshot_date,timezone,currency,price_basis,area_basis,source_system
-SNAP-20260630-RISK-PHU-MY-TC-01,vdagent_dw_risk_project,3.2.0,3.2.0-risk-project-tc01-mock,2026-06-30,Asia/Ho_Chi_Minh,VND,ASKING_EXCL_VAT_EXCL_MAINT,NET_INTERNAL_M2,SO_XAY_DUNG_REFERENCE_PLUS_SYNTHETIC_RISK_MODEL
+SNAP-20260630-01,vdagent_dw_re,3.1.0,3.1.0,2026-06-30,Asia/Ho_Chi_Minh,VND,ASKING_EXCL_VAT_EXCL_MAINT,NET_INTERNAL_M2,ENTERPRISE_DW_RE
