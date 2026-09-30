@@ -48,6 +48,61 @@ def standardize_file(src_file, dst_file, expected_cols):
         writer.writerows(rows)
 
 
+def normalize_funnel_reservations(csv_file):
+    """Preserve cancellation counts while enforcing the warehouse funnel contract."""
+    with open(csv_file, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        fieldnames = reader.fieldnames
+
+    for row in rows:
+        reservations = int(row["booking_reservations"] or 0)
+        cancellations = int(row["booking_cancellations"] or 0)
+        if cancellations > reservations:
+            row["booking_reservations"] = str(cancellations)
+
+    with open(csv_file, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def replace_column_value(csv_file, column_name, old_value, new_value):
+    with open(csv_file, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        fieldnames = reader.fieldnames
+
+    for row in rows:
+        if row[column_name] == old_value:
+            row[column_name] = new_value
+
+    with open(csv_file, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def remap_integer_column(folder, column_name, offset):
+    for csv_file in folder.glob("*.csv"):
+        with open(csv_file, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            fieldnames = reader.fieldnames
+
+        if not fieldnames or column_name not in fieldnames:
+            continue
+
+        for row in rows:
+            if row[column_name]:
+                row[column_name] = str(int(row[column_name]) + offset)
+
+        with open(csv_file, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+
 def deploy_project_100():
     vhop_dir = BASE_DIR / "vhop"
     p100_dir = BASE_DIR / "project_100"
@@ -137,6 +192,8 @@ def deploy_project_300():
             standardize_file(src, dst, expected_cols)
             print(f"Standardized project_300: {dst.name}")
 
+    normalize_funnel_reservations(p300_dir / "fact_sales_funnel_daily.csv")
+
     # Generate unit_diagnostic_causes from dm_unit_friction_diagnostics
     diag_csv = p300_dir / "dm_unit_friction_diagnostics.csv"
     causes_csv = p300_dir / "unit_diagnostic_causes.csv"
@@ -160,9 +217,48 @@ def deploy_project_300():
     print(f"Standardized project_300: {causes_csv.name} ({len(cause_rows)} rows)")
 
 
+def deploy_project_400():
+    source_dir = BASE_DIR.parent / "data" / "masteri_cp" / "csv"
+    p400_dir = BASE_DIR / "project_400"
+    p400_dir.mkdir(parents=True, exist_ok=True)
+
+    for tname, expected_cols in EXPECTED_HEADERS.items():
+        if tname in SHARED_TABLES:
+            continue
+        src = source_dir / f"{tname}.csv"
+        if src.exists():
+            standardize_file(src, p400_dir / src.name, expected_cols)
+
+    # The source uses MAS-U as a project identifier; normalize it to the registry ID.
+    replace_column_value(p400_dir / "dim_project_profile.csv", "project_id", "MAS-U", "PRJ-MAS-CP")
+    replace_column_value(p400_dir / "dim_secondary_market_comps.csv", "project_id", "MAS-U", "PRJ-MAS-CP")
+    remap_integer_column(p400_dir, "zone_key", -3600)
+    remap_integer_column(p400_dir, "channel_key", -36000)
+    remap_integer_column(p400_dir, "infra_key", -35900)
+    normalize_funnel_reservations(p400_dir / "fact_sales_funnel_daily.csv")
+
+
+def deploy_project_500():
+    source_dir = BASE_DIR.parent / "data" / "risk_project_mock" / "csv"
+    p500_dir = BASE_DIR / "project_500"
+    p500_dir.mkdir(parents=True, exist_ok=True)
+
+    for tname, expected_cols in EXPECTED_HEADERS.items():
+        if tname in SHARED_TABLES:
+            continue
+        src = source_dir / f"{tname}.csv"
+        if src.exists():
+            standardize_file(src, p500_dir / src.name, expected_cols)
+
+    remap_integer_column(p500_dir, "zone_key", -1700)
+    remap_integer_column(p500_dir, "channel_key", 1800)
+    remap_integer_column(p500_dir, "infra_key", 900)
+    normalize_funnel_reservations(p500_dir / "fact_sales_funnel_daily.csv")
+
+
 if __name__ == "__main__":
     deploy_project_100()
     deploy_project_200()
     deploy_project_300()
-
-
+    deploy_project_400()
+    deploy_project_500()
