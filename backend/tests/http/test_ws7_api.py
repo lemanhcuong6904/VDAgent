@@ -64,12 +64,15 @@ async def test_chart_spec_delivery_is_owner_scoped(client: httpx.AsyncClient) ->
         "semantic_config_version": "sc-1",
         "payload": {"title": "DOM mục tiêu và nhóm tương đồng", "chart_type": "bar",
                     "vega_lite": {"$schema": "https://vega.github.io/schema/vega-lite/v6.json", "data": {"values": []}},
+                    "plotly": {"renderer": "plotly", "data": [], "layout": {"title": "DOM"}, "config": {"responsive": True}},
                     "dataset": [], "bindings": []},
     }))
     url = f"/api/chart-specs/{stored.artifact_id}/{stored.version}"
     body = (await client.get(url, headers=A)).json()
     assert (body["id"], body["version"], body["title"], body["chart_type"]) == (stored.artifact_id, 1, "DOM mục tiêu và nhóm tương đồng", "bar")
     assert body["spec"]["$schema"].endswith("/v6.json")
+    assert body["plotly"]["renderer"] == "plotly"
+    assert body["plotly"]["layout"]["title"] == "DOM"
     assert (await client.get(url, headers=B)).status_code == 404
     assert (await client.get(f"/api/chart-specs/{stored.artifact_id}/2", headers=A)).status_code == 404
 

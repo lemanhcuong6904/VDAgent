@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { useReports } from "../../api/queries";
+import { useReports, useTask } from "../../api/queries";
+import { artifactIds, artifactKind } from "../../ui/artifacts";
+import { ChartSpecView } from "./ChartSpecView";
+import { ChartView } from "./ChartView";
+import { DatasetTable } from "./DatasetTable";
 import { formatDateTime } from "../../ui/format";
 import { useUi } from "../../ui/UiContext";
 import { ReportView } from "./ReportView";
@@ -42,14 +46,23 @@ export function Inspector({ taskId }: { taskId: string | null }) {
             <div className="muted small">No tasks yet. Message an agent to start one.</div>
           )
         ) : (
-          <ArtifactPanel />
+          <ArtifactPanel taskId={taskId} />
         )}
       </div>
     </div>
   );
 }
 
-function ArtifactPanel() {
+function ArtifactPanel({ taskId }: { taskId: string | null }) {
+  const { artifactId, recentArtifacts, openArtifact } = useUi();
+  const task = useTask(taskId);
+  const taskArtifacts = [
+    ...new Set(
+      (task.data?.invocations ?? []).flatMap((inv) =>
+        artifactIds([inv.inbound_text, inv.result_text, inv.error].filter((text): text is string => Boolean(text)).join("\n")),
+      ),
+    ),
+  ];
   const reports = useReports();
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -61,6 +74,24 @@ function ArtifactPanel() {
 
   return (
     <div className="artifact-panel">
+      {taskArtifacts.length > 0 && (
+        <section>
+          <div className="section-label">Task Artifacts</div>
+          <div className="recent-artifacts">
+            {taskArtifacts.map((id) => (
+              <button key={id} type="button" className={`artifact-chip artifact-${artifactKind(id)}${id === artifactId ? " active" : ""}`} onClick={() => openArtifact(id)}>{id}</button>
+            ))}
+          </div>
+        </section>
+      )}
+      {recentArtifacts.length > 0 && (
+        <div className="recent-artifacts">
+          {recentArtifacts.map((id) => (
+            <button key={id} type="button" className={`artifact-chip artifact-${artifactKind(id)}${id === artifactId ? " active" : ""}`} onClick={() => openArtifact(id)}>{id}</button>
+          ))}
+        </div>
+      )}
+      {artifactId ? <ArtifactViewer id={artifactId} /> : <div className="muted small">Click a ds_…, ch_… or rp_… id in any chat to open it here.</div>}
       <section className="reports-list">
         <div className="section-label">Reports</div>
         {reports.isError && <div className="error-text">{reports.error.message}</div>}
@@ -103,4 +134,14 @@ function ArtifactPanel() {
       )}
     </div>
   );
+}
+
+
+function ArtifactViewer({ id }: { id: string }) {
+  if (id.startsWith("art_")) return <ChartSpecView key={id} id={id} version={1} />;
+  switch (artifactKind(id)) {
+    case "dataset": return <DatasetTable key={id} id={id} />;
+    case "chart": return <ChartView key={id} id={id} />;
+    case "report": return <ReportView key={id} id={id} />;
+  }
 }

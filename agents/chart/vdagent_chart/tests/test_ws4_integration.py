@@ -166,6 +166,40 @@ async def test_golden_charts_from_real_ws3_artifacts(alice: McpPort, tmp_path: P
     assert all(s["payload"]["chart_type"] == "kpi_card" for s in kpis)
 
 
+async def test_stepspec_path_uses_chart_llm_for_presentation(alice: McpPort, tmp_path: Path) -> None:
+    class PresentationReasoner:
+        async def decide(self, payload: dict[str, Any], allowed_chart_types: tuple[str, ...]) -> dict[str, Any]:
+            return {
+                "presentation": {
+                    "title": "A12-08 lệch giá so với nhóm tương đồng",
+                    "subtitle": "So sánh $P_{net}/m^2$ và DOM tại snapshot được ghim.",
+                    "axes": {
+                        "x": {"title": {"format": "plain", "value": "Căn hộ / benchmark"}},
+                        "y": {"title": {"format": "math", "value": "$P_{net}/m^2$"}},
+                    },
+                },
+                "selection": {"chart_type": "bar"},
+                "encoding": {
+                    "x": {"field": "label", "type": "nominal"},
+                    "y": {"field": "net_asking_price_per_m2", "type": "quantitative"},
+                },
+            }
+
+        async def suggest(self, visual_question: str, allowed_chart_types: tuple[str, ...]) -> str | None:
+            return None
+
+    up = await upstream(alice, tmp_path)
+    step = chart_step([up["comparison"], up["peer_definition"]], spec={"chart_type": "bar"})
+    report = await run_step(step, alice.as_agent("chart"), reasoner=PresentationReasoner())
+    specs = await charts(alice, report)
+    [price] = [s for s in specs if s["payload"]["dataset"].get("comparison_metric") == "net_asking_price_per_m2"]
+
+    assert price["payload"]["title"] == "A12-08 lệch giá so với nhóm tương đồng"
+    assert price["payload"]["plotly"]["layout"]["title"]["text"] == "A12-08 lệch giá so với nhóm tương đồng"
+    assert price["payload"]["plotly"]["layout"]["xaxis"]["title"]["text"] == "Căn hộ / benchmark"
+    assert price["payload"]["plotly"]["layout"]["yaxis"]["title"]["text"] == "$P_{net}/m^2$"
+
+
 async def test_limitations_are_carried_and_nulls_never_charted(alice: McpPort, tmp_path: Path) -> None:
     up = await upstream(alice, tmp_path)
     report = await run_step(chart_step([up["insight"], up["comparison"], up["peer_definition"]]), alice.as_agent("chart"))

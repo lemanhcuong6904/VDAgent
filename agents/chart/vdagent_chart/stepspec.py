@@ -10,9 +10,9 @@
    - per Insight numeric binding: a `current_value` (KPI) view.
    Each displayed value keeps `value_exact` (the upstream string/int) and a `source_ref`
    (`<artifact_id>@<version>#<json pointer>`). Null upstream values are not charted (limitation, never 0).
-4. Run the unchanged deterministic pipeline once per view (`ChartAgentService.execute`: validation, evidence map, selection
-   policy, dataset, semantic spec, output validation, Vega-Lite + Plotly renderers) over an in-memory exact-version
-   store holding only those views. No demo artifact, no mock upstream, no LLM.
+4. Run the unchanged deterministic pipeline once per view (`ChartAgentService`: validation, evidence map, selection
+   policy, dataset, optional bounded LLM presentation reasoning, semantic spec, output validation, Vega-Lite + Plotly
+   renderers) over an in-memory exact-version store holding only those views. No demo artifact, no mock upstream.
 5. Persist one `chart_spec@1` per chart through `artifact_put`, pinned to the dataset and the upstream artifacts it
    shows, with upstream limitations carried; answer with an `AgentReport@1`.
 """
@@ -39,6 +39,7 @@ from vdagent_contracts.vega_lite import validate_vega_lite
 from .contracts import ArtifactRef, ChartTaskInput, Intent, Scope, VisualTarget
 from .errors import ChartError
 from .fixture_store import FixtureArtifactStore
+from .llm import VisualReasoner
 from .policy import load_policy
 from .service import ChartAgentService
 
@@ -219,9 +220,9 @@ def _report(step: StepSpec, state: str, *, error: ReportError | None = None, ref
     })
 
 
-async def run_step(step: StepSpec, tools: Tools) -> AgentReport:
+async def run_step(step: StepSpec, tools: Tools, *, reasoner: VisualReasoner | None = None) -> AgentReport:
     try:
-        return await _run(step, tools)
+        return await _run(step, tools, reasoner=reasoner)
     except InputError as exc:
         return _report(step, exc.state, error=ReportError(code=exc.code, message=exc.message))
     except _Fail as exc:
@@ -237,7 +238,7 @@ def _parse_numbers(vega: dict[str, Any], records: list[dict[str, Any]]) -> dict[
     return vega
 
 
-async def _run(step: StepSpec, tools: Tools) -> AgentReport:
+async def _run(step: StepSpec, tools: Tools, *, reasoner: VisualReasoner | None = None) -> AgentReport:
     if step.operation not in OPERATIONS:
         raise _Fail("rejected", "UNKNOWN_OPERATION", f"chart serves {', '.join(OPERATIONS)}, not {step.operation!r}")
     try:
@@ -274,9 +275,12 @@ async def _run(step: StepSpec, tools: Tools) -> AgentReport:
             policy_ref=POLICY_REF, idempotency_key=step.idempotency_key,
             intent=Intent("report_compilation", step.original_question),
         )
-        service = ChartAgentService(FixtureArtifactStore(store_views))  # in-memory, holds only this projected view
+        service = ChartAgentService(
+            FixtureArtifactStore(store_views),
+            reasoner=reasoner,
+        )  # in-memory, holds only this projected view
         try:
-            result = service.execute(task)
+            result = await service.execute_async(task) if reasoner is not None else service.execute(task)
         except ChartError as exc:
             limitations.append(f"CHART_TARGET_FAILED:{view.target.target_id}:{exc.code}")
             continue
@@ -286,7 +290,12 @@ async def _run(step: StepSpec, tools: Tools) -> AgentReport:
         if target.status != "success" or target.chart_ref is None:
             continue
         local = service.artifacts[target.chart_ref.removesuffix("@1")]
-        vega = {**_parse_numbers(local["semantic_spec"]["vega_render_spec"], local["dataset"]["records"]), "title": view.title}
+        presentation = local.get("presentation") if isinstance(local.get("presentation"), dict) else {}
+        chart_title = str(presentation.get("title") or view.title) if reasoner is not None else view.title
+        vega = {
+            **_parse_numbers(local["semantic_spec"]["vega_render_spec"], local["dataset"]["records"]),
+            "title": chart_title,
+        }
         if problems := validate_vega_lite(vega):  # WS7 F-01: never store a spec the UI cannot render
             limitations.append(f"CHART_TARGET_FAILED:{target.target_id}:INVALID_VEGA_LITE:{problems[0]}")
             continue
@@ -294,7 +303,7 @@ async def _run(step: StepSpec, tools: Tools) -> AgentReport:
         dataset = local["dataset"]
         payload = {
             "chart_id": local["artifact_id"], "target_id": target.target_id, "visual_question": view.target.visual_question,
-            "chart_type": local["chart_type"], "title": view.title,
+            "chart_type": local["chart_type"], "title": chart_title,
             "vega_lite": vega,
             "plotly": local["render_spec"], "semantic_spec": semantic, "dataset": dataset, "bindings": view.bindings,
             "selection": local["selection"], "validation": local["semantic_spec"].get("validation"), "policy_ref": POLICY_REF,

@@ -47,6 +47,11 @@ class OpenAIVisualReasoner:
                 "visual_question must be an object with type and reason. candidates must be chart_type/reason pairs. "
                 "selection.chart_type must be one allowed value or null. "
                 "Encoding fields must come from the provided artifacts only. "
+                "Presentation must include a business-readable title and subtitle, plus axes.x.title and axes.y.title "
+                "when the chart has axes. Axis title objects should use {format:'plain', value:'...'} or "
+                "{format:'math', value:'$...$'} for metrics such as price per square meter, DOM, deltas, or ratios. "
+                "Prefer concise Vietnamese labels and LaTeX/MathJax syntax for units and formulas where helpful. "
+                "Never wrap a full Vietnamese prose label in '$...$'; use plain format for prose and math format only for formulas. "
                 "Do not invent fields, do not change data values, do not generate Plotly code."
             ),
             prompt,
