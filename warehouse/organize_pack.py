@@ -73,5 +73,22 @@ def deploy_project_100():
             print(f"Standardized project_100: {dst.name}")
 
 
+def deploy_project_200():
+    vhsc_dir = BASE_DIR.parent / "data" / "mock" / "vhsc_20260630"
+    p200_dir = BASE_DIR / "project_200"
+    p200_dir.mkdir(parents=True, exist_ok=True)
+
+    for tname, expected_cols in EXPECTED_HEADERS.items():
+        if tname in SHARED_TABLES:
+            continue
+        src = vhsc_dir / f"{tname}.csv"
+        dst = p200_dir / f"{tname}.csv"
+        if src.exists():
+            standardize_file(src, dst, expected_cols)
+            print(f"Standardized project_200: {dst.name}")
+
+
 if __name__ == "__main__":
     deploy_project_100()
+    deploy_project_200()
+
