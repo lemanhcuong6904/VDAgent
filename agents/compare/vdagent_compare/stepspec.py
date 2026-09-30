@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -31,9 +32,14 @@ from vdagent_contracts.peer_rules import PeerAreaUnavailable, area_tolerance_rat
 from vdagent_contracts.reports import AgentReport, ReportError
 from vdagent_contracts.step_inputs import INPUT_ERROR_CLASSES, DataInputs, InputError, Tools, resolve_data_inputs
 
+from . import phrasing
+from .llm import JsonLLM, LLMUnavailableError
+from .vh_chat import render
 from .vh_data import DataPackage, Unit
 from .vh_service import CompareService
 
+log = logging.getLogger(__name__)
+PHRASE_TIMEOUT_S = 15.0  # the step deadline is 30 s (spec §3.4): engine + artifact_put first, one wording call after
 AGENT, AGENT_VERSION = "compare", "0.3.0"
 OPERATIONS = ("compare_to_peers",)
 B2 = "BLOCKED:B-2_min_peer_count"
@@ -156,9 +162,9 @@ def build_package(inputs: DataInputs) -> tuple[DataPackage, dict[str, Any]]:
     return package, record
 
 
-async def run_step(step: StepSpec, tools: Tools) -> AgentReport:
+async def run_step(step: StepSpec, tools: Tools, llm: JsonLLM | None = None) -> AgentReport:
     try:
-        return await _run(step, tools)
+        return await _run(step, tools, llm)
     except InputError as exc:
         return _report(step, exc.state, error=ReportError(code=exc.code, message=exc.message))
     except _Fail as exc:
@@ -166,7 +172,7 @@ async def run_step(step: StepSpec, tools: Tools) -> AgentReport:
         return _report(step, exc.state, error=ReportError(code=exc.code, message=exc.message, retryable=retryable))
 
 
-async def _run(step: StepSpec, tools: Tools) -> AgentReport:
+async def _run(step: StepSpec, tools: Tools, llm: JsonLLM | None) -> AgentReport:
     if step.operation not in OPERATIONS:
         raise _Fail("rejected", "UNKNOWN_OPERATION", f"compare serves {', '.join(OPERATIONS)}, not {step.operation!r}")
     try:
@@ -231,5 +237,29 @@ async def _run(step: StepSpec, tools: Tools) -> AgentReport:
             row["sourceRef"] = {**row["sourceRef"], "artifactId": dataset_ref.artifact_id, "version": dataset_ref.version}
     cmp_ref = await put(ArtifactType.COMPARISON, "comparison@1", cmp_payload, status, [*inputs.refs, pd_ref])
     peers = len(peer_def.get("peers") or [])
+    summary = f"So sánh {cmp_payload['subject']['entityCode']} với {peers} căn tương đồng @ {step.snapshot_id}."
+    narration = await _narrate(llm, step.original_question or "", result)
     return _report(step, "completed", refs=[pd_ref, cmp_ref], warnings=limitations, partial=True,
-                   summary=f"So sánh {cmp_payload['subject']['entityCode']} với {peers} căn tương đồng @ {step.snapshot_id}.")
+                   summary=f"{summary} {narration}" if narration else summary)
+
+
+async def _narrate(llm: JsonLLM | None, question: str, result: dict[str, Any]) -> str:
+    """The model's checked sentence (after the code's own limits sentence), or "" — never an error.
+
+    Only the report summary carries it: the stored artifacts hold engine numbers and stay deterministic.
+    """
+    comparison = result["comparison"]
+    if llm is None or comparison.get("clarification") or comparison.get("reason_code") == "INSUFFICIENT_EVIDENCE":
+        return ""  # nothing to word: no model, a question, or "not enough data" (said by the engine)
+    facts = phrasing.facts_from(render(result))
+    try:
+        async with asyncio.timeout(PHRASE_TIMEOUT_S):
+            text = await phrasing.phrase(llm, question, facts)
+    except (LLMUnavailableError, TimeoutError, KeyError, TypeError, AttributeError, ValueError) as exc:
+        log.warning("compare: model unusable for this step, template summary kept: %r", exc)
+        return ""
+    if not text:
+        return ""
+    sufficiency = comparison.get("dataSufficiency") or {}
+    limits = sufficiency.get("summary") if sufficiency.get("level") in {"LIMITED", "INSUFFICIENT"} else ""
+    return " ".join(part for part in (limits, text) if part)  # limits: never the model's call
