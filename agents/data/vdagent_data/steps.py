@@ -35,6 +35,7 @@ from vdagent_contracts.errors import ErrorClass
 from vdagent_contracts.messages import StepSpec
 from vdagent_contracts.peer_rules import PEER_AREA_FIELD, PeerAreaUnavailable, area_tolerance_ratio, peer_area
 from vdagent_contracts.reports import AgentReport, QuestionOption, ReportError, ReportQuestion
+from vdagent_data.trace import Observer, Tracer
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ AGENT = "data"
 AGENT_VERSION = "0.2.0"
 FUNNEL_WINDOW_DAYS = 30
 PAGE_ROWS = 200
+MAX_TRACED_LIMITATIONS = 8  # limitation codes named in the trace of one artifact
 CONFIG_KEYS = ("peer_area_tolerance_pct", "min_group_size", "overdue_threshold_days")
 
 # Error code → the class the Orchestrator acts on (contracts/vdagent_contracts/errors.py).
@@ -64,6 +66,13 @@ DATA_ERROR_CLASSES: dict[str, ErrorClass] = {
     "RESULT_TRUNCATED": ErrorClass.DATA_QUALITY,
     "TOOL_FAILED": ErrorClass.TRANSIENT,
     "INTERNAL_ERROR": ErrorClass.FATAL,
+}
+
+# Why the agent stores each artifact (Vietnamese, for the reader of the trace; one line per kind, declared once)
+_WRITE_WHY = {
+    ArtifactType.DATASET: "Lưu các bảng đã đọc thành một gói dữ liệu bất biến để các agent sau dùng lại",
+    ArtifactType.METRIC: "Lưu các chỉ số đã tính kèm nguồn và giới hạn của từng chỉ số",
+    ArtifactType.DQ: "Lưu kết quả kiểm tra chất lượng để bên dùng biết dữ liệu thiếu ở đâu",
 }
 
 _IDENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$")  # snapshot ids, unit codes, keys, enum values
@@ -190,10 +199,22 @@ class _Run:
     semantic: str = ""
     queries: list[dict[str, Any]] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
+    trace: Tracer = field(default_factory=Tracer)
 
-    async def select(self, table: str, sql: str) -> list[dict[str, Any]]:
+    async def select(self, table: str, sql: str, why: str) -> list[dict[str, Any]]:
         """All rows of one scoped SELECT (paged), recorded by SQL hash; a truncated result is an error, not data.
-        Out-of-scope rows are never counted or recorded (WS7 F-08): the artifact holds authorized rows only."""
+        Out-of-scope rows are never counted or recorded (WS7 F-08): the artifact holds authorized rows only.
+        `why` is the one-line reason of this read, reported in the trace."""
+        call = await self.trace.start("read", why, table=table, tool="re_run_query")
+        try:
+            rows = await self._select(table, sql)
+        except Exception as exc:
+            await self.trace.end("read", call, table=table, error=getattr(exc, "code", None) or type(exc).__name__)
+            raise
+        await self.trace.end("read", call, table=table, rows=len(rows), sql_sha256=_sha(sql))
+        return rows
+
+    async def _select(self, table: str, sql: str) -> list[dict[str, Any]]:
         res = await self.tools.call("re_run_query", {"sql": sql})
         if res.get("truncated"):
             raise StepError("failed", "RESULT_TRUNCATED", f"query on {table} exceeded the row cap; narrow the request")
@@ -211,6 +232,16 @@ class _Run:
 
     async def put(self, kind: ArtifactType, schema: str, payload: dict[str, Any], limitations: Sequence[str],
                   inputs: Sequence[ArtifactRef] = (), *, partial: bool = False) -> tuple[ArtifactRef, str]:
+        self.trace.enter("write")
+        call = await self.trace.start("write", _WRITE_WHY[kind], artifact_type=kind.value, schema=schema, tool="artifact_put")
+        try:
+            return await self._put(call, kind, schema, payload, limitations, inputs, partial)
+        except Exception as exc:
+            await self.trace.end("write", call, artifact_type=kind.value, error=getattr(exc, "code", None) or type(exc).__name__)
+            raise
+
+    async def _put(self, call: str, kind: ArtifactType, schema: str, payload: dict[str, Any], limitations: Sequence[str],
+                   inputs: Sequence[ArtifactRef], partial: bool) -> tuple[ArtifactRef, str]:
         status = "PARTIAL" if partial and limitations else "VALID"
         draft = {
             "artifact_type": kind.value, "schema_version": schema, "status": status,
@@ -219,28 +250,49 @@ class _Run:
             "source_refs": list(self.sources), "input_artifact_refs": [r.model_dump(mode="json") for r in inputs],
             "limitations": sorted(set(limitations)), "payload": payload,
         }
-        stored = await self.tools.call("artifact_put", {"draft_json": canonical_json(draft)})
+        body = canonical_json(draft)
+        stored = await self.tools.call("artifact_put", {"draft_json": body})
         ref = ArtifactRef(artifact_id=stored["artifact_id"], version=stored["version"], artifact_type=kind,
                           content_hash=stored["content_hash"])
+        await self.trace.end("write", call, artifact_type=kind.value, artifact_id=ref.artifact_id, version=ref.version,
+                             status=stored["status"], size_bytes=len(body.encode("utf-8")), limitations=len(draft["limitations"]),
+                             limitation_codes=draft["limitations"][:MAX_TRACED_LIMITATIONS])
         return ref, stored["status"]
 
 
 # ---- entry point -------------------------------------------------------------------------------------------------
 
 
-async def run_step(step: StepSpec, tools: Tools) -> AgentReport:
-    """Answer one StepSpec; every failure becomes a structured AgentReport, never an exception."""
+async def run_step(step: StepSpec, tools: Tools, observer: Observer | None = None) -> AgentReport:
+    """Answer one StepSpec; every failure becomes a structured AgentReport, never an exception.
+
+    `observer` (optional) is told what the step really does, as `vdagent_data.trace.TraceEvent`s; it never changes the
+    report, and an observer that fails is ignored.
+    """
+    tracer = Tracer(observer)
     try:
-        return await _run(step, tools)
+        report = await _run(step, tools, tracer)
     except StepError as exc:
-        return _report(step, exc.state, error=ReportError(code=exc.code, message=exc.message,
-                                                         retryable=DATA_ERROR_CLASSES[exc.code] is ErrorClass.TRANSIENT),
-                       question=exc.question)
+        report = _report(step, exc.state, error=ReportError(code=exc.code, message=exc.message,
+                                                           retryable=DATA_ERROR_CLASSES[exc.code] is ErrorClass.TRANSIENT),
+                         question=exc.question)
     except ToolFailure as exc:
-        return _report(step, "failed", error=ReportError(code="TOOL_FAILED", message=str(exc), retryable=True))
+        report = _report(step, "failed", error=ReportError(code="TOOL_FAILED", message=str(exc), retryable=True))
     except Exception as exc:  # a bug: reported, never raised into the Backend turn
         log.exception("data: step %s failed", step.idempotency_key)
-        return _report(step, "failed", error=ReportError(code="INTERNAL_ERROR", message=type(exc).__name__))
+        report = _report(step, "failed", error=ReportError(code="INTERNAL_ERROR", message=type(exc).__name__))
+    await _finish(tracer, report)
+    return report
+
+
+async def _finish(tracer: Tracer, report: AgentReport) -> None:
+    tracer.enter("done" if report.state == "completed" else "fail")
+    if report.state == "completed":
+        await tracer.note("done", "Báo kết quả cho Orchestrator kèm mã các gói đã lưu", state=report.state,
+                          artifacts=len(report.artifact_refs), warnings=len(report.warnings), partial=report.partial)
+    else:
+        code = report.error.code if report.error else report.state.upper()
+        await tracer.note("fail", "Dừng bước và báo lỗi cho Orchestrator; không gói nào được coi là kết quả", code=code, state=report.state)
 
 
 def rejection(code: str, message: str) -> AgentReport:
@@ -262,7 +314,12 @@ def _report(step: StepSpec, state: str, *, error: ReportError | None = None, que
     })
 
 
-async def _run(step: StepSpec, tools: Tools) -> AgentReport:
+async def _run(step: StepSpec, tools: Tools, tracer: Tracer) -> AgentReport:
+    run = _Run(step, tools, trace=tracer)
+    tracer.enter("intake")
+    await tracer.note("intake", "Nhận phiếu giao việc và kiểm tra hợp lệ trước khi đọc kho dữ liệu", operation=step.operation,
+                      original_question=step.original_question, snapshot_id=step.snapshot_id,
+                      semantic_config_version=step.semantic_config_version, **{f"spec_{k}": v for k, v in step.spec.items()})
     spec = _parse_spec(step)
     if not step.snapshot_id:
         raise StepError("rejected", "SNAPSHOT_REQUIRED", "a snapshot_id is required; no default or latest snapshot is used")
@@ -275,9 +332,19 @@ async def _run(step: StepSpec, tools: Tools) -> AgentReport:
     if caller.get("user_id") != step.user_context.user_id:
         raise StepError("rejected", "USER_CONTEXT_MISMATCH", "the step's user_context is not the calling user")
 
-    run = _Run(step, tools)
+    scope = caller.get("authorized_scope") or {}
+    await tracer.note("scope", "Lấy phạm vi quyền từ Backend; quyền ghi trong phiếu không được dùng",
+                      project_ids=scope.get("project_ids", []), zone_ids=scope.get("zone_ids", []))
+    tracer.enter("snapshot")
     await _pin_snapshot(run)
+    await tracer.note("snapshot", "Ghim kỳ chốt dữ liệu đã duyệt cho cả bước, không dùng bản mới nhất hay bản nháp",
+                      snapshot_id=run.snapshot_id, snapshot_date=_day(run.snapshot_date_key).isoformat(),
+                      semantic_config_version=run.semantic)
     config, config_limits = await _semantic_config(run)
+    await tracer.note("config", "Đọc ngưỡng nghiệp vụ từ cấu hình của kho; ngưỡng chưa duyệt được nêu rõ, không dùng mặc định",
+                      approved=[k for k, v in config.items() if v["status"] == "APPROVED"],
+                      pending=[k for k, v in config.items() if v["status"] != "APPROVED"],
+                      missing=[k for k in CONFIG_KEYS if k not in config])
     if isinstance(spec, FetchUnitsSpec):
         return await _fetch_units(run, spec, config, config_limits)
     return await _aggregate(run, spec, config, config_limits)
@@ -305,6 +372,7 @@ async def _pin_snapshot(run: _Run) -> None:
         "snapshot_manifest",
         "SELECT snapshot_id, snapshot_date_key, status, semantic_config_version, loaded_at FROM snapshot_manifest"
         f" WHERE snapshot_id = {_q(step.snapshot_id)}",
+        "Tìm kỳ chốt được yêu cầu trong kho và kiểm tra nó đã được duyệt",
     )
     if not rows:
         raise StepError("rejected", "SNAPSHOT_UNKNOWN", f"unknown snapshot {step.snapshot_id!r}")
@@ -325,6 +393,7 @@ async def _semantic_config(run: _Run) -> tuple[dict[str, Any], list[str]]:
         "semantic_config",
         "SELECT config_key, config_value, status FROM semantic_config"
         f" WHERE config_version = {_q(run.semantic)} AND config_key IN {_in(CONFIG_KEYS)}",
+        "Đọc các ngưỡng nghiệp vụ (dung sai diện tích, cỡ mẫu tối thiểu, ngày quá hạn) của phiên bản cấu hình đã ghim",
     )
     config: dict[str, Any] = {}
     limitations: list[str] = []
@@ -343,11 +412,13 @@ async def _semantic_config(run: _Run) -> tuple[dict[str, Any], list[str]]:
 
 
 async def _fetch_units(run: _Run, spec: FetchUnitsSpec, config: dict[str, Any], limitations: list[str]) -> AgentReport:
+    run.trace.enter("resolve")
     key = run.snapshot_date_key
     where = f"unit_code = {_q(spec.subject_unit_code)}"
     if spec.project_ids:
         where += f" AND project_key IN {_in(spec.project_ids)}"
-    found = await run.select("dim_unit_master", f"SELECT * FROM dim_unit_master WHERE {where} ORDER BY project_key")
+    found = await run.select("dim_unit_master", f"SELECT * FROM dim_unit_master WHERE {where} ORDER BY project_key",
+                             f"Tìm căn {spec.subject_unit_code} trong phạm vi quyền của người dùng")
     if not found:
         raise StepError("failed", "UNIT_NOT_FOUND", f"unit {spec.subject_unit_code} was not found in your authorized scope")
     if len(found) > 1:
@@ -368,6 +439,7 @@ async def _fetch_units(run: _Run, spec: FetchUnitsSpec, config: dict[str, Any], 
             "dim_unit_master",
             f"SELECT * FROM dim_unit_master WHERE unit_type = {_q(subject['unit_type'])}"
             f" AND unit_key <> {_q(subject['unit_key'])} ORDER BY unit_code, unit_key",
+            "Lấy các căn cùng loại căn trong phạm vi quyền làm ứng viên nhóm tương đồng; việc chọn peer thuộc Compare",
         )
         considered += others
     units = [subject]
@@ -382,33 +454,43 @@ async def _fetch_units(run: _Run, spec: FetchUnitsSpec, config: dict[str, Any], 
         limitations.append(f"PEER_AREA_UNAVAILABLE:{len(excluded)}")
     keys = [u["unit_key"] for u in units]
 
+    run.trace.enter("fetch")
     inventory = await run.select(
         "fact_unit_inventory_snapshot",
         f"SELECT * FROM fact_unit_inventory_snapshot WHERE snapshot_date_key = {key} AND unit_key IN {_in(keys)} ORDER BY unit_key",
+        "Lấy dòng tồn kho của các căn ở kỳ chốt đã ghim (trạng thái, số ngày tồn, giá)",
     )
     diagnostics = await run.select(
         "dm_unit_friction_diagnostics",
         f"SELECT * FROM dm_unit_friction_diagnostics WHERE snapshot_date_key = {key} AND unit_key IN {_in(keys)} ORDER BY unit_key",
+        "Lấy chẩn đoán ma sát bán hàng của các căn ở kỳ chốt",
     )
     causes = await run.select(
         "unit_diagnostic_causes",
         f"SELECT * FROM unit_diagnostic_causes WHERE snapshot_date_key = {key} AND unit_key IN {_in(keys)}"
         " ORDER BY unit_key, severity_rank",
+        "Lấy các nguyên nhân được chẩn đoán và mức độ của từng nguyên nhân",
     )
     projects = await run.select(
         "dim_project_profile",
         f"SELECT * FROM dim_project_profile WHERE project_key IN {_in(u['project_key'] for u in units)} ORDER BY project_key",
+        "Lấy hồ sơ dự án của các căn đã đọc",
     )
     zones = await run.select(
         "dim_zone_master",
         f"SELECT * FROM dim_zone_master WHERE zone_key IN {_in(u['zone_key'] for u in units)} ORDER BY zone_key",
+        "Lấy thông tin phân khu của các căn đã đọc",
     )
     channel_keys = [r["channel_key"] for r in inventory if r["channel_key"] is not None]
     channels = await run.select(
         "dim_sales_channel",
         f"SELECT * FROM dim_sales_channel WHERE channel_key IN {_in(channel_keys)} ORDER BY channel_key",
+        "Lấy kênh bán của các dòng tồn kho đã đọc",
     )
+    run.trace.enter("funnel")
     coverage, leads = await _funnel(run, [subject["unit_key"]])
+    dq, dq_limits = _dq(run, considered, inventory, coverage)
+    await _check_note(run, dq, dq_limits)
 
     dataset_limits = [*limitations, "SYNTHETIC_SOURCE:net_area_m2"]  # B-3: mock value = area_m2 × 0.92
     if projects:
@@ -455,7 +537,6 @@ async def _fetch_units(run: _Run, spec: FetchUnitsSpec, config: dict[str, Any], 
     metric_ref, _ = await run.put(ArtifactType.METRIC, "re_metric@1", {"metrics": rows}, metric_limits, [dataset_ref],
                                   partial=bool(metric_limits))
 
-    dq, dq_limits = _dq(run, considered, inventory, coverage)
     dq_ref, _ = await run.put(ArtifactType.DQ, "re_dq@1", dq, dq_limits, [dataset_ref], partial=dq["overall_status"] != "VALID")
 
     warnings = [*dataset_limits, *metric_limits, *dq_limits]
@@ -480,6 +561,7 @@ async def _funnel(run: _Run, unit_keys: Sequence[str]) -> tuple[dict[str, Any], 
         "fact_sales_funnel_daily",
         "SELECT MIN(date_key) AS min_date_key, MAX(date_key) AS max_date_key, COUNT(DISTINCT date_key) AS days"
         f" FROM fact_sales_funnel_daily WHERE date_key BETWEEN {start} AND {end}",
+        f"Kiểm tra bảng phễu bán hàng có phủ đủ {FUNNEL_WINDOW_DAYS} ngày tới ngày chốt hay không",
     )
     days = rows[0]["days"] if rows else 0
     coverage = {"min_date_key": rows[0]["min_date_key"] if rows else None, "max_date_key": rows[0]["max_date_key"] if rows else None,
@@ -490,8 +572,15 @@ async def _funnel(run: _Run, unit_keys: Sequence[str]) -> tuple[dict[str, Any], 
         "fact_sales_funnel_daily",
         f"SELECT unit_key, SUM(leads) AS leads FROM fact_sales_funnel_daily WHERE date_key BETWEEN {start} AND {end}"
         f" AND unit_key IN {_in(unit_keys)} GROUP BY unit_key",
+        f"Cộng số lead {FUNNEL_WINDOW_DAYS} ngày gần nhất của căn mục tiêu",
     )
     return coverage, {r["unit_key"]: r["leads"] for r in sums}  # a unit without rows stays null
+
+
+async def _check_note(run: _Run, dq: dict[str, Any], dq_limits: list[str]) -> None:
+    run.trace.enter("check")
+    await run.trace.note("check", "Kiểm tra chất lượng dữ liệu vừa đọc trước khi lưu: đếm giá trị thiếu và độ phủ của bảng phễu",
+                         overall_status=dq["overall_status"], limitations=sorted(set(dq_limits)), fields_checked=len(dq["fields"]))
 
 
 def _snapshot_block(run: _Run) -> dict[str, Any]:
@@ -532,6 +621,7 @@ def _dq(run: _Run, units: Sequence[dict[str, Any]], inventory: Sequence[dict[str
 
 
 async def _aggregate(run: _Run, spec: AggregateSpec, config: dict[str, Any], limitations: list[str]) -> AgentReport:
+    run.trace.enter("resolve")
     key = run.snapshot_date_key
     where = [f"i.snapshot_date_key = {key}"]
     for column, value in sorted(spec.filters.items()):
@@ -543,12 +633,16 @@ async def _aggregate(run: _Run, spec: AggregateSpec, config: dict[str, Any], lim
         " u.net_area_m2, u.area_m2, i.inventory_status, i.unsold_days_dom, i.net_price_per_m2, i.asking_price_vnd"
         " FROM dim_unit_master u JOIN fact_unit_inventory_snapshot i ON i.unit_key = u.unit_key"
         f" WHERE {' AND '.join(where)} ORDER BY u.unit_key",
+        "Lấy các căn khớp bộ lọc trong phạm vi quyền cùng dòng tồn kho ở kỳ chốt để tổng hợp chỉ số",
     )
     if "re:fact_unit_inventory_snapshot" not in run.sources:
         run.sources.append("re:fact_unit_inventory_snapshot")
     if not units:
         raise StepError("failed", "EMPTY_POPULATION", "no unit in your authorized scope matches the filters")
 
+    dq, dq_limits = _dq(run, units, units, {"complete": True, "days_covered": None})
+    dq["coverage"] = {}
+    await _check_note(run, dq, dq_limits)
     dataset = {
         "snapshot": _snapshot_block(run),
         "population": {"rule": "filters", "filters": dict(sorted(spec.filters.items())), "area_field": PEER_AREA_FIELD},
@@ -592,8 +686,6 @@ async def _aggregate(run: _Run, spec: AggregateSpec, config: dict[str, Any], lim
                 metric_limits.append(f"DQ_MISSING:{metric_id}:{len(members) - len(values)}")
     metric_ref, _ = await run.put(ArtifactType.METRIC, "re_metric@1", {"metrics": rows}, metric_limits, [dataset_ref],
                                   partial=bool(metric_limits))
-    dq, dq_limits = _dq(run, units, units, {"complete": True, "days_covered": None})
-    dq["coverage"] = {}
     dq_ref, _ = await run.put(ArtifactType.DQ, "re_dq@1", dq, dq_limits, [dataset_ref], partial=bool(dq_limits))
     warnings = [*dataset_limits, *metric_limits, *dq_limits]
     return _report(run.step, "completed", refs=[dataset_ref, metric_ref, dq_ref], warnings=warnings,
