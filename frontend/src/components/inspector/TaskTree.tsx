@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { queryKeys } from "../../api/keys";
 import { useApi, useTask } from "../../api/queries";
 import type { InvocationDTO, TaskDetailDTO } from "../../api/types";
+import { plainPreview } from "../../ui/agentReport";
 import { agentColor } from "../../ui/artifacts";
 import { formatDuration, truncate } from "../../ui/format";
 import { taskStatusLabel } from "../../ui/taskStatus";
@@ -97,12 +98,12 @@ function TreeNode({ node }: { node: Node }) {
       </div>
       <div className="tree-detail">
         <div className="tree-inbound">
-          <ArtifactText text={truncate(inv.inbound_text, 160)} />
+          <ArtifactText text={truncate(plainPreview(inv.inbound_text), 160)} />
         </div>
         {inv.error && <div className="tree-error">{inv.error}</div>}
         {inv.result_text && (
           <div className="tree-result">
-            ↳ <ArtifactText text={truncate(inv.result_text, 200)} />
+            ↳ <ArtifactText text={truncate(plainPreview(inv.result_text), 200)} />
           </div>
         )}
       </div>
