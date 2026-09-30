@@ -3,14 +3,17 @@
 HOST         ?= 127.0.0.1
 BACKEND_DB   ?= var/backend.db
 WAREHOUSE_DB ?= var/warehouse.db
+DOCS_MODULES := vdagent_sdk vdagent_backend.mcp.reference
 
 .DEFAULT_GOAL := help
-.PHONY: help backend reset-db docker-env docker-build docker-up docker-down docker-test docker-offline-up docker-offline-down docker-offline-clean docker-live-up docker-live-check docker-live-logs docker-live-down docker-live-clean
+.PHONY: help backend reset-db sdk-docs sdk-docs-serve docker-env docker-build docker-up docker-down docker-test docker-offline-up docker-offline-down docker-offline-clean docker-live-up docker-live-check docker-live-logs docker-live-down docker-live-clean
 
 help:
 	@echo "make backend        start the backend on $(HOST):8000 with the agent plugins listed in backend/config.yaml"
 	@echo "                    (each configured by agents/<name>/.env); HOST=0.0.0.0 serves other machines"
 	@echo "make reset-db       delete and reseed $(BACKEND_DB) and $(WAREHOUSE_DB) (stop the backend first)"
+	@echo "make sdk-docs       build the agent developer reference (SDK + MCP tools) into docs/sdk/"
+	@echo "make sdk-docs-serve serve the same reference on $(HOST):8080, rebuilt when a docstring changes"
 	@echo "make docker-env     create missing agents/<name>/.env from .env.example (never overwrites)"
 	@echo "make docker-build   build the runtime and test images"
 	@echo "make docker-up      start backend on :8000 with ./var (seeds only missing databases)"
@@ -61,7 +64,8 @@ docker-offline-clean:
 LIVE := docker compose --profile live
 LIVE_URL := http://localhost:8022
 
-docker-live-up:
+docker-live-up: docker-env
+	@sh docker/check-env.sh
 	$(LIVE) up -d --build backend-live
 	@for i in $$(seq 120); do [ "$$(docker inspect -f '{{.State.Health.Status}}' $$($(LIVE) ps -q backend-live))" = healthy ] && break; sleep 1; done
 	@$(MAKE) --no-print-directory docker-live-check
@@ -84,3 +88,9 @@ docker-live-down:
 docker-live-clean:
 	$(LIVE) rm -sf backend-live seed-live
 	docker volume rm -f vdagent_live_var
+
+sdk-docs:
+	uv run pdoc $(DOCS_MODULES) -o docs/sdk
+
+sdk-docs-serve:
+	uv run pdoc $(DOCS_MODULES) -h $(HOST) -p 8080 -n

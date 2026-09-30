@@ -19,15 +19,17 @@ from typing import Any
 
 import pytest
 
-from vdagent_backend.config import Config
-from vdagent_backend.db import repo, scopes
-from vdagent_backend.db.database import create_db
-from vdagent_backend.engine import Engine
-from vdagent_backend.events import EventBus
-from vdagent_backend.mcp.tools import McpTools
+from vdagent_backend.artifacts import ArtifactService
+from vdagent_backend.config import Config, load_config
+from vdagent_backend.conversations import Messages, Tasks
+from vdagent_backend.core import EventBus, TokenRegistry
+from vdagent_backend.mcp import TOOLS, McpTools
+from vdagent_backend.persistence import create_database, migrate, sqlite_url
 from vdagent_backend.plugins import AgentRegistry, RegisteredAgent
 from vdagent_backend.re_warehouse import build
-from vdagent_backend.tokens import TokenRegistry
+from vdagent_backend.runtime import Engine
+from vdagent_backend.scopes import UserScopes, seed_missing_demo_scopes
+from vdagent_backend.warehouse import RealEstateWarehouse, Warehouse
 from vdagent_agentkit.mcp_client import McpSession, McpTool, ToolOutcome
 from vdagent_chart.agent import ChartPluginAgent
 from vdagent_chart.fixture_store import FixtureArtifactStore
@@ -42,6 +44,12 @@ from vdagent_report.agent import ReportAgent
 from vdagent_sdk import InvocationContext, Message
 
 ALICE, BOB = "u_000000000001", "u_000000000002"
+NOW = "2026-09-30T00:00:00.000Z"
+# The MCP grants of each plugin entry in backend/config.yaml: the engine and the MCP tools apply them as in production.
+GRANTS: dict[str, frozenset[str]] = {
+    spec.module.removeprefix("vdagent_"): spec.mcp_tools
+    for spec in load_config(Path(__file__).resolve().parents[4] / "backend" / "config.yaml").plugins
+}
 QUESTION = "Vì sao căn A12-08 bán chậm? So sánh với các căn tương đồng và vẽ biểu đồ."
 
 
@@ -52,10 +60,11 @@ class Session:
         self._tools, self._identity = tools, identity
 
     async def list_tools(self) -> list[McpTool]:
-        return [McpTool(t.name, t.description or "", dict(t.inputSchema)) for t in self._tools.list_for(self._identity.agent)]
+        granted = GRANTS[self._identity.agent]
+        return [McpTool(t.name, t.description or "", dict(t.input_schema)) for t in TOOLS if t.name in granted]
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolOutcome:
-        result = await self._tools.call(self._identity, name, arguments)
+        result = await self._tools.call(self._identity, GRANTS[self._identity.agent], name, arguments)
         return ToolOutcome(text=result.content[0].text, is_error=bool(result.is_error))
 
 
@@ -82,12 +91,16 @@ async def system(tmp_path: Path) -> AsyncIterator[dict[str, Any]]:
     build(re_db)
     cfg = Config(backend_db=str(tmp_path / "backend.db"), warehouse_db=str(tmp_path / "w.db"), mcp_public_url="http://mcp.test/mcp",
                  frontend_dist=str(tmp_path / "no-dist"), re_warehouse_db=re_db)
-    db = create_db(cfg.backend_db)
+    await asyncio.to_thread(migrate, sqlite_url(cfg.backend_db))  # the Alembic migrations, as at Backend startup
+    db = create_database(sqlite_url(cfg.backend_db))
     with sqlite3.connect(cfg.backend_db) as conn:
-        conn.executemany("INSERT INTO users (id, name) VALUES (?, ?)", [(ALICE, "Alice"), (BOB, "Bob")])
+        conn.executemany("INSERT INTO users (id, name, created_at) VALUES (?, ?, ?)", [(ALICE, "Alice", NOW), (BOB, "Bob", NOW)])
     conn.close()
-    scopes.seed_missing_demo_scopes(cfg.backend_db)
-    tokens, tools = TokenRegistry(), McpTools(db, cfg.warehouse_db, re_warehouse_db=re_db, sql_timeout_s=5.0)
+    seed_missing_demo_scopes(cfg.backend_db)
+    artifacts_service = ArtifactService(db)
+    tokens = TokenRegistry()
+    tools = McpTools(artifacts_service, Warehouse(cfg.warehouse_db, 5.0), re_warehouse=RealEstateWarehouse(re_db, 5.0),
+                     scopes=UserScopes(db))
 
     @asynccontextmanager
     async def sessions(url: str, token: str) -> AsyncIterator[McpSession]:
@@ -107,9 +120,9 @@ async def system(tmp_path: Path) -> AsyncIterator[dict[str, Any]]:
         "report": ReportAgent(model=None, judge=None, mcp_session_factory=sessions,
                               system_prompt="x", compact_prompt="y"),
     }
-    registry = AgentRegistry(RegisteredAgent(n, f"{n} agent", a, "tests") for n, a in agents.items())
-    engine = Engine(cfg, db, EventBus(), tokens, registry)
-    await engine.start()
+    registry = AgentRegistry(RegisteredAgent(n, f"{n} agent", a, "tests", GRANTS[n]) for n, a in agents.items())
+    engine = Engine(cfg, db, EventBus(), tokens, registry, on_interrupted=artifacts_service.interrupt_run)
+    await engine.recover()
     yield {"engine": engine, "db": db, "tools": tools, "log": log, "cfg": cfg}
     await engine.stop()
     await db.dispose()
@@ -118,9 +131,9 @@ async def system(tmp_path: Path) -> AsyncIterator[dict[str, Any]]:
 async def finish(system: dict[str, Any], agent: str, text: str, user: str = ALICE) -> tuple[dict[str, Any], str]:
     task, _ = await system["engine"].post_message(user, agent, text)
     async with asyncio.timeout(60):
-        while (row := await repo.get_task(system["db"], task["id"])) is None or row["status"] == "running":
+        while (row := await Tasks(system["db"]).get_task(task["id"])) is None or row["status"] == "running":
             await asyncio.sleep(0.05)
-    msgs = await repo.messages_page(system["db"], user, agent, None, 1000)
+    msgs = await Messages(system["db"]).messages_page(user, agent, None, 1000)
     final = [m for m in msgs if m["role"] == "assistant" and m["content"] and not m.get("tool_calls_json")][-1]["content"]
     return row, final
 
@@ -138,7 +151,7 @@ async def test_golden_case_through_the_backend_engine(system: dict[str, Any]) ->
     assert task["status"] == "completed"
 
     # the orchestrator dispatched B1, then B2 + B3 together (they met at the barrier), then B4
-    invs = await repo.list_task_invocations(system["db"], task["id"])
+    invs = await Tasks(system["db"]).list_task_invocations(task["id"])
     by_agent = {i["agent"]: i for i in invs}
     assert {"orchestrator", "data", "insight", "compare", "chart"} <= set(by_agent)
     assert all(i["status"] == "completed" for i in invs), [(i["agent"], i["status"], i.get("error")) for i in invs]
@@ -175,7 +188,7 @@ async def test_golden_case_through_the_backend_engine(system: dict[str, Any]) ->
 async def test_free_text_without_a_unit_is_not_forced_into_the_dag(system: dict[str, Any]) -> None:
     task, answer = await finish(system, "orchestrator", "doanh thu theo vùng năm 2025?")
     assert task["status"] == "completed" and "LLM" in answer
-    invs = await repo.list_task_invocations(system["db"], task["id"])
+    invs = await Tasks(system["db"]).list_task_invocations(task["id"])
     assert {i["agent"] for i in invs} == {"orchestrator"}
 
 
@@ -189,7 +202,7 @@ async def test_unauthorized_user_gets_a_failed_run_not_prj_x_data(system: dict[s
 async def test_ws6_six_agent_report_through_the_backend_engine(system: dict[str, Any]) -> None:
     task, answer = await finish(system, "orchestrator", REPORT_QUESTION)
     assert task["status"] == "completed"
-    invs = await repo.list_task_invocations(system["db"], task["id"])
+    invs = await Tasks(system["db"]).list_task_invocations(task["id"])
     assert {"orchestrator", "data", "insight", "compare", "chart", "report"} <= {i["agent"] for i in invs}
     assert all(i["status"] == "completed" for i in invs), [(i["agent"], i["status"], i.get("error")) for i in invs]
     assert system["log"][:2] in (["insight:start", "compare:start"], ["compare:start", "insight:start"])

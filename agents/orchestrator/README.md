@@ -27,7 +27,7 @@ a new question, a clarification answer, an answer to an agent's question or to t
 Every LLM call of a question counts against `MAX_LLM_CALLS` (9); at most `MAX_REPLANS` (2) replans per
 run. Prompts: `prompts/intent.md` (LLM 1), `prompts/plan.md` (LLM 2).
 
-MCP tools granted by the Backend (`backend/vdagent_backend/mcp/tools.py`): `get_user_context`,
+MCP tools granted by `mcp_tools` in `backend/config.yaml`: `get_user_context`,
 `artifact_put` / `artifact_get` / `artifact_list` (writes `run_state`, `run_summary`),
 `describe_dataset`, `get_dataset_rows`; plus `send_to_agent` to reach the other agents.
 

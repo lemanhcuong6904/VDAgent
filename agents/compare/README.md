@@ -14,6 +14,10 @@ Compare nói **khác bao nhiêu**; Insight nói **vì sao**. Spec đầy đủ: 
 | Mọi con số: mốc chuẩn, chênh, hạng, đáng chú ý, mức đủ dữ liệu | Engine tất định (`Decimal`, ROUND_HALF_UP) | `vh_service.py`, `vh_peers.py`, `vh_math.py`, `vh_sufficiency.py` |
 | Câu trả lời | Mô hình viết 2–4 câu; code kiểm **mọi số phải có trong kết quả**, cấm từ nhân quả / khuyến nghị, sai thì viết lại 1 lần rồi dùng câu mẫu. Bảng số luôn do engine in | `phrasing.py`, `prompts/phrase.md`, `vh_chat.render` |
 
+MCP tools granted by `mcp_tools` in `backend/config.yaml`: `query_datasets`, `describe_dataset`, `get_dataset_rows`, `artifact_put` / `artifact_get` / `artifact_list` (writes
+`peer_definition`, `comparison`), `get_user_context`;
+plus `send_to_agent` to reach the other agents.
+
 Mỗi lượt ghi một bước công cụ `run_comparison` (tham số = yêu cầu đã chuẩn hóa, kết quả = trạng thái,
 mức đủ dữ liệu, `artifact_id`, `content_hash`) để truy vết. Tin nhắn là JSON (từ agent khác) thì
 bỏ qua mô hình, chạy thẳng engine.

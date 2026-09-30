@@ -882,3 +882,116 @@ business logic changed. HC4 waves, artifact lineage/pinning, deterministic-vs-LL
 telemetry gaps, recovery and authorization boundaries are verified. Direct acceptance files skip without
 `acceptance/ws7/run.sh` environment variables; recorded WS7/browser evidence remains authoritative for those claims.
 Remaining risks/blockers are unchanged: F-05 and B-11/B-2/D2b/B-3/B-12.
+
+## 22. Backend v2 migration: `origin/main` merged into staging (2026-09-30)
+
+**CURRENT BACKEND = the new `main` architecture.**
+- `runtime/` (engine)
+- `http/` (REST + SSE)
+- `persistence/` (SQLAlchemy Core + Alembic)
+- `mcp/catalog.py` + `mcp/handlers.py` (grants: `mcp_tools` per plugin in `backend/config.yaml`)
+- `artifacts/` (`EnvelopeStore`)
+- `scopes/`
+- `warehouse/` (`RealEstateWarehouse`)
+
+Status: the work sits on branch `integrate/main-into-staging` as an uncommitted merge; `staging-agent` is unchanged.
+Full record: [docs/integration/MAIN_STAGING_MERGE_AUDIT.md](docs/integration/MAIN_STAGING_MERGE_AUDIT.md).
+
+**Ported from the old paths (TDD).** Every item keeps its behaviour:
+- artifact envelopes with hash / snapshot / semantic / lineage checks and F-02 verify;
+- Alembic `0003` (artifacts, user_scopes, task outcome and idempotency key; adopts staging databases in place);
+- `get_user_context` and B-10 scopes;
+- `re_*` tools with no hidden-row count (F-08);
+- `WRITABLE_TYPES`, `McpIdentity.task_id`;
+- `chart_spec` embeds and `/api/chart-specs`;
+- F-03 outcome, F-04 recovery hook (`Engine(on_interrupted=ArtifactService.interrupt_run)`), F-11 `Idempotency-Key`;
+- Vega-Lite v6 for `create_chart`.
+
+Agent business logic is unchanged.
+
+**Verified.**
+- Host and Docker: 1314 passed, 29 skipped.
+- The only failures are the 4 `test_architecture` checks, caused solely by the old modules (pre-existing in `main`).
+- Every agent suite and the real-engine six-plugin golden run on backend v2.
+- Frontend: 10/10.
+- `acceptance/ws7/run.sh`: PASS 14/14.
+- A copy of the live database migrated with all data kept.
+- Live HC1–HC4 on backend v2: correct LLM plans; HC4 browser 5/5; lineage 7/7; idempotency deduplicated.
+
+**Cleanup done.** The backend-v1 modules were removed:
+- `api/`, `db/`, `engine/`
+- `events.py`, `ids.py`, `tokens.py`, `plugins.py`
+- `mcp/tools.py`, `mcp/re_sql.py`, `mcp/sql.py`, `mcp/charts.py`
+
+Results after the cleanup: `test_architecture` 4/4; host and Docker 1318 passed, 29 skipped, **0 failed**;
+acceptance 14/14; live HC1–HC4 pass. The branch is ready to merge into `staging-agent` pending approval; nothing is
+committed or pushed.
+
+**Test-only adapter:** `GrantedTools` in `agents/data/vdagent_data/tests/conftest.py`.
+
+**New risk seen live (not changed):** Insight may write "so với 7 căn". The 7 is the DW's bound `peer_count` behind 12.40%, next to Compare's 5 peers. It is tied to B-11.
+
+**Blockers unchanged:** B-11, B-2, D2b, B-3, B-12, F-05.
+
+## 23. Local POC startup with LLM on: verified flow (2026-09-30)
+
+**Docker audit.** The POC is fully Dockerized.
+- One image, `vdagent-python`, built from `Dockerfile.python`: stage 1 builds the React frontend; the `runtime` stage
+  serves UI, REST/SSE and MCP on one port, with a healthcheck.
+- The Backend runs all 6 agent plugins in-process.
+- The databases are SQLite files (`backend.db`, `warehouse.db`, `re_warehouse.db`) in a named volume, seeded by a
+  `seed-*` service. There is no separate DB server, by design.
+- Keys come only from `agents/<name>/.env`, mounted read-only.
+
+**The one command, one URL:**
+
+```bash
+make docker-env          # first time: creates agents/<name>/.env; fill OPENAI_API_KEY, OPENAI_BASE_URL, LLM_MODEL
+make docker-live-up      # → http://localhost:8022
+```
+
+`docker-live-up` does the following, in order:
+1. `docker-env`.
+2. **`docker/check-env.sh` preflight**. It fails fast, printing names only (never values), when an agent `.env` is
+   missing or orchestrator / data / report lack `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `LLM_MODEL`. It warns when
+   Insight has no key.
+3. Build and seed.
+4. Wait until `healthy`.
+5. `docker-live-check`.
+
+**Live switches (verified in source).**
+
+| Switch | Where | Effect |
+|---|---|---|
+| `ORCH_LLM=on` | compose `backend-live` | Validated LLM planner. `off` switches to the deterministic planner. `ORCH_LEGACY_LOOP=on` is the old debug loop. |
+| `ORCH_SNAPSHOT_ID=SNAP-2026-09-28`, `ORCH_SEMANTIC_VERSION=sc-1` | compose | Required by the planner. Without them it answers `SNAPSHOT_REQUIRED`. |
+| `ORCH_DAG_TIMEOUT_S=300` | compose | Deadline for a whole run. |
+| `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `LLM_MODEL` | `agents/{orchestrator,data,report}/.env` | Required for those plugins to load. The planner calls `openai/<LLM_MODEL>` (verified with `gpt-4o-mini`). |
+| `GEMINI_API_KEY` / `OPENAI_API_KEY` | `agents/insight/.env` | Primary Gemini `gemini-3.5-flash-lite`, fallback OpenAI `gpt-6-luna`. With neither key, or with `INSIGHT_LLM=off`, it uses the template. |
+
+**Fallback behaviour.**
+- A rejected or unavailable LLM plan fails safely: `Không hoàn thành: LLM_PLAN_*`, and no agent runs.
+- There is no silent deterministic fallback. The offline stack is the explicit backup: `make docker-offline-up`, port
+  :8001.
+
+**Changes made in this step (TDD, `backend/tests/test_docker_setup.py`, 7 tests):**
+- New `docker/check-env.sh`, wired into `docker-live-up`.
+- The dev `backend` service (`make docker-up`, :8000) now pins `ORCH_SNAPSHOT_ID` / `ORCH_SEMANTIC_VERSION`, so it no
+  longer traps users with `SNAPSHOT_REQUIRED`.
+- The test image now contains `docker-compose.yml` and `docker/`. It still contains no `.env`.
+- README quick start rewritten as 3 steps.
+
+**Verified.**
+- Fresh volume via `make docker-live-up` (isolated project on :8023, so the running :8022 stack was left untouched):
+  preflight OK; seed created users and scopes; `healthy` in about 29 s with a cached image; 6 agents; LLM planner on;
+  HC4 run through all 6 agents; real-browser report check PASS.
+- Host and Docker: **1325 passed, 29 skipped, 0 failed**.
+- `acceptance/ws7/run.sh` PASS.
+- `git diff --check` clean.
+
+**Incident during this step (resolved).**
+- `agents/` had been moved to the desktop trash at 18:39:40, together with every `.env`. It was not deleted by this
+  work.
+- At the user's request it was restored intact from `~/.local/share/Trash/files/agents`: 343 files, all 6 `.env`,
+  and the unstaged test edits.
+- Agent tests after the restore: 963 passed.

@@ -7,14 +7,26 @@ max_depth: 4
 max_steps: 12
 # Agent plugins, loaded in this order at startup. Each module must export setup(api, opts) and is
 # configured by its own agents/<name>/.env. A plugin that fails to load is logged and skipped.
+# mcp_tools: the Backend MCP tools every agent of that plugin may list and call (none if omitted).
 plugins:
+  # mcp_tools = the WS1–WS7 permission matrix: every agent reads/writes artifacts (artifact_* : only its own types,
+  # enforced by the artifact handlers) and reads its user's scope; only Data queries the warehouses.
   - module: vdagent_orchestrator
+    mcp_tools: [describe_dataset, get_dataset_rows, artifact_put, artifact_get, artifact_list, get_user_context]
   - module: vdagent_data
+    mcp_tools: [list_tables, describe_table, run_query, query_datasets, describe_dataset, get_dataset_rows,
+                artifact_put, artifact_get, artifact_list, get_user_context, re_list_tables, re_describe_table, re_run_query]
   - module: vdagent_compare
+    mcp_tools: [query_datasets, describe_dataset, get_dataset_rows, artifact_put, artifact_get, artifact_list, get_user_context]
   - module: vdagent_insight
+    mcp_tools: [query_datasets, describe_dataset, get_dataset_rows, artifact_put, artifact_get, artifact_list, get_user_context]
   - module: vdagent_report
+    mcp_tools: [create_chart, save_report, describe_dataset, get_dataset_rows, artifact_put, artifact_get, artifact_list,
+                get_user_context]
   # Chart (D6, WS4): StepSpec@1 draw_chart over real artifacts. Demo commands (`chart demo`, `chart ask`) are off
   # unless CHART_DEMO=on in agents/chart/.env or `opts: {demo: true}` — never in production.
   - module: vdagent_chart
+    mcp_tools: [describe_dataset, get_dataset_rows, artifact_put, artifact_get, artifact_list, get_user_context]
   # - module: agent_template   # echo agent; copy agents/_template to start a new plugin
   #   opts: {name: echo}
+  #   mcp_tools: []

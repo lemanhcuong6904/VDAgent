@@ -5,6 +5,9 @@
 > - đối chiếu với code trên branch `agent_a/debug` (working tree chưa commit);
 > - đối chiếu với bằng chứng đã chạy của WS1–WS7 và AGENTS.md §18–§21.
 >
+> Cập nhật 2026-09-30 (sau merge `origin/main`): backend chạy trên kiến trúc v2 của `main` (`runtime/`, `http/`,
+> `persistence/` + Alembic, `mcp/catalog.py` + `handlers.py`); xem [MAIN_STAGING_MERGE_AUDIT.md](../integration/MAIN_STAGING_MERGE_AUDIT.md).
+>
 > Nếu tài liệu này và code không khớp, code là chuẩn; hãy báo lại chỗ lệch. Tên định danh (hàm, file, contract, mã lỗi,
 > field) giữ nguyên tiếng Anh như trong code.
 
@@ -79,9 +82,9 @@ nào phía sau được tính lại số.**
 | Vấn đề | Vị trí | Trạng thái |
 |---|---|---|
 | Luồng điều khiển | DAG thực thi bằng code của Orchestrator (`dag.py`, `executor.py`). LLM chỉ *đề xuất* plan (`llm_planner.py`). | VERIFIED |
-| Lập lịch lượt chạy, gọi agent, huỷ, độ sâu, deadlock | Engine của Backend (`backend/vdagent_backend/engine/engine.py`) | VERIFIED |
+| Lập lịch lượt chạy, gọi agent, huỷ, độ sâu, deadlock | Engine của Backend v2 (`backend/vdagent_backend/runtime/engine.py`) | VERIFIED |
 | Dữ liệu chuẩn | `var/re_warehouse.db` (mock DW bất động sản), chỉ đọc qua các MCP tool có giới hạn phạm vi của Backend | VERIFIED |
-| Artifact | Artifact store của Backend: bảng SQLite `artifacts` (`db/artifact_store.py`), có version và content hash | VERIFIED |
+| Artifact | Artifact store của Backend: bảng `artifacts` (`artifacts/envelopes.py` `EnvelopeStore`, migration Alembic `0003`), có version và content hash | VERIFIED |
 | Contract | `contracts/vdagent_contracts/` (`messages.py`, `reports.py`, `envelope.py`, `step_inputs.py`, `vega_lite.py`) và `catalogs/*.json` | VERIFIED |
 | Truy vết | `input_artifact_refs` pin bằng `content_hash`; mỗi giá trị trong binding biểu đồ và statement của báo cáo có `source_ref = <id>@<v>#<json-pointer>` | VERIFIED |
 
@@ -92,7 +95,7 @@ flowchart TB
     UI[Người dùng / React UI<br/>do Backend phục vụ] -->|REST POST /api/agents/orchestrator/messages<br/>X-User-Id, Idempotency-Key tuỳ chọn| BE
     subgraph BE[Tiến trình Backend: FastAPI + engine + MCP server, mọi plugin chạy in-process]
       ENG[Engine<br/>stack theo user,agent · hàng đợi FIFO · max_depth 4 · max_steps 12<br/>wait-for graph · huỷ · khôi phục]
-      MCP[MCP server<br/>bearer token theo từng invocation → user, agent, task<br/>PERMISSIONS + WRITABLE_TYPES]
+      MCP[MCP server<br/>bearer token theo từng invocation → user, agent, task<br/>grant mcp_tools theo plugin + WRITABLE_TYPES]
       STORE[(backend.db<br/>tasks · invocations · messages · artifacts · reports · user_scopes · memories)]
       DW[(re_warehouse.db<br/>view theo phạm vi từng user)]
       subgraph ORCH[Plugin Orchestrator]
@@ -646,7 +649,7 @@ stateDiagram-v2
 |---|---|---|
 | Danh tính người dùng cuối | Header `X-User-Id`, được tin tuyệt đối (chỉ cho dev) | **BLOCKED: F-05**, thiết kế trong [AUTH_DESIGN.md](../integration/AUTH_DESIGN.md) |
 | Agent → Backend | MCP bearer token theo từng invocation (cấp lúc bắt đầu, thu hồi lúc kết thúc); thiếu token trả 401 | VERIFIED |
-| Quyền dùng tool | `PERMISSIONS` (tool → agent) và `WRITABLE_TYPES` (agent → loại artifact) | VERIFIED |
+| Quyền dùng tool | Grant `mcp_tools` của từng plugin trong `backend/config.yaml` (tool → agent) và `WRITABLE_TYPES` trong `mcp/handlers.py` (agent → loại artifact) | VERIFIED |
 | Phạm vi dữ liệu | `user_scopes` (dự án/zone). `re_run_query` chạy trên view theo phạm vi; dòng ngoài phạm vi không được trả về và cũng không được đếm (F-08). Resolver báo `SCOPE_VIOLATION`. | VERIFIED (Bob → 404 / failed; không lộ PRJ-Y) |
 | Quyền xem artifact | `artifact_get` / reports / chart-specs theo chủ sở hữu; truy cập chéo user trả 404 | VERIFIED |
 | Phơi bày với LLM | Planner chỉ thấy câu hỏi và catalog. Insight chỉ thấy các ứng viên tính sẵn từ dữ liệu được phép. Key chỉ nằm trong `agents/<name>/.env` (mount chỉ đọc, không vào image hay log). | VERIFIED (không có key trong bằng chứng) |
@@ -738,9 +741,9 @@ flowchart LR
 
 ## 12. Danh mục mã nguồn
 
-- Engine: `backend/vdagent_backend/engine/engine.py`, `context.py`.
-- Tool MCP và quyền: `backend/vdagent_backend/mcp/tools.py`.
-- Store: `backend/vdagent_backend/db/artifact_store.py`.
+- Engine: `backend/vdagent_backend/runtime/engine.py`, `runtime/context.py` (Backend v2 từ `main`; các module v1 đã được xoá).
+- Tool MCP và quyền: `backend/vdagent_backend/mcp/catalog.py` + `mcp/handlers.py`, grant trong `backend/config.yaml`.
+- Store: `backend/vdagent_backend/artifacts/envelopes.py` (`EnvelopeStore`, `verify_envelope`) qua `ArtifactService`; phạm vi user: `scopes/`; DW bất động sản: `warehouse/realestate.py`; schema: `persistence/` + Alembic.
 - Contract: `contracts/vdagent_contracts/{messages,reports,envelope,step_inputs,vega_lite,peer_rules}.py`, `catalogs/*.json`.
 - Orchestrator: `agents/orchestrator/vdagent_orchestrator/{llm_planner,planner,dag,executor,answer,agent}.py`.
 - Worker:

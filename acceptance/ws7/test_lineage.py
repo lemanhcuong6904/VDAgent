@@ -6,13 +6,13 @@ import json
 import sqlite3
 from collections import Counter
 from decimal import Decimal
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from conftest import golden_task, need, save
-from vdagent_backend.db.artifact_store import _envelope, verify  # pyright: ignore[reportPrivateUsage]
+from vdagent_backend.artifacts import verify_envelope as verify
+from vdagent_backend.artifacts.envelopes import _envelope  # pyright: ignore[reportPrivateUsage]
 from vdagent_contracts.vega_lite import validate_vega_lite
 
 
@@ -22,7 +22,7 @@ def store() -> dict[str, Any]:
     conn.row_factory = sqlite3.Row
     task = golden_task()
     rows = conn.execute("SELECT * FROM artifacts WHERE run_id = ? ORDER BY artifact_id, version", (task,)).fetchall()
-    envs = {(r["artifact_id"], r["version"]): _envelope(SimpleNamespace(**dict(r))) for r in rows}
+    envs = {(r["artifact_id"], r["version"]): _envelope(dict(r)) for r in rows}
     latest: dict[str, Any] = {}
     for (aid, _), env in sorted(envs.items()):
         latest[aid] = env

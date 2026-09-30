@@ -11,8 +11,8 @@ import pytest
 
 from vdagent_data.tests.conftest import ALICE
 from vdagent_data.tests.test_steps import step
-from vdagent_backend.mcp.tools import McpTools
-from vdagent_backend.tokens import McpIdentity
+from vdagent_data.tests.conftest import GrantedTools as McpTools
+from vdagent_backend.core import McpIdentity
 from vdagent_contracts.reports import AgentReport, parse_agent_report
 from vdagent_data.agent import DataAgent, build_agent
 from vdagent_data.mcp_client import McpSession, McpTool, ToolOutcome

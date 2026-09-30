@@ -11,8 +11,8 @@ from typing import Any
 
 import pytest
 
-from vdagent_backend.db import artifacts as backend_artifacts
-from vdagent_backend.mcp.tools import McpTools
+
+from vdagent_data.tests.conftest import GrantedTools as McpTools
 from vdagent_chart.stepspec import resolve_pointer
 from vdagent_chart.stepspec import run_step as run_chart
 from vdagent_chart.tests.test_ws4_integration import chart_step, upstream
@@ -96,7 +96,7 @@ async def test_golden_report_from_real_artifacts(alice: McpPort, mcp_tools: McpT
     assert "gây ra" not in md.lower() and "nguyên nhân duy nhất" not in md.lower()  # no causal overclaim
     assert art["status"] == "PARTIAL"
     # delivered through the existing report path, chart_spec embeds validated by save_report
-    delivered = await backend_artifacts.get_report(mcp_tools._db, ALICE, payload["delivery"]["report_id"])  # pyright: ignore[reportPrivateUsage]
+    delivered = await mcp_tools.artifacts.get_report(ALICE, payload["delivery"]["report_id"])
     assert delivered is not None and delivered["markdown"] == md
 
 

@@ -38,6 +38,10 @@ services:
     <<: *python
     environment:
       VDAGENT_CONFIG: /app/backend/config.compose.yaml
+      # explicit pins for the Orchestrator's LLM planner (it never picks a snapshot); without them it answers
+      # SNAPSHOT_REQUIRED. The live demo stack (profile live, make docker-live-up) sets the same values.
+      ORCH_SNAPSHOT_ID: "SNAP-2026-09-28"
+      ORCH_SEMANTIC_VERSION: "sc-1"
     volumes:
       - ./var:/app/var
       - {<<: *env-file, source: ./agents/orchestrator/.env, target: /app/agents/orchestrator/.env}

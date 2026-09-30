@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from vdagent_agentkit.mcp_client import McpSession, McpTool, ToolOutcome
-from vdagent_backend.mcp.tools import McpTools
-from vdagent_backend.tokens import McpIdentity
+from vdagent_data.tests.conftest import GrantedTools as McpTools
+from vdagent_backend.core import McpIdentity
 from vdagent_compare.agent import CompareAgent
 from vdagent_compare.tests.test_dw_integration import compare_step, data_refs
 from vdagent_contracts.reports import AgentReport, parse_agent_report

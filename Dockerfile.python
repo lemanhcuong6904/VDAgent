@@ -43,6 +43,9 @@ COPY contracts/ contracts/
 COPY backend/ backend/
 COPY agents/ agents/
 COPY data/ data/
+# repo tooling checked by backend/tests/test_docker_setup.py (no .env: .dockerignore excludes every one)
+COPY docker-compose.yml ./
+COPY docker/ docker/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen \
     && python -c "import vdagent_backend.app, vdagent_contracts, vdagent_orchestrator, vdagent_data, vdagent_compare, vdagent_insight, vdagent_chart, vdagent_report, pytest"

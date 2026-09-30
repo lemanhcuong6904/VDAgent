@@ -23,6 +23,10 @@ There is no tool calling and no LangChain.
 - `memory.py` (`CtxMemory`): insight references per conversation, kept in `ctx.memory`. It never
   stores numbers.
 
+MCP tools granted by `mcp_tools` in `backend/config.yaml`: `query_datasets`, `describe_dataset`, `get_dataset_rows`, `artifact_put` / `artifact_get` / `artifact_list` (writes
+`insight`), `get_user_context`;
+plus `send_to_agent` to reach the other agents.
+
 ## Run
 
 With the Backend, run `make backend` (or `uv run uvicorn vdagent_backend.app:app --port 8000`). It

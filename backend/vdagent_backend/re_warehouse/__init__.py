@@ -1,7 +1,10 @@
 """Real-estate DW mock (D7): `build(path)` rebuilds `re_warehouse.db` deterministically.
 
 Background data comes from `random.Random(SEED)`; golden fixtures (system prompt §7) are layered on top by
-`fixtures.apply`. Same code → same bytes of `iterdump()` → same `checksum`.
+`fixtures.apply`. Same code → same bytes of `iterdump()` → same `checksum`. Used by the seed scripts and tests only;
+the Backend reads the built file through `warehouse.RealEstateWarehouse`.
+
+May import: nothing from `vdagent_backend`.
 """
 
 from __future__ import annotations
@@ -258,3 +261,6 @@ def checksum(path: str) -> str:
     finally:
         conn.close()
     return digest
+
+
+__all__ = ["LATEST_APPROVED", "SNAPSHOTS", "TABLES", "build", "checksum", "fixtures", "semantic_config"]

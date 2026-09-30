@@ -16,8 +16,8 @@ from typing import Any
 import pytest
 
 from vdagent_data.tests.conftest import ALICE, BOB, McpPort
-from vdagent_backend.mcp.tools import McpTools
-from vdagent_backend.tokens import McpIdentity
+from vdagent_data.tests.conftest import GrantedTools as McpTools
+from vdagent_backend.core import McpIdentity
 from vdagent_contracts.canonical import percentile_inc
 from vdagent_contracts.errors import ErrorClass
 from vdagent_contracts.messages import StepSpec
@@ -265,7 +265,7 @@ def tampered(tmp_path: Path, re_db: str, mcp_tools: McpTools) -> Any:
             for code, value in values.items():
                 conn.execute("UPDATE dim_unit_master SET net_area_m2 = ? WHERE unit_code = ? AND project_key = 'PRJ-X'", (value, code))
         conn.close()
-        mcp_tools._re_warehouse_db = path  # pyright: ignore[reportPrivateUsage]
+        mcp_tools.use_re_warehouse(path)
         return McpPort(mcp_tools, McpIdentity(user_id=ALICE, agent="data", invocation_id=f"inv_{ALICE}", task_id=f"t_{ALICE}"))
 
     return make

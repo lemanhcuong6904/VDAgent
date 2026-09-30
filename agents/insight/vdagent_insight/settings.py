@@ -1,7 +1,7 @@
 """Settings (pipeline step 2): this plugin folder's `.env` and the versioned `config/*.yaml`.
 
-`.env`: every plugin shares the Backend's process, so the file is read with `dotenv_values()` into a
-mapping and `os.environ` is never modified (SDK rule R11); runtime.py reads the variables.
+Every plugin shares the Backend's process, so the `.env` is read with `dotenv_values()` into a
+mapping and `os.environ` is never modified (it is shared with every other plugin).
 
 `config/semantic_insight*.yaml` (spec §5.4, §7.6) and `config/llm.yaml` (spec §7.5) hold every
 threshold, template, model name and price (luật 2). The loaders validate them strictly: unknown or
