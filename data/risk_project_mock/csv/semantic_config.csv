@@ -1,0 +1,20 @@
+﻿config_key,config_value,value_type,semantic_version,approval_status,description
+overdue_threshold_days,90,INTEGER,3.2.0-risk-project-tc01-mock,APPROVED,AVAILABLE inventory is overdue when DOM > 90.
+peer_area_tolerance_pct,0.15,DECIMAL,3.2.0-risk-project-tc01-mock,APPROVED,Peer-group net-area tolerance.
+minimum_peer_sample_size,5,INTEGER,3.2.0-risk-project-tc01-mock,APPROVED,Minimum preferred peer sample.
+severe_physical_penalty_threshold,25,INTEGER,3.2.0-risk-project-tc01-mock,APPROVED,Physical-defect trigger.
+thermal_penalty_threshold,40,INTEGER,3.2.0-risk-project-tc01-mock,APPROVED,Thermal/view trigger.
+secondary_price_gap_threshold_pct,10,DECIMAL,3.2.0-risk-project-tc01-mock,APPROVED,Secondary-price-gap trigger.
+ticket_to_income_threshold,18,DECIMAL,3.2.0-risk-project-tc01-mock,APPROVED,Synthetic ticket-to-income trigger for Phú Mỹ.
+peer_price_spread_threshold_pct,10,DECIMAL,3.2.0-risk-project-tc01-mock,APPROVED,Overpriced-vs-peer trigger.
+low_commission_threshold_pct,1.5,DECIMAL,3.2.0-risk-project-tc01-mock,APPROVED,Low broker-incentive trigger.
+deep_funnel_dropoff_threshold_pct,60,DECIMAL,3.2.0-risk-project-tc01-mock,APPROVED,Booking cancellation trigger.
+minimum_booking_sample,5,INTEGER,3.2.0-risk-project-tc01-mock,APPROVED,Minimum bookings for deep-funnel diagnosis.
+mock_price_per_m2_floor_vnd,32000000,INTEGER,3.2.0-risk-project-tc01-mock,APPROVED,Synthetic lower price calibration.
+mock_price_per_m2_ceiling_vnd,52000000,INTEGER,3.2.0-risk-project-tc01-mock,APPROVED,Synthetic upper price calibration.
+policy_control_window_days,120,INTEGER,3.2.0-risk-project-tc01-mock,APPROVED,Matched-control window for policy effectiveness.
+risk_phase_code,TC-01,STRING,3.2.0-risk-project-tc01-mock,APPROVED,Synthetic permit-risk phase applied to all generated units.
+risk_phase_permit_status,SUSPENDED_PENDING_REVIEW,STRING,3.2.0-risk-project-tc01-mock,APPROVED,Synthetic phase status at the dataset snapshot; not an official-source claim.
+risk_phase_permit_suspended_from,2026-05-15,DATE,3.2.0-risk-project-tc01-mock,APPROVED,Synthetic suspension start; sold records must predate it.
+unit_id_prefix,TST-U,STRING,3.2.0-risk-project-tc01-mock,APPROVED,Required synthetic unit identifier prefix.
+project_key,500,INTEGER,3.2.0-risk-project-tc01-mock,APPROVED,Required project surrogate key for the Risk Phú Mỹ dataset.
