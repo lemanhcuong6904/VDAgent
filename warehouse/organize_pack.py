@@ -248,6 +248,61 @@ def deploy_project_300():
     print(f"Standardized project_300: {causes_csv.name} ({len(cause_rows)} rows)")
 
 
+import json
+
+
+def normalize_unit_codes_p400(p400_dir):
+    dim_unit = p400_dir / "dim_unit_master.csv"
+    key_to_code = {}
+    
+    if dim_unit.exists():
+        with open(dim_unit, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            fieldnames = reader.fieldnames
+            
+        for row in rows:
+            ukey = int(row["unit_key"])
+            seq = ukey - 400000
+            new_code = f"MAS-U{seq:05d}"
+            old_code = row["unit_code"]
+            
+            row["unit_id"] = new_code
+            row["unit_code"] = new_code
+            key_to_code[row["unit_key"]] = new_code
+            
+            ext_str = row.get("ext_attributes", "{}") or "{}"
+            try:
+                ext_dict = json.loads(ext_str)
+            except Exception:
+                ext_dict = {}
+            if "tower_unit_label" not in ext_dict:
+                ext_dict["tower_unit_label"] = old_code
+            row["ext_attributes"] = json.dumps(ext_dict, ensure_ascii=False)
+            
+        with open(dim_unit, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+            
+    diag_csv = p400_dir / "dm_unit_friction_diagnostics.csv"
+    if diag_csv.exists():
+        with open(diag_csv, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            fieldnames = reader.fieldnames
+            
+        for row in rows:
+            ukey = row.get("unit_key")
+            if ukey in key_to_code:
+                row["unit_code"] = key_to_code[ukey]
+                
+        with open(diag_csv, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+
 def deploy_project_400():
     source_dir = BASE_DIR.parent / "data" / "masteri_cp" / "csv"
     p400_dir = BASE_DIR / "project_400"
@@ -267,6 +322,7 @@ def deploy_project_400():
     remap_integer_column(p400_dir, "channel_key", -36000)
     remap_integer_column(p400_dir, "infra_key", -35900)
     normalize_funnel_reservations(p400_dir / "fact_sales_funnel_daily.csv")
+    normalize_unit_codes_p400(p400_dir)
 
 
 def deploy_project_500():
