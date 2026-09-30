@@ -103,6 +103,37 @@ def remap_integer_column(folder, column_name, offset):
             writer.writerows(rows)
 
 
+def remap_integer_column_to_band(folder, column_name, offset, target_min, target_max):
+    """Map legacy keys once while preserving values already in the canonical band."""
+    for csv_file in folder.glob("*.csv"):
+        with open(csv_file, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            fieldnames = reader.fieldnames
+
+        if not fieldnames or column_name not in fieldnames:
+            continue
+
+        for row in rows:
+            if not row[column_name]:
+                continue
+            value = int(row[column_name])
+            if target_min <= value <= target_max:
+                continue
+            mapped = value + offset
+            if not target_min <= mapped <= target_max:
+                raise ValueError(
+                    f"{csv_file}: {column_name}={value} cannot be mapped "
+                    f"into [{target_min}, {target_max}] with offset {offset}"
+                )
+            row[column_name] = str(mapped)
+
+        with open(csv_file, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+
 def deploy_project_100():
     vhop_dir = BASE_DIR / "vhop"
     p100_dir = BASE_DIR / "project_100"
@@ -250,9 +281,9 @@ def deploy_project_500():
         if src.exists():
             standardize_file(src, p500_dir / src.name, expected_cols)
 
-    remap_integer_column(p500_dir, "zone_key", -1700)
-    remap_integer_column(p500_dir, "channel_key", 1800)
-    remap_integer_column(p500_dir, "infra_key", 900)
+    remap_integer_column_to_band(p500_dir, "zone_key", -1700, 501, 599)
+    remap_integer_column_to_band(p500_dir, "channel_key", 1800, 5001, 5099)
+    remap_integer_column_to_band(p500_dir, "infra_key", 900, 5101, 5199)
     normalize_funnel_reservations(p500_dir / "fact_sales_funnel_daily.csv")
 
 
