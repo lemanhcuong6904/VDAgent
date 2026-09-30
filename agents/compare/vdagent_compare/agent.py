@@ -95,7 +95,7 @@ class CompareAgent:
                                      error=ReportError(code="INVALID_STEPSPEC", message=f"{exc.error_count()} error(s)"))
             else:
                 async with self._mcp_session_factory(ctx.mcp.url, ctx.mcp.token) as mcp:
-                    report = await run_stepspec(step, JsonTools(mcp), self._llm)
+                    report = await run_stepspec(step, JsonTools(mcp))
         head = f"Compare: {report.state}" + (f" ({report.error.code})" if report.error else "")
         await ctx.emit_assistant(render_agent_report(head, report))
 
