@@ -7,7 +7,7 @@ guarded in SQL, so a row that already reached a terminal status is never overwri
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from vdagent_backend.core import new_id, utcnow
@@ -89,7 +89,11 @@ class Tasks:
 
     async def list_tasks(self, user_id: str, status: str | None = None, limit: int = 50) -> list[Row]:
         """The user's tasks, newest first."""
-        stmt = select(_tasks).where(_tasks.c.user_id == user_id)
+        stmt = (
+            select(_tasks, _invs.c.inbound_text.label("preview"))
+            .outerjoin(_invs, and_(_invs.c.task_id == _tasks.c.id, _invs.c.depth == 0))
+            .where(_tasks.c.user_id == user_id)
+        )
         if status is not None:
             stmt = stmt.where(_tasks.c.status == status)
         stmt = stmt.order_by(_tasks.c.created_at.desc(), _tasks.c.id.desc()).limit(limit)
