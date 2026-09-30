@@ -2,8 +2,11 @@ import { useState } from "react";
 import type { MessageDTO, PendingDTO, ToolCallDTO } from "../../api/types";
 import { ARTIFACT_SPLIT, agentColor } from "../../ui/artifacts";
 import { formatTime, prettyJson, truncate } from "../../ui/format";
+import { parseStepSpec, plainPreview } from "../../ui/agentReport";
 import { ArtifactLink, ArtifactText } from "../ArtifactLink";
 import { MarkdownText } from "../Markdown";
+import { StepSpecCard } from "./AgentReportCard";
+import { MessageText } from "./MessageText";
 
 const SEND_TO_AGENT = "send_to_agent";
 
@@ -108,13 +111,13 @@ function ToolResult({ message, call }: { message: MessageDTO; call: ToolCallDTO 
         </span>
         {!open && (
           <span className="tool-result-preview">
-            <ArtifactText text={truncate(message.content, 140)} />
+            <ArtifactText text={truncate(plainPreview(message.content), 140)} />
           </span>
         )}
       </div>
       {open &&
         (isAgentReply && !failed ? (
-          <MarkdownText text={message.content} className="tool-result-body" />
+          <MessageText text={message.content} className="tool-result-body" />
         ) : (
           <pre className="tool-result-body mono">
             <ArtifactText text={prettyJson(message.content)} />
@@ -146,13 +149,14 @@ export function MessageItem({ message, agent, toolCalls, toolResults }: MessageI
 
   if (message.role === "user") {
     const sender = message.sender ?? "user";
+    const task = parseStepSpec(message.content);
     return (
       <div className={`${cls}${sender === "user" ? " from-human" : " from-agent"}`} data-seq={message.seq}>
         <div className="msg-head">
           <SenderBadge name={sender} />
           {time}
         </div>
-        <MarkdownText text={message.content} />
+        {task ? <StepSpecCard view={task} /> : <MarkdownText text={message.content} />}
       </div>
     );
   }
@@ -166,7 +170,7 @@ export function MessageItem({ message, agent, toolCalls, toolResults }: MessageI
         </span>
         {time}
       </div>
-      {message.content && <MarkdownText text={message.content} />}
+      {message.content && <MessageText text={message.content} />}
       {message.tool_calls && message.tool_calls.length > 0 && (
         <div className="tool-chips">
           {message.tool_calls.map((c) => (
