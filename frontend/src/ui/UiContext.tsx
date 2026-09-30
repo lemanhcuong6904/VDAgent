@@ -11,6 +11,9 @@ export interface UiState {
   artifactId: string | null;
   /** Recently opened artifacts, most recent first. */
   recentArtifacts: string[];
+  /** Drawer state is used below the desktop breakpoint; desktop panels remain visible. */
+  sidebarOpen: boolean;
+  inspectorOpen: boolean;
 }
 
 export interface Ui extends UiState {
@@ -18,27 +21,34 @@ export interface Ui extends UiState {
   selectTask: (taskId: string) => void;
   openArtifact: (artifactId: string) => void;
   setTab: (tab: InspectorTab) => void;
+  toggleSidebar: () => void;
+  toggleInspector: () => void;
+  closePanels: () => void;
 }
 
 type Action =
   | { type: "agent"; agent: string }
   | { type: "task"; taskId: string }
   | { type: "artifact"; artifactId: string }
-  | { type: "tab"; tab: InspectorTab };
+  | { type: "tab"; tab: InspectorTab }
+  | { type: "sidebar" }
+  | { type: "inspector" }
+  | { type: "closePanels" };
 
 const RECENT_LIMIT = 8;
 
-function reducer(state: UiState, action: Action): UiState {
+export function uiReducer(state: UiState, action: Action): UiState {
   switch (action.type) {
     case "agent":
-      return { ...state, agent: action.agent };
+      return { ...state, agent: action.agent, sidebarOpen: false };
     case "task":
-      return { ...state, taskId: action.taskId, tab: "task" };
+      return { ...state, taskId: action.taskId, tab: "task", sidebarOpen: false, inspectorOpen: true };
     case "artifact":
       return {
         ...state,
         artifactId: action.artifactId,
         tab: "artifact",
+        inspectorOpen: true,
         recentArtifacts: [
           action.artifactId,
           ...state.recentArtifacts.filter((id) => id !== action.artifactId),
@@ -46,21 +56,29 @@ function reducer(state: UiState, action: Action): UiState {
       };
     case "tab":
       return { ...state, tab: action.tab };
+    case "sidebar":
+      return { ...state, sidebarOpen: !state.sidebarOpen };
+    case "inspector":
+      return { ...state, inspectorOpen: !state.inspectorOpen };
+    case "closePanels":
+      return { ...state, sidebarOpen: false, inspectorOpen: false };
   }
 }
 
-const initialState: UiState = {
+export const initialUiState: UiState = {
   agent: null,
   taskId: null,
   tab: "task",
   artifactId: null,
   recentArtifacts: [],
+  sidebarOpen: false,
+  inspectorOpen: false,
 };
 
 const UiContext = createContext<Ui | null>(null);
 
 export function UiProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, dispatch] = useReducer(uiReducer, initialUiState);
   const value = useMemo<Ui>(
     () => ({
       ...state,
@@ -68,6 +86,9 @@ export function UiProvider({ children }: { children: ReactNode }) {
       selectTask: (taskId) => dispatch({ type: "task", taskId }),
       openArtifact: (artifactId) => dispatch({ type: "artifact", artifactId }),
       setTab: (tab) => dispatch({ type: "tab", tab }),
+      toggleSidebar: () => dispatch({ type: "sidebar" }),
+      toggleInspector: () => dispatch({ type: "inspector" }),
+      closePanels: () => dispatch({ type: "closePanels" }),
     }),
     [state],
   );
