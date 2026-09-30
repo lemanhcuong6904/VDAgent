@@ -110,6 +110,67 @@ EXPECTED_HEADERS = {
 }
 
 
+# PK and UK constraints from schema_final_16_tables.sql for project-scoped CSVs.
+GLOBAL_UNIQUE_KEYS = {
+    "dim_project_profile": [("project_key",), ("project_id",)],
+    "dim_zone_master": [("zone_key",), ("zone_id",)],
+    "dim_unit_master": [("unit_key",), ("unit_id",)],
+    "dim_sales_channel": [("channel_key",), ("channel_id",)],
+    "dim_infrastructure_assets": [("infra_key",), ("infra_id",)],
+    "dim_secondary_market_comps": [("comp_id",)],
+    "fact_unit_inventory_snapshot": [("snapshot_date_key", "unit_key")],
+    "fact_sales_funnel_daily": [("funnel_event_id",)],
+    "fact_unit_price_history": [("price_event_id",)],
+    "fact_market_macro_monthly": [("macro_record_id",)],
+    "fact_sales_channel_performance": [("snapshot_date_key", "channel_key", "project_key")],
+    "dm_unit_friction_diagnostics": [("diagnostic_id",)],
+    "unit_diagnostic_causes": [("diagnostic_id", "cause_code")],
+}
+
+
+def validate_global_keys(base_dir, project_keys, constraints=GLOBAL_UNIQUE_KEYS):
+    """Check PK/UK collisions across packs before their rows enter shared tables."""
+    errors = []
+    for table_name, key_columns_list in constraints.items():
+        seen = {columns: {} for columns in key_columns_list}
+        collisions = {columns: 0 for columns in key_columns_list}
+        examples = {}
+        for project_key in project_keys:
+            csv_path = Path(base_dir) / f"project_{project_key}" / f"{table_name}.csv"
+            if not csv_path.exists():
+                errors.append(f"Missing global-key input: {csv_path}")
+                continue
+            with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
+                reader = csv.DictReader(handle)
+                missing = [col for cols in key_columns_list for col in cols if col not in (reader.fieldnames or ())]
+                if missing:
+                    errors.append(f"{csv_path}: missing key columns {sorted(set(missing))}")
+                    continue
+                for row in reader:
+                    for columns in key_columns_list:
+                        key = tuple(row[column] for column in columns)
+                        if not all(key):
+                            errors.append(f"{csv_path}: null/empty key {columns}")
+                            continue
+                        if key in seen[columns]:
+                            first_project = seen[columns][key]
+                            collisions[columns] += 1
+                            examples.setdefault((columns, key), (first_project, project_key))
+                        else:
+                            seen[columns][key] = project_key
+        for columns, count in collisions.items():
+            if count:
+                key, owners = next(
+                    (key, owners) for (constraint, key), owners in examples.items()
+                    if constraint == columns
+                )
+                errors.append(
+                    f"{table_name}.{'+'.join(columns)}: {count} duplicate rows in combined dataset; "
+                    f"example {key} in projects {owners[0]} and {owners[1]}"
+                )
+    return errors
+
+
 def compute_sha256(filepath):
     h = hashlib.sha256()
     with open(filepath, "rb") as f:
@@ -338,6 +399,17 @@ def main():
             print(f"  ⚠️ Cảnh báo ({len(warns)}):")
             for w in warns[:3]:
                 print(f"     - {w}")
+
+    print("\n[3] Kiểm tra PK/UK toàn cục trên 5 project:")
+    global_errors = validate_global_keys(
+        BASE_DIR, [project["project_key"] for project in registry["projects"]]
+    )
+    if global_errors:
+        for error in global_errors:
+            print(f"  - FAIL: {error}")
+        total_errors += len(global_errors)
+    else:
+        print("  - PASS: mọi PK/UK của 13 bảng project đều duy nhất khi hợp nhất")
 
     print("\n" + "=" * 60)
     if total_errors == 0:
