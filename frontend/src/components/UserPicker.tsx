@@ -1,14 +1,15 @@
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useApi, useUsers } from "../api/queries";
 
 interface Props {
   userId: string | null;
   onSelect: (userId: string | null) => void;
+  status?: ReactNode;
 }
 
 /** Select or create the acting user; the selection is persisted by the parent (localStorage). */
-export function UserPicker({ userId, onSelect }: Props) {
+export function UserPicker({ userId, onSelect, status }: Props) {
   const api = useApi();
   const users = useUsers();
   const [creating, setCreating] = useState(false);
@@ -40,9 +41,10 @@ export function UserPicker({ userId, onSelect }: Props) {
 
   return (
     <div className="user-picker">
-      <label className="section-label" htmlFor="user-select">
-        User
-      </label>
+      <div className="user-picker-header">
+        <label className="section-label" htmlFor="user-select">User</label>
+        {status}
+      </div>
       <div className="user-picker-row">
         <select
           id="user-select"

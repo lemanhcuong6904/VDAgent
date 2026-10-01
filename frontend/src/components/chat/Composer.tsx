@@ -1,9 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
 import { queryKeys } from "../../api/keys";
-import { useApi } from "../../api/queries";
+import { useApi, useTask } from "../../api/queries";
 import type { AgentDTO } from "../../api/types";
 import { useUi } from "../../ui/UiContext";
+import { getConversationRefreshInterval } from "./messageRefresh";
 
 /** Posts a human message into the agent's chat (creates a task). */
 export function Composer({ agent }: { agent: AgentDTO }) {
@@ -11,13 +12,38 @@ export function Composer({ agent }: { agent: AgentDTO }) {
   const queryClient = useQueryClient();
   const { selectTask } = useUi();
   const [text, setText] = useState("");
+  const [submittedTaskId, setSubmittedTaskId] = useState<string | null>(null);
+  const { data: submittedTaskData, refetch: refetchSubmittedTask } = useTask(submittedTaskId);
+  const refreshInterval = getConversationRefreshInterval(submittedTaskData?.task.status);
+
+  useEffect(() => {
+    if (!submittedTaskId) return;
+
+    const refreshMessages = () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.messages(agent.name) });
+
+    void refreshMessages();
+    if (!refreshInterval) {
+      setSubmittedTaskId(null);
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void refreshMessages();
+      void refetchSubmittedTask();
+    }, refreshInterval);
+    return () => window.clearInterval(timer);
+  }, [agent.name, queryClient, refreshInterval, refetchSubmittedTask, submittedTaskId]);
+
 
   const post = useMutation({
     mutationFn: (content: string) => api.postMessage(agent.name, content),
     onSuccess: (res) => {
       setText("");
-      selectTask(res.task_id);
+      setSubmittedTaskId(res.task_id);
+      selectTask(res.task_id, agent.name);
       void queryClient.invalidateQueries({ queryKey: queryKeys.tasks });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.messages(agent.name) });
     },
   });
 

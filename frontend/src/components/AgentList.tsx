@@ -25,8 +25,12 @@ export function AgentList({ agents, selected, error }: Props) {
               title={a.description}
               onClick={() => selectAgent(a.name)}
             >
-              <span className="agent-name" style={{ color: agentColor(a.name) }}>
-                {a.name}
+              <span className="agent-avatar" style={{ backgroundColor: agentColor(a.name) }} aria-hidden="true">
+                {a.name.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="agent-copy">
+                <span className="agent-name" style={{ color: agentColor(a.name) }}>{a.name}</span>
+                <span className="agent-presence">{a.busy ? "Working" : "Ready"}</span>
               </span>
               <span className="agent-meta">
                 {a.busy && <span className="spinner" aria-label="busy" />}
