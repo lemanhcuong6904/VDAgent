@@ -215,6 +215,7 @@ class _Run:
     semantic: str = ""
     queries: list[dict[str, Any]] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
+    resolved: list[dict[str, str]] = field(default_factory=list)  # how each named entity was resolved (kept in the dataset's `request`)
     trace: Tracer = field(default_factory=Tracer)
     profile: str = "mock"  # what the warehouse is: "mock" (the synthetic DW) or "real" (the DATA team's; DATA_DW_PROFILE)
 
@@ -260,6 +261,9 @@ class _Run:
     async def _put(self, call: str, kind: ArtifactType, schema: str, payload: dict[str, Any], limitations: Sequence[str],
                    inputs: Sequence[ArtifactRef], partial: bool) -> tuple[ArtifactRef, str]:
         status = "PARTIAL" if partial and limitations else "VALID"
+        if kind is ArtifactType.DATASET:  # why this was fetched; the explanation chat reads it back
+            payload = {**payload, "request": {"operation": self.step.operation, "original_question": self.step.original_question,
+                                              "resolved_entities": [dict(e) for e in self.resolved]}}
         draft = {
             "artifact_type": kind.value, "schema_version": schema, "status": status,
             "producer": {"agent": AGENT, "agent_version": AGENT_VERSION},
@@ -446,6 +450,9 @@ async def _fetch_units(run: _Run, spec: FetchUnitsSpec, config: dict[str, Any], 
         raise StepError("failed", "UNIT_AMBIGUOUS", f"{len(found)} units match {spec.subject_unit_code}",
                         ReportQuestion(text=f"Có {len(found)} căn {spec.subject_unit_code}. Bạn muốn căn nào?", options=options))
     subject = found[0]
+    if not run.resolved:  # the v1.0 path already recorded how the entity was resolved
+        run.resolved = [{"mention": spec.subject_unit_code, "kind": "UNIT", "id": subject["unit_key"], "name": subject["unit_code"],
+                         "method": "subject_unit_code"}]
     try:
         peer_area(subject)
     except PeerAreaUnavailable as exc:
