@@ -86,7 +86,7 @@ class Barriered:
 
 
 @pytest.fixture
-async def system(tmp_path: Path) -> AsyncIterator[dict[str, Any]]:
+async def system(tmp_path: Path, request: pytest.FixtureRequest) -> AsyncIterator[dict[str, Any]]:
     re_db = str(tmp_path / "re.db")
     build(re_db)
     cfg = Config(backend_db=str(tmp_path / "backend.db"), warehouse_db=str(tmp_path / "w.db"), mcp_public_url="http://mcp.test/mcp",
@@ -110,8 +110,13 @@ async def system(tmp_path: Path) -> AsyncIterator[dict[str, Any]]:
     barrier = asyncio.Barrier(2)
     runtime = build_runtime({"INSIGHT_LLM": "off", "INSIGHT_ARTIFACT_SOURCE": "fixtures",
                              "INSIGHT_STORE_PATH": str(tmp_path / "insight.db")}, logging.getLogger("t"))
+    planner_llm = None
+    if getattr(request, "param", "offline") == "llm":
+        from .test_llm_planner import GOLDEN, ScriptedLLM
+
+        planner_llm = ScriptedLLM(json.dumps(GOLDEN))
     agents = {
-        "orchestrator": OrchestratorAgent(llm=None, mcp_session_factory=sessions, system_prompt="x", compact_prompt="y",
+        "orchestrator": OrchestratorAgent(llm=planner_llm, mcp_session_factory=sessions, system_prompt="x", compact_prompt="y",
                                           snapshot_id="SNAP-2026-09-28", semantic_config_version="sc-1"),
         "data": DataAgent(llm=None, mcp_session_factory=sessions, system_prompt="x", compact_prompt="y"),
         "insight": Barriered(InsightAgent(runtime, mcp_session_factory=sessions), barrier, log, "insight"),
@@ -123,7 +128,7 @@ async def system(tmp_path: Path) -> AsyncIterator[dict[str, Any]]:
     registry = AgentRegistry(RegisteredAgent(n, f"{n} agent", a, "tests", GRANTS[n]) for n, a in agents.items())
     engine = Engine(cfg, db, EventBus(), tokens, registry, on_interrupted=artifacts_service.interrupt_run)
     await engine.recover()
-    yield {"engine": engine, "db": db, "tools": tools, "log": log, "cfg": cfg}
+    yield {"engine": engine, "db": db, "tools": tools, "log": log, "cfg": cfg, "planner_llm": planner_llm}
     await engine.stop()
     await db.dispose()
 
@@ -199,6 +204,7 @@ async def test_unauthorized_user_gets_a_failed_run_not_prj_x_data(system: dict[s
     arts = [a for a in artifacts(system["cfg"].backend_db) if a["user_id"] == BOB]
     assert {a["artifact_type"] for a in arts} == {"run_state"}
 
+@pytest.mark.parametrize("system", ["offline", "llm"], indirect=True)
 async def test_ws6_six_agent_report_through_the_backend_engine(system: dict[str, Any]) -> None:
     task, answer = await finish(system, "orchestrator", REPORT_QUESTION)
     assert task["status"] == "completed"
@@ -208,6 +214,13 @@ async def test_ws6_six_agent_report_through_the_backend_engine(system: dict[str,
     assert system["log"][:2] in (["insight:start", "compare:start"], ["compare:start", "insight:start"])
 
     arts = artifacts(system["cfg"].backend_db)
+    run_state = max((a for a in arts if a["artifact_type"] == "run_state"), key=lambda a: a["version"])
+    plan = json.loads(run_state["payload_json"])["plan"]
+    if system["planner_llm"] is not None:
+        assert len(system["planner_llm"].calls) == 1
+        assert plan["provenance"]["planner"] == "llm"
+    else:
+        assert "provenance" not in plan
     report = next(a for a in arts if a["artifact_type"] == "report")
     payload = json.loads(report["payload_json"])
     assert len(payload["sections"]) == 6

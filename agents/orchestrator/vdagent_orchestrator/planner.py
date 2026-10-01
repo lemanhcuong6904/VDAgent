@@ -7,7 +7,7 @@ A chart without an analysis asks for both analyses (Chart only draws Insight/Com
 `parse_request` reads the structured `AnalysisRequest@1` contract. Neither ever picks a snapshot: the snapshot and
 semantic version come from the request or from the Orchestrator's explicit configuration.
 
-`build_plan` turns a request into B1 Data → B2 Insight / B3 Compare (same B1 refs) → B4 Chart (any of B2/B3).
+`build_plan` turns a request into Data → Insight / Compare (same Data refs) → Chart → Report, as requested.
 """
 
 from __future__ import annotations
@@ -32,6 +32,9 @@ _KEYWORDS = {
     "report": ("bao cao", "xuat bao cao", "report"),
 }
 DATA_TYPES = ("dataset", "metric", "dq")
+# Operations whose specs this single-unit workflow can compile; the worker catalogs may expose more.
+STEP_OPERATIONS = {"data": "fetch_units", "insight": "explain_unit", "compare": "compare_to_peers",
+                   "chart": "draw_chart", "report": "draft_report"}
 
 
 def _fold(text: str) -> str:
@@ -78,7 +81,7 @@ def parse_request(data: Mapping[str, Any]) -> AnalysisRequest:
     wants = data.get("wants")
     if not isinstance(question, str) or not isinstance(code, str) or not UNIT_CODE.fullmatch(code):
         raise PlanError("INVALID_REQUEST", "question and a subject_unit_code (e.g. A12-08) are required")
-    if not isinstance(wants, list) or not wants or not set(wants) <= set(WANTS):
+    if not isinstance(wants, list) or not wants or any(not isinstance(w, str) or w not in WANTS for w in wants):
         raise PlanError("INVALID_REQUEST", f"wants must be a non-empty subset of {list(WANTS)}")
     snapshot, semantic = data.get("snapshot_id"), data.get("semantic_config_version")
     if not isinstance(snapshot, str) or not snapshot or not isinstance(semantic, str) or not semantic:
@@ -109,30 +112,30 @@ def build_plan(request: AnalysisRequest, run_id: str) -> Plan:
         raise PlanError("SEMANTIC_VERSION_REQUIRED", "no semantic config version configured or requested")
     wants = set(normalize_wants(request.wants))
     population = "peer_candidates" if "compare" in wants else "subject"
-    steps = [PlanStep("B1", "data", "fetch_units", step_spec("data", request.subject_unit_code, population))]
+    steps = [PlanStep("B1", "data", STEP_OPERATIONS["data"], step_spec("data", request.subject_unit_code, population))]
     analyses: list[tuple[str, tuple[str, ...]]] = []
     n = 2
     if "explain" in wants:
-        steps.append(PlanStep(f"B{n}", "insight", "explain_unit", step_spec("insight", request.subject_unit_code, population, "B1"),
+        steps.append(PlanStep(f"B{n}", "insight", STEP_OPERATIONS["insight"], step_spec("insight", request.subject_unit_code, population, "B1"),
                               ("B1",), "all", (InputBinding("B1", DATA_TYPES),)))
         analyses.append((f"B{n}", ("insight",)))
         n += 1
     if "compare" in wants:
-        steps.append(PlanStep(f"B{n}", "compare", "compare_to_peers", step_spec("compare", request.subject_unit_code, population),
+        steps.append(PlanStep(f"B{n}", "compare", STEP_OPERATIONS["compare"], step_spec("compare", request.subject_unit_code, population),
                               ("B1",), "all", (InputBinding("B1", DATA_TYPES),)))
         analyses.append((f"B{n}", ("peer_definition", "comparison")))
         n += 1
     chart_step = None
     if "chart" in wants:
         chart_step = f"B{n}"
-        steps.append(PlanStep(chart_step, "chart", "draw_chart", {}, tuple(s for s, _ in analyses), "any",
+        steps.append(PlanStep(chart_step, "chart", STEP_OPERATIONS["chart"], {}, tuple(s for s, _ in analyses), "any",
                               tuple(InputBinding(s, types) for s, types in analyses)))
         n += 1
     if "report" in wants:
         sources = list(analyses)
         if chart_step is not None:
             sources.append((chart_step, ("chart_spec",)))
-        steps.append(PlanStep(f"B{n}", "report", "draft_report", {}, tuple(s for s, _ in sources), "any",
+        steps.append(PlanStep(f"B{n}", "report", STEP_OPERATIONS["report"], {}, tuple(s for s, _ in sources), "any",
                               tuple(InputBinding(s, types) for s, types in sources)))
     identity = json.dumps({"run": run_id, "code": request.subject_unit_code, "wants": sorted(wants),
                            "snapshot": request.snapshot_id, "semantic": request.semantic_config_version}, sort_keys=True)
