@@ -63,6 +63,24 @@ def normalize_wants(wants: set[str] | frozenset[str]) -> frozenset[str]:
     return frozenset(wants)
 
 
+WANT_AGENT = {"explain": "insight", "compare": "compare", "chart": "chart", "report": "report"}
+
+
+def capability_policy(wants: set[str] | frozenset[str]) -> dict[str, str]:
+    """`required` / `optional` / `forbidden` per DAG agent for the requested outputs.
+
+    required: a requested output needs it (after `normalize_wants`). optional: a proposal may contain it because a
+    requested output can use it — Chart draws KPI cards from Insight and peer charts from Compare — but nothing
+    needs it, so the canonical DAG leaves it out. Everything else is forbidden (no requested output has a reason
+    for it)."""
+    needed = normalize_wants(wants)
+    policy = {"data": "required"} | {agent: "required" if want in needed else "forbidden" for want, agent in WANT_AGENT.items()}
+    if "chart" in needed:
+        for agent in ("insight", "compare"):
+            policy[agent] = "optional" if policy[agent] == "forbidden" else policy[agent]
+    return policy
+
+
 def classify(question: str, *, snapshot_id: str | None, semantic_config_version: str | None) -> AnalysisRequest | None:
     codes = UNIT_CODE.findall(question)
     if len(set(codes)) != 1:

@@ -1,4 +1,4 @@
-"""MCP server end-to-end (§6, §13 "MCP"): real uvicorn + the mcp SDK streamable-HTTP client."""
+"""MCP server end-to-end: real uvicorn + the mcp SDK streamable-HTTP client."""
 
 from __future__ import annotations
 
@@ -22,11 +22,14 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.shared._httpx_utils import create_mcp_http_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from vdagent_backend.config import Config
-from vdagent_backend.db import artifacts
-from vdagent_backend.db.database import create_db
-from vdagent_backend.mcp.server import create_mcp
-from vdagent_backend.tokens import TokenRegistry
+from conftest import NOW, migrated_database
+from vdagent_backend.re_warehouse import build as build_re_warehouse
+from vdagent_backend.scopes import UserScopes, seed_demo_scopes
+from vdagent_backend.artifacts import Artifacts, ArtifactService
+from vdagent_backend.mcp import RESULT_FIELDS, TOOLS, McpServer, McpTools
+from vdagent_backend.core import TokenRegistry
+from vdagent_backend.plugins import AgentRegistry, RegisteredAgent
+from vdagent_backend.warehouse import RealEstateWarehouse, Warehouse
 
 ALICE, BOB = "u_000000000001", "u_000000000002"
 INVOCATION = {ALICE: "inv_00000000000a", BOB: "inv_00000000000b"}
@@ -41,14 +44,25 @@ SALES = [
     ("South", 2025, 60.0),
     ("East", 2025, 45.5),
 ]
-# §6.1 permission matrix, stated independently of the implementation.
+# The test registry's grants (each agent's plugin entry `mcp_tools`); `echo` has none.
+_EVERYONE = {"describe_dataset", "get_dataset_rows", "artifact_put", "artifact_get", "artifact_list", "get_user_context"}
 EXPECTED_TOOLS = {
-    "orchestrator": {"describe_dataset", "get_dataset_rows"},
-    "data": {"list_tables", "describe_table", "run_query", "describe_dataset", "get_dataset_rows", "query_datasets"},
-    "compare": {"describe_dataset", "get_dataset_rows", "query_datasets"},
-    "insight": {"describe_dataset", "get_dataset_rows", "query_datasets"},
-    "report": {"describe_dataset", "get_dataset_rows", "create_chart", "save_report"},
+    "orchestrator": _EVERYONE,
+    "data": _EVERYONE
+    | {"list_tables", "describe_table", "run_query", "query_datasets", "re_list_tables", "re_describe_table", "re_run_query"},
+    "compare": _EVERYONE | {"query_datasets"},
+    "insight": _EVERYONE | {"query_datasets"},
+    "report": _EVERYONE | {"create_chart", "save_report"},
+    "chart": _EVERYONE,
+    "echo": set(),
 }
+
+
+def granted_registry() -> AgentRegistry:
+    return AgentRegistry(
+        RegisteredAgent(name, f"{name} agent", object(), f"p_{name}", frozenset(tools))  # type: ignore[arg-type]
+        for name, tools in EXPECTED_TOOLS.items()
+    )
 
 
 def build_warehouse(path: Path) -> None:
@@ -64,15 +78,15 @@ def seed_backend(path: Path) -> None:
     with sqlite3.connect(path) as conn:
         for user_id, name in ((ALICE, "Alice"), (BOB, "Bob")):
             task_id = f"t_{user_id[-12:]}"
-            conn.execute("INSERT INTO users (id, name) VALUES (?, ?)", (user_id, name))
+            conn.execute("INSERT INTO users (id, name, created_at) VALUES (?, ?, ?)", (user_id, name, NOW))
             conn.execute(
-                "INSERT INTO tasks (id, user_id, root_agent, status) VALUES (?, ?, 'orchestrator', 'running')",
-                (task_id, user_id),
+                "INSERT INTO tasks (id, user_id, root_agent, status, created_at) VALUES (?, ?, 'orchestrator', 'running', ?)",
+                (task_id, user_id, NOW),
             )
             conn.execute(
-                "INSERT INTO invocations (id, task_id, user_id, agent, caller, depth, inbound_text, status)"
-                " VALUES (?, ?, ?, 'orchestrator', 'user', 0, 'hi', 'running')",
-                (INVOCATION[user_id], task_id, user_id),
+                "INSERT INTO invocations (id, task_id, user_id, agent, caller, depth, inbound_text, status, created_at)"
+                " VALUES (?, ?, ?, 'orchestrator', 'user', 0, 'hi', 'running', ?)",
+                (INVOCATION[user_id], task_id, user_id, NOW),
             )
     conn.close()
 
@@ -85,27 +99,35 @@ class McpEnv:
     warehouse: Path
 
     def token(self, agent: str, user_id: str = ALICE) -> str:
-        return self.tokens.issue(user_id, agent, INVOCATION[user_id])
+        return self.tokens.issue(user_id, agent, INVOCATION[user_id], f"t_{user_id[-12:]}")
+
+
+@pytest.fixture(scope="module")
+def re_db(tmp_path_factory: pytest.TempPathFactory) -> str:
+    path = str(tmp_path_factory.mktemp("re") / "re.db")
+    build_re_warehouse(path)
+    return path
 
 
 @pytest.fixture
-async def env(tmp_path: Path) -> AsyncIterator[McpEnv]:
+async def env(tmp_path: Path, re_db: str) -> AsyncIterator[McpEnv]:
     warehouse, backend = tmp_path / "warehouse.db", tmp_path / "backend.db"
     build_warehouse(warehouse)
-    db = create_db(str(backend))
+    db = await migrated_database(str(backend))
     seed_backend(backend)
-    cfg = Config(
-        backend_db=str(backend),
-        warehouse_db=str(warehouse),
-        mcp_public_url="",
-        frontend_dist=str(tmp_path / "dist"),
-    )
+    seed_demo_scopes(str(backend))
     tokens = TokenRegistry()
-    mcp = create_mcp(cfg, db, tokens, sql_timeout_s=SQL_TIMEOUT_S)
+    tools = McpTools(
+        ArtifactService(db),
+        Warehouse(str(warehouse), SQL_TIMEOUT_S),
+        re_warehouse=RealEstateWarehouse(re_db, SQL_TIMEOUT_S),
+        scopes=UserScopes(db),
+    )
+    mcp = McpServer(tools, tokens)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        async with mcp.lifespan():
+        async with mcp.lifespan(granted_registry()):
             yield
 
     app = FastAPI(lifespan=lifespan)
@@ -135,7 +157,7 @@ async def env(tmp_path: Path) -> AsyncIterator[McpEnv]:
 
 @asynccontextmanager
 async def connect(url: str, token: str, mode: str = "auto") -> AsyncIterator[Client]:
-    """Same client construction as the agents' MCP client (§7.2)."""
+    """Same client construction as the bundled agents' MCP client."""
     async with create_mcp_http_client(headers={"Authorization": f"Bearer {token}"}) as http_client:
         async with Client(streamable_http_client(url, http_client=http_client), cache=None, mode=mode) as client:
             yield client
@@ -211,7 +233,7 @@ async def test_run_query_caps_rows_at_10000_and_flags_truncation(env: McpEnv) ->
     assert capped["row_count"] == 10_000 and capped["truncated"] is True
     assert capped["columns"] == [{"name": "n", "type": "INTEGER"}]
     assert capped["preview"] == [[i] for i in range(20)]
-    stored = await artifacts.get_dataset(env.db, ALICE, capped["dataset_id"])
+    stored = await Artifacts(env.db).get_dataset(ALICE, capped["dataset_id"])
     assert stored is not None and len(stored["rows"]) == 10_000 and stored["truncated"] is True
     assert stored["rows"][-1] == [9_999]
 
@@ -241,7 +263,7 @@ async def test_other_users_dataset_is_not_found(env: McpEnv) -> None:
     ]:
         is_error, text = await call(env, "data", tool, args, BOB)
         assert is_error and text.startswith("error: dataset not found"), (tool, text)
-    assert await artifacts.get_dataset(env.db, BOB, dataset_id) is None
+    assert await Artifacts(env.db).get_dataset(BOB, dataset_id) is None
 
 
 async def test_query_datasets_joins_two_datasets(env: McpEnv) -> None:
@@ -263,7 +285,7 @@ async def test_query_datasets_joins_two_datasets(env: McpEnv) -> None:
     assert joined["columns"] == [{"name": "region", "type": "TEXT"}, {"name": "delta", "type": "REAL"}]
     assert joined["preview"] == [["East", 5.5], ["North", 60.0], ["South", -20.0]]
     assert joined["name"] == "delta" and joined["truncated"] is False
-    stored = await artifacts.get_dataset(env.db, ALICE, joined["dataset_id"])
+    stored = await Artifacts(env.db).get_dataset(ALICE, joined["dataset_id"])
     assert stored is not None and stored["rows"] == joined["preview"]
 
 

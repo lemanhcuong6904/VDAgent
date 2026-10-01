@@ -100,6 +100,8 @@ async def _run(step: StepSpec, tools: Tools) -> AgentReport:
             cache[f"{env['artifact_id']}@{env['version']}"] = env["payload"]
     wanted = {st.source_ref.split("#", 1)[0] for st in doc.statements if st.source_ref}
     wanted |= {b["source_ref"].split("#", 1)[0] for c in inputs.charts for b in (c["payload"].get("bindings") or []) if b.get("source_ref")}
+    wanted |= {ref.split("#", 1)[0] for c in inputs.charts for b in (c["payload"].get("bindings") or [])
+               for ref in b.get("evidence_refs") or []}
     for ref in sorted(wanted - set(cache)):
         artifact_id, _, version = ref.partition("@")
         try:

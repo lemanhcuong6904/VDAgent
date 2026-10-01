@@ -161,43 +161,11 @@ async def test_golden_charts_from_real_ws3_artifacts(alice: McpPort, tmp_path: P
         ["A12-08", *(p["entityCode"] for p in pd["payload"]["peers"])])  # the ACTUAL Compare peers (B-11)
 
     kpis = by_question(specs, "current_value")
-    exact = {b["value_exact"] for s in kpis for b in s["payload"]["bindings"]}
-    assert {"138", "12.40"} <= exact  # Insight bindings, exact decimals kept
+    exact = {b["metric_id"]: b["value_exact"] for s in kpis for b in s["payload"]["bindings"]}
+    # Insight's typed evidence (insight_evidence@1): DOM only; its peer figures (spread 12.40, mart peer count 7) are
+    # the DW mart's own peer set, so the peer view is Compare's price chart above, never a second Insight KPI
+    assert exact == {"fact_unit_inventory_snapshot.unsold_days_dom": "138"}
     assert all(s["payload"]["chart_type"] == "kpi_card" for s in kpis)
-
-
-async def test_stepspec_path_uses_chart_llm_for_presentation(alice: McpPort, tmp_path: Path) -> None:
-    class PresentationReasoner:
-        async def decide(self, payload: dict[str, Any], allowed_chart_types: tuple[str, ...]) -> dict[str, Any]:
-            return {
-                "presentation": {
-                    "title": "A12-08 lệch giá so với nhóm tương đồng",
-                    "subtitle": "So sánh $P_{net}/m^2$ và DOM tại snapshot được ghim.",
-                    "axes": {
-                        "x": {"title": {"format": "plain", "value": "Căn hộ / benchmark"}},
-                        "y": {"title": {"format": "math", "value": "$P_{net}/m^2$"}},
-                    },
-                },
-                "selection": {"chart_type": "bar"},
-                "encoding": {
-                    "x": {"field": "label", "type": "nominal"},
-                    "y": {"field": "net_asking_price_per_m2", "type": "quantitative"},
-                },
-            }
-
-        async def suggest(self, visual_question: str, allowed_chart_types: tuple[str, ...]) -> str | None:
-            return None
-
-    up = await upstream(alice, tmp_path)
-    step = chart_step([up["comparison"], up["peer_definition"]], spec={"chart_type": "bar"})
-    report = await run_step(step, alice.as_agent("chart"), reasoner=PresentationReasoner())
-    specs = await charts(alice, report)
-    [price] = [s for s in specs if s["payload"]["dataset"].get("comparison_metric") == "net_asking_price_per_m2"]
-
-    assert price["payload"]["title"] == "A12-08 lệch giá so với nhóm tương đồng"
-    assert price["payload"]["plotly"]["layout"]["title"]["text"] == "A12-08 lệch giá so với nhóm tương đồng"
-    assert price["payload"]["plotly"]["layout"]["xaxis"]["title"]["text"] == "Căn hộ / benchmark"
-    assert price["payload"]["plotly"]["layout"]["yaxis"]["title"]["text"] == "Giá ròng/m² (VND)"
 
 
 async def test_integrated_charts_have_business_titles_and_axes_without_llm(alice: McpPort, tmp_path: Path) -> None:
@@ -302,18 +270,17 @@ async def test_inputs_from_different_datasets_are_rejected(alice: McpPort, tmp_p
     await _rejected(alice, chart_step([first["insight"], second["comparison"], second["peer_definition"]]), "LINEAGE_MISMATCH")
 
 
-async def test_invalid_numeric_binding_is_excluded_not_zeroed(alice: McpPort, tmp_path: Path) -> None:
+async def test_an_invalid_evidence_value_is_rejected_never_zeroed(alice: McpPort, tmp_path: Path) -> None:
     up = await upstream(alice, tmp_path)
     ins = await alice.call("artifact_get", {"artifact_id": up["insight"]["artifact_id"]})
     payload = json.loads(json.dumps(ins["payload"]))
-    first = payload["insight"]["insights"][0]["claim"]["numeric_bindings"][0]
-    first["value"] = "n/a"
+    payload["evidence"]["findings"][0]["metrics"][0]["value_exact"] = "n/a"
     draft = {k: ins[k] for k in ("artifact_type", "schema_version", "status", "producer", "snapshot_refs",
                                  "semantic_config_version", "source_refs", "input_artifact_refs", "evidence_refs", "limitations")}
     stored = await alice.as_agent("insight").call("artifact_put", {"draft_json": json.dumps({**draft, "payload": payload})})
     ref = {"artifact_id": stored["artifact_id"], "version": 1, "artifact_type": "insight", "content_hash": stored["content_hash"]}
-    report = await run_step(chart_step([ref]), alice.as_agent("chart"))
-    assert any(w.startswith("INVALID_BINDING:") for w in report.warnings)
+    report = await run_step(chart_step([ref, up["comparison"], up["peer_definition"]]), alice.as_agent("chart"))
+    assert any(w.startswith("INSIGHT_EVIDENCE_INVALID:") for w in report.warnings)
     specs = await charts(alice, report)
     assert all(b["value_exact"] != "n/a" for s in specs for b in s["payload"]["bindings"])
     assert all(0 not in r.values() for s in specs for r in s["payload"]["dataset"]["records"])

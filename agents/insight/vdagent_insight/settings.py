@@ -189,6 +189,9 @@ class CauseEntry(_Config):
     """Used when present and not excluded by the gate."""
     uses_peer_group: bool = False
     """The claim compares with the DW peer group: peer tiers and BR-07 apply."""
+    peer_free_template: str | None = None
+    """The sentence without peer numbers, used when Compare owns peer facts (PEER_BY_COMPARE). Required when
+    `template` binds a peer slot (spread, peers)."""
 
 
 PATTERN_TABLE_MODELS: dict[str, type[BaseModel]] = {"dim_unit_master": UnitRow, "fact_unit_inventory_snapshot": InventoryRow}
@@ -356,6 +359,11 @@ def load_semantic_config(path: Path) -> SemanticConfig:
     for slot, label in lang.slot_labels.items():
         if label.count("{value}") != 1:
             raise ConfigError(f"{path.name}: language.slot_labels.{slot} must contain {{value}} once: {label!r}")
+    for entry in raw.causes:
+        peer_in = {"spread", "peers"} & set(re.findall(r"\{\{\s*([a-z_]+)\s*\}\}", entry.template))
+        free = set(re.findall(r"\{\{\s*([a-z_]+)\s*\}\}", entry.peer_free_template or ""))
+        if peer_in and (not entry.peer_free_template or free & {"spread", "peers"}):
+            raise ConfigError(f"{path.name}: {entry.cause_code}: template states {sorted(peer_in)}; a peer_free_template without them is required")
     for entry in raw.causes:
         if entry.action_code not in raw.action_texts:
             raise ConfigError(f"{path.name}: action_texts has no sentence for {entry.action_code}")

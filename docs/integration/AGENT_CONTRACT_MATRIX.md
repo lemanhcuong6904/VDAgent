@@ -122,10 +122,20 @@ Existing `chartHints[]` ([vh_service.py:385-401](../../agents/compare/vdagent_co
 `INPUT_TYPE_UNSUPPORTED`; different datasets or a comparison not pinning the given peer definition →
 `LINEAGE_MISMATCH`). Output: one `chart_spec@1` per chart, `input_artifact_refs` = [dataset, upstream shown],
 payload `{chart_id, target_id, visual_question, chart_type, title, vega_lite, plotly, semantic_spec, dataset,
-bindings[{record_index, field, value_exact, unit, source_ref}], selection, validation, policy_ref}`. Limitations:
-upstream ∪ `UPSTREAM_MISSING:<type>`, `NOT_CHARTED_NULL:<metric>`, `INVALID_BINDING:<id>/<slot>`,
+bindings[{record_index, field, value_exact, unit, source_ref, metric_id, finding_ids?, evidence_refs?}], selection,
+validation, policy_ref, lineage{insight, comparison, metric_ids, finding_ids}}`.
+**Insight input (2026-10-01):** Chart reads only the insight's typed `payload.evidence` (`insight_evidence@2`,
+[CANONICAL_DATA_CONTRACT §10](CANONICAL_DATA_CONTRACT.md)) — never `claim.rendered_text`, `display` or
+`numeric_bindings`. Every Insight KPI value and every Compare subject/peer value is checked against the pinned Data
+dataset before it is drawn; no LLM on this path (question, type and titles come from the typed intent and the metric
+catalog). Limitations: upstream ∪ `UPSTREAM_MISSING:<type>`, `NOT_CHARTED_NULL:<metric>`,
+`INSIGHT_EVIDENCE_MISSING|INVALID:<reason>`, `EVIDENCE_UNRESOLVED|EVIDENCE_VALUE_MISMATCH:<finding>/<metric>`,
+`VALUE_MISMATCH_WITH_DATASET:comparison:<metric>`, `CONFLICTING_VALUES:insight:<metric>`,
+`VISUAL_NEEDS_COMPARISON:<finding>:<metric>`,
 `CHART_TARGET_FAILED:<target>:<code>`. Errors: resolver codes + `UNKNOWN_OPERATION`, `INVALID_SPEC`,
-`UNSUPPORTED_CHART_TYPE`, `NOTHING_TO_CHART`, `CHART_FAILED`, `TOOL_FAILED`. The sketch below is the original design.
+`UNSUPPORTED_CHART_TYPE`, `NOTHING_TO_CHART` (message lists every reason), `CHART_FAILED`, `TOOL_FAILED`. Logs: one
+`CHART_SPEC_STORED` / `CHART_TARGET_REJECTED` / `CHART_FINDING_SKIPPED` line per chart or finding and one
+`CHART_STEP_DONE` per step (`vdagent.plugin.vdagent_chart`, lineage only). The sketch below is the original design.
 
 
 | Operation | `spec` | Inputs | Output | Errors |
@@ -152,6 +162,16 @@ Needs `save_report` to accept `{{chart_spec:art_…@v}}` embeds (D7); today only
 ([tools.py:160-168](../../backend/vdagent_backend/mcp/tools.py#L160)). `create_chart` stays for the retail domain.
 
 ### 3.6 Orchestrator (producer of `run_state`, `run_summary`)
+
+
+**Capability policy (2026-10-01, [planner.py](../../agents/orchestrator/vdagent_orchestrator/planner.py) `capability_policy`).**
+From the requested outputs (`wants`, after `normalize_wants`) each agent is `required`, `optional` or `forbidden`:
+`data` is required; `insight` / `compare` / `chart` / `report` are required when explain / compare / chart / report is
+requested (chart or report without a named analysis require both analyses; report requires chart); when a chart is
+requested the analysis not asked for is `optional` (Chart can draw it); everything else is `forbidden`. An LLM plan is
+accepted when required ⊆ proposed ⊆ required ∪ optional and its dependencies are valid (`LLM_PLAN_MISSING_STEP`,
+`LLM_PLAN_UNEXPECTED_STEP`, `LLM_PLAN_INVALID_DEPENDENCY` otherwise); the DAG that runs is always compiled by code from
+the required set (`build_plan`), optional proposals are recorded in `provenance.normalized.dropped_optional`.
 
 **IMPLEMENTED in WS5.** Inbound: `AnalysisRequest@1` `{contract, question, subject_unit_code, wants ⊆ [explain,
 compare, chart], snapshot_id, semantic_config_version}` (all required; no default snapshot), or free text classified

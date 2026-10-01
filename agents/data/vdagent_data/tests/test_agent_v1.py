@@ -14,6 +14,7 @@ from typing import Any
 from vdagent_data.agent import DataAgent, build_agent
 from vdagent_data.contract_v1 import CommandAck, ReportMessage, parse_message
 from vdagent_data.tests.conftest import GrantedTools as McpTools
+from vdagent_data.tests.conftest import ServedByPostgres
 from vdagent_data.tests.test_agent_narration import agent, turn
 from vdagent_data.tests.test_agent_steps import Ctx as BaseCtx
 from vdagent_data.tests.test_agent_steps import factory
@@ -70,18 +71,28 @@ async def test_the_older_stepspec_message_is_still_answered_as_before(mcp_tools:
     assert "AgentReport@1" in content and "message_type" not in content
 
 
-def test_the_warehouse_profile_comes_from_the_environment() -> None:
-    assert build_agent({"DATA_LLM": "off"}).profile == "mock"  # type: ignore[attr-defined]
+def test_the_configured_profile_is_only_an_expectation() -> None:
+    assert build_agent({"DATA_LLM": "off"}).profile is None  # type: ignore[attr-defined]  # the Backend's warehouse decides
     assert build_agent({"DATA_LLM": "off", "DATA_DW_PROFILE": "real"}).profile == "real"  # type: ignore[attr-defined]
 
 
-async def test_the_real_profile_reaches_the_steps(mcp_tools: McpTools) -> None:
-    data = DataAgent(llm=None, mcp_session_factory=factory(mcp_tools), system_prompt="x", compact_prompt="y", profile="real")
+async def test_a_warehouse_served_by_postgres_is_labelled_real(mcp_tools: McpTools, re_db: str) -> None:
+    mcp_tools.use_re_warehouse(re_db, ServedByPostgres)
+    data = DataAgent(llm=None, mcp_session_factory=factory(mcp_tools), system_prompt="x", compact_prompt="y")
     ctx = BaseCtx(json.dumps(dispatch({"entities": [ent("A12-08", "UNIT")]})))
     await data.invoke(ctx)
     _, raw = reply_of(ctx)
     codes = {w.details["raw"] for w in parse_message(raw).body.result.warnings}  # type: ignore[union-attr]
     assert "SNAPSHOT_STATUS_ASSUMED" in codes and "SYNTHETIC_SOURCE:net_area_m2" not in codes
+
+
+async def test_a_real_label_over_the_sqlite_mock_is_overridden(mcp_tools: McpTools) -> None:
+    data = DataAgent(llm=None, mcp_session_factory=factory(mcp_tools), system_prompt="x", compact_prompt="y", profile="real")
+    ctx = BaseCtx(json.dumps(dispatch({"entities": [ent("A12-08", "UNIT")]})))
+    await data.invoke(ctx)
+    _, raw = reply_of(ctx)
+    codes = {w.details["raw"] for w in parse_message(raw).body.result.warnings}  # type: ignore[union-attr]
+    assert "SYNTHETIC_SOURCE:net_area_m2" in codes and "SNAPSHOT_STATUS_ASSUMED" not in codes
 
 
 async def test_a_question_is_narrated_as_a_question_and_not_as_a_failure(mcp_tools: McpTools) -> None:
@@ -92,11 +103,12 @@ async def test_a_question_is_narrated_as_a_question_and_not_as_a_failure(mcp_too
     assert "Landmark" in closing  # says what it asks about
 
 
-async def test_the_warehouse_profile_also_reaches_the_older_stepspec_path(mcp_tools: McpTools) -> None:
+async def test_the_older_stepspec_path_also_labels_from_the_serving_warehouse(mcp_tools: McpTools, re_db: str) -> None:
     from vdagent_contracts.reports import AgentReport, parse_agent_report  # noqa: PLC0415
     from vdagent_data.tests.test_steps import step  # noqa: PLC0415
 
-    data = DataAgent(llm=None, mcp_session_factory=factory(mcp_tools), system_prompt="x", compact_prompt="y", profile="real")
+    mcp_tools.use_re_warehouse(re_db, ServedByPostgres)
+    data = DataAgent(llm=None, mcp_session_factory=factory(mcp_tools), system_prompt="x", compact_prompt="y", profile="mock")
     ctx = BaseCtx(step(spec={"subject_unit_code": "A12-08"}).model_dump_json())
     await data.invoke(ctx)
     report = parse_agent_report(ctx.steps[-1][0])

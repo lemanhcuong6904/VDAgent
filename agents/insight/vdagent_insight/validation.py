@@ -17,7 +17,7 @@ config (`action_texts`), never from the model.
 | GR-04 | SCOPE_VIOLATION | a literal unit code (`language.unit_code_pattern`): codes only come through slots |
 | GR-06 | (config) | `action_texts` must be suggestions: checked when the config is loaded (settings.py) |
 | GR-07 | STRONG_CLAIM_NOT_SIGNIFICANT | a strong comparison on a candidate that is not `significant` |
-| GR-07 | PEER_HIDDEN | peer numbers of a candidate with fewer than `describe_min` peers (D-71) |
+| GR-07 | PEER_HIDDEN | peer numbers of a candidate with fewer than `describe_min` peers (D-71), or flagged PEER_BY_COMPARE |
 | GR-08 | LANGUAGE_MISMATCH | no Vietnamese diacritic, an English word, a cause code, or a cause item without `{{cause_label}}` |
 | 6.3 | SENTENCE_TOO_LONG | more than `language.max_words` words |
 
@@ -40,6 +40,8 @@ DIGIT = re.compile(r"\d")
 URL = re.compile(r"https?://|www\.", re.IGNORECASE)
 WORD = re.compile(r"[^\W\d_]+")
 PEER_SLOTS = frozenset({"spread", "peers"})
+PEER_BY_COMPARE = "PEER_BY_COMPARE"
+"""Candidate flag of the integrated DAG: peer facts are Compare's (explicit peer set), never narrated by Insight."""
 CAUSE_TYPES = frozenset({"ROOT_CAUSE_SIGNAL", "CAUSE_DISTRIBUTION"})
 
 
@@ -51,7 +53,9 @@ class Violation:
 
 
 def hidden_peer_slots(c: InsightCandidate, cfg: SemanticConfig) -> frozenset[str]:
-    """The peer-number slots a candidate must not state: fewer than `describe_min` peers (D-71)."""
+    """The peer-number slots a candidate must not state: fewer than `describe_min` peers (D-71), or Compare owns them."""
+    if PEER_BY_COMPARE in c.dq_flags:
+        return PEER_SLOTS & set(c.slots)
     peer_cause = c.cause_code is not None and c.cause_code in cfg.allowed_cause_codes and cfg.cause(c.cause_code).uses_peer_group
     return PEER_SLOTS & set(c.slots) if peer_cause and "GROUP_TOO_SMALL" in c.dq_flags else frozenset()
 

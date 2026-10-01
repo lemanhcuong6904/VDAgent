@@ -239,7 +239,7 @@ Thời gian đo được ở lần chạy live HC4 là khoảng 25 s từ đầu
 
 | Mode | Diễn ra thế nào | Trạng thái |
 |---|---|---|
-| `ORCH_LLM=on` (mặc định khi có key; `backend-live`) | 1 lần gọi mỗi yêu cầu (`gpt-4o-mini` trong demo, prompt `orch-llm-plan-1.1.0`, không có tool). LLM trả `{intent: {in_scope, subject_unit_code, wants}, steps: [{step_id, agent, operation, depends_on}]}`. | VERIFIED live trên 4 happy case |
+| `ORCH_LLM=on` (mặc định khi có key; service `backend`, `make up`) | 1 lần gọi mỗi yêu cầu (`gpt-4o-mini` trong demo, prompt `orch-llm-plan-1.1.0`, không có tool). LLM trả `{intent: {in_scope, subject_unit_code, wants}, steps: [{step_id, agent, operation, depends_on}]}`. | VERIFIED live trên 4 happy case |
 | `ORCH_LLM=off` | Bộ phân loại theo từ khoá, deterministic (`planner.classify`) | VERIFIED |
 | `ORCH_LEGACY_LOOP=on` | Vòng lặp tool LiteLLM cũ, nằm ngoài DAG (chỉ để debug) | IMPLEMENTED, không dùng cho demo |
 
@@ -652,7 +652,7 @@ stateDiagram-v2
 | Quyền dùng tool | Grant `mcp_tools` của từng plugin trong `backend/config.yaml` (tool → agent) và `WRITABLE_TYPES` trong `mcp/handlers.py` (agent → loại artifact) | VERIFIED |
 | Phạm vi dữ liệu | `user_scopes` (dự án/zone). `re_run_query` chạy trên view theo phạm vi; dòng ngoài phạm vi không được trả về và cũng không được đếm (F-08). Resolver báo `SCOPE_VIOLATION`. | VERIFIED (Bob → 404 / failed; không lộ PRJ-Y) |
 | Quyền xem artifact | `artifact_get` / reports / chart-specs theo chủ sở hữu; truy cập chéo user trả 404 | VERIFIED |
-| Phơi bày với LLM | Planner chỉ thấy câu hỏi và catalog. Insight chỉ thấy các ứng viên tính sẵn từ dữ liệu được phép. Key chỉ nằm trong `agents/<name>/.env` (mount chỉ đọc, không vào image hay log). | VERIFIED (không có key trong bằng chứng) |
+| Phơi bày với LLM | Planner chỉ thấy câu hỏi và catalog. Insight chỉ thấy các ứng viên tính sẵn từ dữ liệu được phép. Key chỉ nằm trong `.env` gốc (Docker, đưa vào biến môi trường của container) hoặc `agents/<name>/.env` (chạy trên máy); không vào image hay log. | VERIFIED (không có key trong bằng chứng) |
 | Prompt injection | Câu hỏi được bọc trong `<data>` và đánh dấu là dữ liệu. Output plan được kiểm tra chặt, nên LLM không chèn được spec, snapshot hay id. | IMPLEMENTED; test tấn công NOT VERIFIED |
 
 ---
@@ -753,5 +753,5 @@ flowchart LR
   - Chart: `agents/chart/vdagent_chart/stepspec.py`, `vega.py`
   - Report: `agents/report/vdagent_report/stepspec.py`, `compose.py`
 - Acceptance: `acceptance/ws7/` (`run.sh`).
-- Demo: `make docker-live-up`, [DEMO_RUNBOOK_4_HAPPY_CASES.md](../integration/DEMO_RUNBOOK_4_HAPPY_CASES.md).
+- Demo: `make up`, [DEMO_RUNBOOK_4_HAPPY_CASES.md](../integration/DEMO_RUNBOOK_4_HAPPY_CASES.md).
 - Bằng chứng: `docs/integration/{ws7_remediation_evidence,live_ai_evidence,orch_llm_planner_evidence,demo_live_evidence}/`.

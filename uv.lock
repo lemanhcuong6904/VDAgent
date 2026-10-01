@@ -1747,7 +1747,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "vdagent-sdk", editable = "sdk" },
+    { name = "vdagent-sdk" },
 ]
 
 [[package]]
@@ -1769,8 +1769,8 @@ requires-dist = [
     { name = "mcp", specifier = ">=1.9" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "vdagent-contracts", editable = "contracts" },
-    { name = "vdagent-sdk", editable = "sdk" },
+    { name = "vdagent-contracts" },
+    { name = "vdagent-sdk" },
 ]
 
 [[package]]
@@ -1828,9 +1828,9 @@ dependencies = [
 requires-dist = [
     { name = "litellm", specifier = ">=1.50" },
     { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "vdagent-agentkit", editable = "agents/_shared" },
-    { name = "vdagent-contracts", editable = "contracts" },
-    { name = "vdagent-sdk", editable = "sdk" },
+    { name = "vdagent-agentkit" },
+    { name = "vdagent-contracts" },
+    { name = "vdagent-sdk" },
 ]
 
 [[package]]
@@ -1851,9 +1851,9 @@ requires-dist = [
     { name = "litellm", specifier = ">=1.50" },
     { name = "mcp", specifier = ">=1.9" },
     { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "vdagent-agentkit", editable = "agents/_shared" },
-    { name = "vdagent-contracts", editable = "contracts" },
-    { name = "vdagent-sdk", editable = "sdk" },
+    { name = "vdagent-agentkit" },
+    { name = "vdagent-contracts" },
+    { name = "vdagent-sdk" },
 ]
 
 [[package]]
@@ -1884,8 +1884,8 @@ requires-dist = [
     { name = "litellm", specifier = ">=1.50" },
     { name = "mcp", specifier = ">=1.9" },
     { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "vdagent-contracts", editable = "contracts" },
-    { name = "vdagent-sdk", editable = "sdk" },
+    { name = "vdagent-contracts" },
+    { name = "vdagent-sdk" },
 ]
 
 [[package]]
@@ -1910,9 +1910,9 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.7" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "vdagent-agentkit", editable = "agents/_shared" },
-    { name = "vdagent-contracts", editable = "contracts" },
-    { name = "vdagent-sdk", editable = "sdk" },
+    { name = "vdagent-agentkit" },
+    { name = "vdagent-contracts" },
+    { name = "vdagent-sdk" },
 ]
 
 [[package]]
@@ -1933,9 +1933,9 @@ requires-dist = [
     { name = "litellm", specifier = ">=1.50" },
     { name = "mcp", specifier = ">=1.9" },
     { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "vdagent-agentkit", editable = "agents/_shared" },
-    { name = "vdagent-contracts", editable = "contracts" },
-    { name = "vdagent-sdk", editable = "sdk" },
+    { name = "vdagent-agentkit" },
+    { name = "vdagent-contracts" },
+    { name = "vdagent-sdk" },
 ]
 
 [[package]]
@@ -1960,9 +1960,9 @@ requires-dist = [
     { name = "langgraph", specifier = ">=1.2" },
     { name = "mcp", specifier = ">=1.9" },
     { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "vdagent-agentkit", editable = "agents/_shared" },
-    { name = "vdagent-contracts", editable = "contracts" },
-    { name = "vdagent-sdk", editable = "sdk" },
+    { name = "vdagent-agentkit" },
+    { name = "vdagent-contracts" },
+    { name = "vdagent-sdk" },
 ]
 
 [[package]]

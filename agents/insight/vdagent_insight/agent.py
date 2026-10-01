@@ -64,7 +64,7 @@ from .memory import InsightMemory
 from .narrate import Narration, narrate
 from .settings import ConfigError, LlmConfig, SemanticConfig, SemanticConfigRegistry
 from .store import InsightStore
-from .validation import scan_injection
+from .validation import PEER_BY_COMPARE, PEER_SLOTS, scan_injection
 from .view import DatasetView
 
 AGENT = "insight_agent"
@@ -115,6 +115,9 @@ class InsightDeps:
     clock: Callable[[], datetime] = datetime.now
     events: EventSink = field(default_factory=json_event_sink)
     as_of: datetime | None = None
+    peer_owner: Literal["insight", "compare"] = "insight"
+    """`compare` (the integrated DAG): peer facts are Compare's; candidates holding peer slots are flagged
+    PEER_BY_COMPARE and their peer numbers are never narrated (validation.hidden_peer_slots)."""
     """The task clock for freshness (D-52); None → `clock()` when the task starts. Pinned for the frozen
     data pack of the demo (runtime.py, `INSIGHT_AS_OF`)."""
 
@@ -364,6 +367,9 @@ async def run_task(request: InsightTaskRequest, deps: InsightDeps) -> TaskResult
         recent_subject_boost=deps.llm.memory.recent_subject_boost,
     )  # fmt: skip
     batch = generate_candidates(ctx, deps.llm.limits.max_candidates_in_context)
+    if deps.peer_owner == "compare":
+        batch.candidates = [c.model_copy(update={"dq_flags": [*c.dq_flags, PEER_BY_COMPARE]}) if PEER_SLOTS & set(c.slots) else c
+                            for c in batch.candidates]
     emit(
         "INSIGHT_CANDIDATES_GENERATED",
         {"by_task": dict(sorted(Counter(c.task for c in batch.candidates).items())), "rejected": len(batch.rejected)},

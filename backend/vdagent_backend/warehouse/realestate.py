@@ -7,7 +7,9 @@ returned nor counted (WS7 F-08).
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from vdagent_backend.warehouse import re_pg, re_sql
 from vdagent_backend.warehouse.sql import SQL_TIMEOUT_S, QueryResult
@@ -25,6 +27,15 @@ class RealEstateWarehouse:
         self._timeout_s = timeout_s
         self._reader = re_pg if path.startswith(("postgresql://", "postgres://")) else re_sql
 
+    @property
+    def source(self) -> dict[str, Any]:
+        """Which backend serves this DW and where, never with credentials: `{backend: postgresql, host, port, database}`
+        or `{backend: sqlite, file}` (the synthetic mock). Agents derive their source labels from it."""
+        if self._reader is re_pg:
+            url = urlsplit(self._path)
+            return {"backend": "postgresql", "host": url.hostname, "port": url.port or 5432, "database": url.path.lstrip("/")}
+        return {"backend": "sqlite", "file": Path(self._path).name}
+
     async def tables(self, scope: AuthorizedScope) -> list[dict[str, Any]]:
         """`[{name, row_count}]`, counting only the rows inside `scope`."""
         return await asyncio.to_thread(self._reader.scoped_tables, self._path, scope, timeout_s=self._timeout_s)
@@ -38,3 +49,10 @@ class RealEstateWarehouse:
     async def query(self, statement: str, scope: AuthorizedScope) -> QueryResult:
         """Run one SELECT inside `scope`. Raises `SqlError`."""
         return await asyncio.to_thread(self._reader.scoped_query, self._path, statement, scope, timeout_s=self._timeout_s)
+
+
+def startup_lines(source: dict[str, Any]) -> list[str]:
+    """The log lines that say, at startup, which warehouse the Backend reads (no credentials)."""
+    if source["backend"] == "postgresql":
+        return ["Warehouse backend: PostgreSQL", f"Warehouse source: {source['host']}:{source['port']}/{source['database']}"]
+    return ["Warehouse backend: SQLite (synthetic mock)", f"Warehouse source: {source['file']}"]

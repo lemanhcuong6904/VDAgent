@@ -15,27 +15,26 @@ deterministic planner). The accepted LLM output is kept in `Plan.provenance` (re
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import re
 import time
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 from vdagent_contracts.catalog import AgentCatalog
 from vdagent_contracts.catalogs import load_catalog
 
-from .dag import TARGET_AGENTS, InputBinding, Plan, PlanError, PlanStep, validate_plan
+from .dag import TARGET_AGENTS, Plan, PlanError, PlanStep, validate_plan
 from .llm import LLMClient
-from .planner import STEP_OPERATIONS, STEP_OUTPUTS, UNIT_CODE, WANTS, normalize_wants, step_spec
+from .planner import STEP_OPERATIONS, UNIT_CODE, WANTS, AnalysisRequest, build_plan, capability_policy, normalize_wants
 
 log = logging.getLogger(__name__)
 PROMPT_VERSION = "orch-llm-plan-1.2.0"
 _FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
 _ANALYSES = ("insight", "compare")
-_WANT_AGENT = {"explain": "insight", "compare": "compare", "chart": "chart", "report": "report"}
 
 
 class _Strict(BaseModel):
@@ -165,30 +164,24 @@ def _compile(llm: LLMClient, question: str, content: str, run_id: str, snapshot_
     agent_of = {s.step_id: s.agent for s in proposed.steps}
     skeleton = tuple(PlanStep(s.step_id, s.agent, s.operation, {}, tuple(s.depends_on)) for s in proposed.steps)
     validate_plan(Plan("pl_check", run_id, snapshot_id, semantic_config_version, question, skeleton), catalogs)
-    needed = normalize_wants(frozenset(proposed.intent.wants))  # same rule as the deterministic planner
-    missing = sorted(w for w in needed if _WANT_AGENT[w] not in agent_of.values())
+    # capability policy (same rule as the deterministic planner): required ⊆ proposed ⊆ required ∪ optional
+    policy = capability_policy(frozenset(proposed.intent.wants))
+    proposed_agents = set(agent_of.values())
+    missing = sorted(a for a, rule in policy.items() if rule == "required" and a not in proposed_agents)
     if missing:
-        raise PlanError("LLM_PLAN_MISSING_STEP", f"requested {missing} but the plan has no step for it")
-    unexpected = set(agent_of.values()) - {"data", *(_WANT_AGENT[w] for w in needed)}
-    if unexpected:
-        raise PlanError("LLM_PLAN_UNEXPECTED_STEP", f"the plan adds unrequested agents: {sorted(unexpected)}")
+        raise PlanError("LLM_PLAN_MISSING_STEP", f"the requested outputs need {missing} but the plan has no step for it")
+    forbidden = sorted(a for a in proposed_agents if policy.get(a, "forbidden") == "forbidden")
+    if forbidden:
+        raise PlanError("LLM_PLAN_UNEXPECTED_STEP", f"no requested output needs or can use {forbidden}")
     _check_roles(list(proposed.steps))
 
-    data_step = next(s.step_id for s in proposed.steps if s.agent == "data")
-    population = "peer_candidates" if "compare" in agent_of.values() else "subject"
-    steps = tuple(
-        PlanStep(s.step_id, s.agent, s.operation, step_spec(s.agent, code, population, data_step), tuple(s.depends_on),
-                 "any" if s.agent in ("chart", "report") else "all",
-                 tuple(InputBinding(d, STEP_OUTPUTS[agent_of[d]]) for d in s.depends_on))
-        for s in proposed.steps
-    )
+    # the DAG that runs is code's: compiled from the required capabilities, optional proposals normalized away
+    dropped = sorted(a for a in proposed_agents if policy[a] == "optional")
+    request = AnalysisRequest(question, code, normalize_wants(frozenset(proposed.intent.wants)), snapshot_id, semantic_config_version)
     raw = proposed.model_dump(mode="json")
-    identity = json.dumps({"run": run_id, "code": code, "plan": raw, "snapshot": snapshot_id,
-                           "semantic": semantic_config_version}, sort_keys=True)
     provenance = {"planner": "llm", "model": str(getattr(llm, "model", "unknown")), "prompt_version": PROMPT_VERSION,
-                  "llm_calls": 1, "latency_ms": latency_ms, "llm_plan": raw}
-    plan = Plan("pl_" + hashlib.sha256(identity.encode()).hexdigest()[:12], run_id, snapshot_id,
-                semantic_config_version, question, steps, provenance)
+                  "llm_calls": 1, "latency_ms": latency_ms, "llm_plan": raw, "normalized": {"dropped_optional": dropped}}
+    plan = replace(build_plan(request, run_id), provenance=provenance)
     waves = validate_plan(plan, catalogs)
     log.info("orchestrator llm plan accepted: %s", json.dumps({**provenance, "plan_id": plan.plan_id, "waves": waves}))
     return plan, waves

@@ -6,7 +6,9 @@
 3. Load the semantic config of the step's version (`sc-1` → config/semantic_insight.sc-1.yaml, D3).
 4. Run the unchanged pipeline (`run_task`) over `DwArtifactReader` — no export pack, no fixture; TEMPLATE unless
    LLM providers are configured.
-5. Store the result through `artifact_put` as `insight` / `insight.v2`, pinned to the Data inputs, with the Data
+5. Build the typed `evidence` block (`insight_evidence@1`, evidence.py) from the engine's candidates — every number
+   pinned to the Data dataset, independent of the narration — and validate it against the shared contract.
+6. Store the result through `artifact_put` as `insight` / `insight.v2`, pinned to the Data inputs, with the Data
    limitations carried forward (D8), and answer with an `AgentReport@1`.
 """
 
@@ -24,12 +26,15 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from vdagent_contracts.canonical import canonical_json
 from vdagent_contracts.envelope import ArtifactRef, ArtifactType
 from vdagent_contracts.errors import ErrorClass
+from vdagent_contracts.insight_evidence import EvidenceError, parse_evidence
 from vdagent_contracts.messages import StepSpec
 from vdagent_contracts.reports import AgentReport, ReportError
 from vdagent_contracts.step_inputs import INPUT_ERROR_CLASSES, InputError, Tools, resolve_data_inputs
 
 from .agent import AGENT_VERSION, EventSink, InsightDeps, run_task
-from .contracts import AnalysisScope, Intent, TaskCode
+from .artifacts import content_hash
+from .contracts import AnalysisScope, InsightCandidate, Intent, TaskCode
+from .evidence import build_evidence
 from .dw_reader import DwArtifactReader, store_id
 from .llm.steps import LlmProviders
 from .memory import NoOpMemory
@@ -49,6 +54,8 @@ INSIGHT_ERROR_CLASSES: dict[str, ErrorClass] = {
     "E02": ErrorClass.WRONG_RESULT,  # input artifact unreadable / inconsistent (pipeline step 1)
     "E03": ErrorClass.SPEC_ISSUE,  # snapshot / semantic version unknown to Insight
     "E04": ErrorClass.NO_ACCESS,  # analysis scope outside the authorized scope
+    "EVIDENCE_UNAVAILABLE": ErrorClass.FATAL,  # the candidates behind the findings are missing or changed
+    "EVIDENCE_INVALID": ErrorClass.FATAL,  # the evidence block would break insight_evidence@1: never stored
     "TOOL_FAILED": ErrorClass.TRANSIENT,
     "INTERNAL_ERROR": ErrorClass.FATAL,
 }
@@ -139,6 +146,7 @@ async def _run(step: StepSpec, tools: Tools, env: StepEnv) -> AgentReport:
     deps = InsightDeps(
         reader=reader, registry=env.registry, llm=env.llm, store=env.store, usage=env.store, memory=NoOpMemory(),
         providers=env.providers, clock=env.clock, events=env.events, as_of=as_of_from({}, manifest.snapshot_date),
+        peer_owner="compare",  # the integrated DAG: Compare owns peer facts, Insight never narrates its own
     )  # fmt: skip
     result = await run_task(InsightTaskRequest.model_validate(request), deps)
     if result.envelope is None:
@@ -148,6 +156,22 @@ async def _run(step: StepSpec, tools: Tools, env: StepEnv) -> AgentReport:
         raise _Fail(state, code, result.error_message or "insight task failed")
 
     envelope = result.envelope
+    cands_ref = next((r for r in envelope.input_artifact_refs if r.artifact_type == "insight_candidates"), None)
+    body = await env.store.get_json(cands_ref.artifact_id) if cands_ref is not None else None
+    if cands_ref is None or body is None or content_hash(body) != cands_ref.content_hash:
+        raise _Fail("failed", "EVIDENCE_UNAVAILABLE", "the candidates behind the findings are missing or do not match their hash")
+    local_dataset = next(a for a in artifacts if a.artifact_type == "dataset")
+    dataset_ref = next(r for r in inputs.refs if r.artifact_type is ArtifactType.DATASET)
+    evidence_block = build_evidence(
+        envelope=envelope, candidates=[InsightCandidate.model_validate(c) for c in body["candidates"]],
+        candidates_ref=cands_ref, cfg=cfg, local_dataset_id=local_dataset.artifact_id, view=local_dataset.payload,
+        dataset=inputs.dataset, dataset_ref=dataset_ref, snapshot_id=step.snapshot_id or "",
+        semantic_config_version=step.semantic_config_version or "",
+    )  # fmt: skip
+    try:
+        parse_evidence({"evidence": json.loads(json.dumps(evidence_block))})
+    except EvidenceError as exc:
+        raise _Fail("failed", "EVIDENCE_INVALID", exc.message) from None
     by_id = {r.artifact_id: r for r in inputs.refs}
     evidence = sorted({store_id(e.split("#", 1)[0]) for e in envelope.evidence_refs} & set(by_id))
     local_limits = [lim.code for lim in envelope.limitations]
@@ -170,6 +194,7 @@ async def _run(step: StepSpec, tools: Tools, env: StepEnv) -> AgentReport:
                                "evidence_refs": list(envelope.evidence_refs),
                                "limitations": [lim.model_dump(mode="json") for lim in envelope.limitations]},
             "request": {"intent": spec.intent, "tasks": list(spec.tasks), "analysis_scope": scope.model_dump(mode="json")},
+            "evidence": evidence_block,
         },
     }  # fmt: skip
     try:

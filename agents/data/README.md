@@ -28,7 +28,9 @@ Có 3 mảnh: **Postgres** (container Docker, chứa DW `gold` và lớp view `r
 
 Lệnh dưới chạy trong **Git Bash** (Windows) hoặc bash (macOS, Linux), đứng ở thư mục gốc repo. Làm tuần tự; mỗi bước có dòng **Kiểm tra**, chưa đúng thì dừng.
 
-> Đừng nhầm: `make backend` và `make docker-live-up` dùng kho giả trong `var/`, **không** phải DW thật. Muốn DW thật phải làm đúng các bước dưới.
+> Cách chính thức: dựng DW (bước 1–2), điền DSN vào `.env` ở thư mục gốc rồi `make up` (xem README gốc, "Quick Start");
+> các bước 3–9 dưới đây chạy Backend trực tiếp trên máy thay vì Docker. `make backend` không đặt DSN và `make mock-up`
+> luôn dùng kho giả.
 
 ### 0. Cần có
 
@@ -48,7 +50,7 @@ uv sync
 Windows (Git Bash) cần thêm: `export MSYS_NO_PATHCONV=1` và dùng `$(pwd -W)` thay cho `$(pwd)` ở lệnh `docker run`.
 
 ```bash
-docker run -d --name cdw-pg -e POSTGRES_PASSWORD=cdw -e POSTGRES_DB=cdw -p 127.0.0.1:5433:5432 \
+docker run -d --name cdw-pg -e POSTGRES_PASSWORD=cdw -e POSTGRES_DB=cdw -p 127.0.0.1:5433:5432 -p 172.17.0.1:5433:5432 \
   -v "$(pwd)/warehouse/backup:/backup:ro" -v "$(pwd)/docker/warehouse:/views:ro" postgres:16
 ```
 
@@ -62,7 +64,9 @@ docker exec cdw-pg pg_restore -U postgres -d cdw --no-owner /backup/cdw_gold_sna
 **Kiểm tra:** `docker exec cdw-pg psql -U postgres -d cdw -tAc "select count(*) from gold.dm_unit_friction_diagnostics"` in `5051`.
 
 Container đã có từ trước (`docker ps -a --filter name=cdw-pg`) thì chỉ cần `docker start cdw-pg` và bỏ qua bước này và bước 2. Container này không có volume dữ liệu: `docker rm cdw-pg` là mất DW, phải nạp lại.
-Cổng `127.0.0.1:5433` chỉ mở cho máy bạn; mật khẩu `cdw` của tài khoản admin chỉ dùng cục bộ.
+Cổng `127.0.0.1:5433` mở cho máy bạn, `172.17.0.1:5433` (cầu Docker, `ip -4 addr show docker0`) cho các container của
+`make up`, không mở ra mạng ngoài; mật khẩu `cdw` của tài khoản admin chỉ dùng cục bộ.
+Với `make up`, DSN trong `.env` gốc là `postgresql://vdagent_reader:<READER_PW>@host.docker.internal:5433/cdw`.
 
 ### 2. Tạo lớp view `re` và role chỉ đọc (một lần, chạy lại cũng an toàn)
 
@@ -100,10 +104,10 @@ Mở `agents/data/.env` (đã được gitignore) và điền:
 OPENAI_API_KEY=<khóa của bạn>
 OPENAI_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=gpt-4o-mini
-DATA_DW_PROFILE=real
 ```
 
-- `DATA_DW_PROFILE=real` **bắt buộc** với DW thật. Thiếu thì Data gắn nhãn "dữ liệu mô phỏng" sai lên số thật và không ghi chú rằng trạng thái duyệt snapshot là giả định.
+- Không cần đặt `DATA_DW_PROFILE`: nhãn dữ liệu suy ra từ kho mà Backend thật sự đọc (PostgreSQL → `SNAPSHOT_STATUS_ASSUMED`,
+  SQLite → `SYNTHETIC_SOURCE`). Đặt sai thì bị bỏ qua và log ghi cảnh báo. Mỗi dataset ghi nguồn trong `snapshot.warehouse`.
 - Không có khóa LLM: thêm `DATA_LLM=off`. Pipeline vẫn chạy, lời kể dùng câu khuôn, nhưng chat giải thích không dùng được.
 - Các agent khác không cần `.env` khi chạy theo bước 7 (chúng được tắt LLM bằng biến môi trường).
 
@@ -193,7 +197,7 @@ uv run uvicorn vdagent_backend.app:app --host 127.0.0.1 --port 8000     # http:/
 
 Ba lệnh seed và lệnh cuối chính là `make reset-db` và `make backend` (máy không có `make`, như Windows, thì dùng lệnh trên).
 Backend mặc định đọc `var/backend.db`, `var/warehouse.db`, `var/re_warehouse.db` nên không cần đặt biến môi trường.
-Cấu hình `agents/data/.env` để trống `DATA_DW_PROFILE` (mặc định `mock`). Biến môi trường đầy đủ của Backend: `backend/.env.example`.
+Nhãn "dữ liệu mô phỏng" tự bật vì Backend đọc SQLite. Biến môi trường đầy đủ của Backend: `backend/.env.example`.
 Mã căn của kho giả: `A12-08` (thuộc `PRJ-X`, Alice thấy được).
 
 ## Cấu hình của Data (`agents/data/.env`)
@@ -208,7 +212,7 @@ Plugin tự đọc file này lúc Backend khởi động; giá trị trong file 
 | `DATA_LLM` | bật | `off`: không dùng LLM (không cần 3 biến trên, không có chat, lời kể bằng câu khuôn) |
 | `DATA_NARRATE` | `on` | `off`: Data chỉ trả một bước kết quả, không kể từng bước |
 | `DATA_NARRATE_LLM` | `on` | `off`: lời kể chỉ dùng câu khuôn (LLM chỉ thấy tên bảng, số dòng, mã, không thấy giá trị dòng) |
-| `DATA_DW_PROFILE` | `mock` | `real` cho DW thật của team DATA (xem bước 4) |
+| `DATA_DW_PROFILE` | không đặt | chỉ là kỳ vọng; nhãn luôn theo kho Backend trả về (`snapshot.warehouse`), lệch thì log cảnh báo |
 
 ## Kiểm thử
 

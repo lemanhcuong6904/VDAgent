@@ -286,7 +286,7 @@ class DataAgent(LiteLLMAgent):
         narrate_llm: bool = True,
         narrator_prompt: str | None = None,
         chat_prompt: str | None = None,
-        profile: str = "mock",
+        profile: str | None = None,
     ) -> None:
         super().__init__(llm=llm, mcp_session_factory=mcp_session_factory,  # pyright: ignore[reportArgumentType]
                          system_prompt=system_prompt, compact_prompt=compact_prompt)
@@ -307,8 +307,8 @@ class DataAgent(LiteLLMAgent):
         return self._chat_prompt
 
     @property
-    def profile(self) -> str:
-        """What the warehouse is: "mock" (synthetic) or "real" (the DATA team's), from DATA_DW_PROFILE."""
+    def profile(self) -> str | None:
+        """The configured expectation (DATA_DW_PROFILE, None when unset); each step relabels from the serving warehouse."""
         return self._profile
 
     async def invoke(self, ctx: InvocationContext) -> None:
@@ -395,10 +395,11 @@ def build_agent(env: Mapping[str, str]) -> Agent:
 
     `DATA_NARRATE=off` turns the narration of StepSpec turns off (one answer step, as before);
     `DATA_NARRATE_LLM=off` keeps the narration but never sends it to the LLM.
-    `DATA_DW_PROFILE=real` says the warehouse is the DATA team's (no "synthetic" labels; its snapshot approval is assumed and said so).
+    `DATA_DW_PROFILE` (optional) is only an expectation: the labels follow the warehouse the Backend reports serving
+    (PostgreSQL → real: no "synthetic" labels, snapshot approval assumed and said so; SQLite → the synthetic mock).
     """
     narration = {"narrate": _on(env, "DATA_NARRATE"), "narrate_llm": _on(env, "DATA_NARRATE_LLM"),
-                 "profile": (env.get("DATA_DW_PROFILE") or "mock").strip().lower()}
+                 "profile": (env.get("DATA_DW_PROFILE") or "").strip().lower() or None}
     if (env.get("DATA_LLM") or "").strip().lower() == "off":
         return DataAgent(llm=None, system_prompt=load_prompt("system"), compact_prompt=load_prompt("compact"), **narration)
     settings = load_settings(env)

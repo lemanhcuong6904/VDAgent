@@ -23,6 +23,7 @@ from vdagent_contracts.messages import StepSpec
 from vdagent_data.steps import ToolFailure  # noqa: F401  (re-exported port error)
 from vdagent_data.tests.conftest import ALICE, BOB, McpPort
 from vdagent_data.tests.conftest import GrantedTools as McpTools
+from vdagent_data.tests.conftest import ServedByPostgres
 from vdagent_data.v1 import V1Result, run_step_v1
 
 LOCKED = "SNAP-2026-09-28"  # the newest APPROVED snapshot of the mock DW (…-09-29 is a DRAFT)
@@ -328,10 +329,11 @@ async def test_aggregate_on_a_filter_that_matches_nothing_is_empty_population(al
 # ---- what the labels say depends on the warehouse -----------------------------------------------------------------------------
 
 
-async def test_the_mock_warehouse_is_labelled_synthetic_and_the_real_one_is_not(alice: McpPort) -> None:
+async def test_the_mock_warehouse_is_labelled_synthetic_and_the_real_one_is_not(alice: McpPort, re_db: str) -> None:
     spec = {"entities": [ent("A12-08", "UNIT")]}
-    mock = await run_step_v1(v1("fetch_units", spec), alice)
+    mock = await run_step_v1(v1("fetch_units", spec), alice, profile="real")  # the label follows the serving warehouse
     assert "SYNTHETIC_SOURCE:net_area_m2" in mock.report.warnings and not any(w.startswith("SNAPSHOT_STATUS_ASSUMED") for w in mock.report.warnings)
-    real = await run_step_v1(v1("fetch_units", spec), alice, profile="real")
+    alice.tools.use_re_warehouse(re_db, ServedByPostgres)
+    real = await run_step_v1(v1("fetch_units", spec), alice)
     assert not any(w.startswith(("SYNTHETIC_SOURCE", "BLOCKED:D2b")) for w in real.report.warnings)
     assert "SNAPSHOT_STATUS_ASSUMED" in real.report.warnings

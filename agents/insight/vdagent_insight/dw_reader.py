@@ -48,6 +48,44 @@ def store_id(local_id: str) -> str:
     return local_id.split(SUFFIX, 1)[0]
 
 
+# The inverse of `_pack` below, for evidence lineage: where a value of the local view lives in the Data dataset.
+# Rows are matched by their DW keys (kept as is by `_pack`); these are the fields `_pack` renamed or moved.
+_ROW_KEYS: dict[str, tuple[str, ...]] = {
+    "fact_unit_inventory_snapshot": ("unit_key",), "dm_unit_friction_diagnostics": ("unit_key",),
+    "dim_unit_master": ("unit_key",), "unit_diagnostic_causes": ("unit_key", "cause_code"),
+    "dim_project_profile": ("project_key",), "dim_zone_master": ("zone_key",),
+}
+_MOVED: dict[tuple[str, str], tuple[str, str, tuple[str, ...]]] = {
+    ("fact_unit_inventory_snapshot", "subsidy_duration_mo"): ("dm_unit_friction_diagnostics", "subsidy_duration_mo", ("unit_key",)),
+    ("fact_unit_inventory_snapshot", "base_commission_pct"): ("dim_sales_channel", "base_commission_pct", ("channel_key",)),
+    ("fact_unit_inventory_snapshot", "spiff_bonus_vnd"): ("dim_sales_channel", "spiff_bonus_vnd", ("channel_key",)),
+    ("dm_unit_friction_diagnostics", "peer_count"): ("dm_unit_friction_diagnostics", "peer_n", ("unit_key",)),
+    ("dm_unit_friction_diagnostics", "unsold_days_dom"): ("fact_unit_inventory_snapshot", "unsold_days_dom", ("unit_key",)),
+    ("dim_unit_master", "floor_number"): ("dim_unit_master", "floor_no", ("unit_key",)),
+}
+
+
+def dw_field(table: str, field: str) -> tuple[str, str, tuple[str, ...]]:
+    """`(dataset table, dataset field, row keys)` of a field of the local view; KeyError for a table the view lacks."""
+    return _MOVED.get((table, field)) or (table, field, _ROW_KEYS[table])
+
+
+def dataset_pointer(dataset_payload: dict[str, Any], table: str, local_row: dict[str, Any], field: str) -> str | None:
+    """JSON pointer (`/tables/<table>/<row>/<field>`) of the Data dataset value behind `local_row[field]`, or None."""
+    try:
+        dw_table, dw_column, keys = dw_field(table, field)
+    except KeyError:
+        return None
+    # D2: DW keys are TEXT; the local row models turn numeric-looking keys ("101325") into int, so match on text
+    wanted = tuple(None if local_row.get(k) is None else str(local_row.get(k)) for k in keys)
+    if any(v is None for v in wanted):
+        return None
+    for i, row in enumerate(dataset_payload.get("tables", {}).get(dw_table) or []):
+        if tuple(None if row.get(k) is None else str(row.get(k)) for k in keys) == wanted and dw_column in row:
+            return f"/tables/{dw_table}/{i}/{dw_column}"
+    return None
+
+
 def _pack(inputs: DataInputs, cfg: SemanticConfig) -> _Pack:
     payload = inputs.dataset["payload"]
     snap = payload["snapshot"]

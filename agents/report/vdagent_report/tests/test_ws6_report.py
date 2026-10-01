@@ -6,6 +6,7 @@ Upstream runs for real (Data → Insight + Compare → Chart) on the Backend's M
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -169,6 +170,23 @@ async def test_broken_chart_binding_blocks_a_valid_report(alice: McpPort, tmp_pa
     await _refused(alice, report_step([up["insight"], up["peer_definition"], up["comparison"], bad]), "EVIDENCE_INVALID")
 
 
+async def test_a_chart_whose_insight_lineage_does_not_hold_blocks_the_report(alice: McpPort, tmp_path: Path) -> None:
+    up = await full_upstream(alice, tmp_path)
+    specs = [await alice.call("artifact_get", {"artifact_id": r["artifact_id"]}) for r in up["chart_specs"]]
+    [kpi] = [s for s in specs if s["payload"]["visual_question"] == "current_value"]
+    insight = await alice.call("artifact_get", {"artifact_id": up["insight"]["artifact_id"]})
+    other = next((fi, mi) for fi, f in enumerate(insight["payload"]["evidence"]["findings"])
+                 for mi, m in enumerate(f["metrics"]) if m["value_exact"] != kpi["payload"]["bindings"][0]["value_exact"])
+    payload = json.loads(json.dumps(kpi["payload"]))
+    label = f"{up['insight']['artifact_id']}@{up['insight']['version']}"
+    payload["bindings"][0]["evidence_refs"] = [f"{label}#/evidence/findings/{other[0]}/metrics/{other[1]}/value_exact"]
+    draft = {k: kpi[k] for k in ("artifact_type", "schema_version", "status", "producer", "snapshot_refs",
+                                 "semantic_config_version", "source_refs", "input_artifact_refs", "limitations")}
+    stored = await alice.as_agent("chart").call("artifact_put", {"draft_json": json.dumps({**draft, "payload": payload})})
+    bad = {"artifact_id": stored["artifact_id"], "version": 1, "artifact_type": "chart_spec", "content_hash": stored["content_hash"]}
+    await _refused(alice, report_step([up["insight"], up["peer_definition"], up["comparison"], bad]), "EVIDENCE_INVALID")
+
+
 @pytest.mark.parametrize("breakage", [
     {"mark": {"type": "kpi_card", "tooltip": True}},  # the pre-WS7 KPI projection (F-01)
     {"encoding": {"label": {"field": "label"}, "value": {"field": "value"}}},
@@ -247,3 +265,49 @@ async def test_report_plugin_serves_stepspec_and_explains_free_text(alice: McpPo
     await agent.invoke(ctx)
     [(content, calls)] = ctx.steps
     assert calls == [] and "StepSpec@1" in content and "LLM" in content
+
+
+# ---- one peer truth: Compare's (insight_evidence@2) ---------------------------------------------------------------
+
+
+def _analysis(doc: dict[str, Any]) -> str:
+    return next(sec["markdown"] for sec in doc["payload"]["sections"] if sec["id"] == "analysis")
+
+
+async def test_a_peer_based_finding_states_compares_value_with_compares_lineage(alice: McpPort, tmp_path: Path) -> None:
+    up = await full_upstream(alice, tmp_path)
+    doc = await the_report(alice, await run_step(report_step(all_refs(up)), alice.as_agent("report")))
+    cmp_label = f"{up['comparison']['artifact_id']}@{up['comparison']['version']}"
+    line = next(x for x in _analysis(doc).splitlines() if "OVERPRICED_VS_PEER" in x)
+    assert re.search(r"chênh 12,40 \[S\d+\]%", line) and re.search(r"\b5 \[S\d+\] căn", line) and cmp_label in line
+    peer_statements = [s for s in doc["payload"]["statements"] if s["section"] == "analysis" and "pctGap" in (s["source_ref"] or "")]
+    assert peer_statements and all(s["source_ref"].startswith(f"{cmp_label}#/metrics/") for s in peer_statements)
+    insight_label = f"{up['insight']['artifact_id']}@{up['insight']['version']}"
+    for s in doc["payload"]["statements"]:  # no peer number is sourced from Insight
+        if s["source_ref"] and s["source_ref"].startswith(insight_label):
+            assert str(await resolve(alice, s["source_ref"])) == s["value_exact"] and s["value_exact"] != "12.40"
+    assert "PEER_BASIS_DIFFERS" not in doc["payload"]["markdown"]
+
+
+async def test_a_stale_insight_narrating_its_own_peer_number_never_reaches_the_report(alice: McpPort, tmp_path: Path) -> None:
+    up = await full_upstream(alice, tmp_path)
+    ins = await alice.call("artifact_get", {"artifact_id": up["insight"]["artifact_id"]})
+    payload = json.loads(json.dumps(ins["payload"]))
+    item = next(i for i in payload["insight"]["insights"] if i.get("cause_code") == "OVERPRICED_VS_PEER")
+    item["claim"]["numeric_bindings"].append({"slot": "spread", "value": "15.00", "unit": "PCT", "display": "+15,00%",
+                                              "metric_ref": "x~insight#/dm_unit_friction_diagnostics/0/price_spread_vs_peer_pct"})
+    item["claim"]["rendered_text"] += " Cao hơn peer +15,00%."
+    draft = {k: ins[k] for k in ("artifact_type", "schema_version", "status", "producer", "snapshot_refs",
+                                 "semantic_config_version", "source_refs", "input_artifact_refs", "evidence_refs", "limitations")}
+    stored = await alice.as_agent("insight").call("artifact_put", {"draft_json": json.dumps({**draft, "payload": payload})})
+    stale = {"artifact_id": stored["artifact_id"], "version": 1, "artifact_type": "insight", "content_hash": stored["content_hash"]}
+    doc = await the_report(alice, await run_step(report_step([stale, up["peer_definition"], up["comparison"]]), alice.as_agent("report")))
+    assert "15,00" not in doc["payload"]["markdown"] and "15.00" not in json.dumps(doc["payload"]["statements"])
+    assert f"PEER_BASIS_DIFFERS:{item['insight_id']}:spread=15.00" in doc["payload"]["markdown"]
+
+
+async def test_without_a_comparison_the_peer_factor_is_named_without_a_number(alice: McpPort, tmp_path: Path) -> None:
+    up = await full_upstream(alice, tmp_path)
+    doc = await the_report(alice, await run_step(report_step([up["insight"]]), alice.as_agent("report")))
+    line = next(x for x in _analysis(doc).splitlines() if "OVERPRICED_VS_PEER" in x)
+    assert "cần bước so sánh" in line and "12,40" not in line

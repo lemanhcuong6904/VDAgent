@@ -211,7 +211,7 @@ def _label(c: Candidate, projects: Mapping[str, str]) -> str:
 # ---- entry point -------------------------------------------------------------------------------------------------------------
 
 
-async def run_step_v1(step: StepSpec, tools: core.Tools, observer: Observer | None = None, *, profile: str = "mock",
+async def run_step_v1(step: StepSpec, tools: core.Tools, observer: Observer | None = None, *, profile: str | None = "mock",
                       saved: Mapping[str, str] | None = None) -> V1Result:
     """Answer one v1.0 step. `profile` is what the warehouse is ("mock" or "real", DATA_DW_PROFILE); `saved` holds the
     choices the user already made in this run (normalized mention → entity id)."""

@@ -203,7 +203,7 @@ class Entry:
 
 
 class Door:
-    def __init__(self, *, profile: str = "mock") -> None:
+    def __init__(self, *, profile: str | None = None) -> None:
         self._profile = profile
         self._entries: dict[str, Entry] = {}  # by idempotency key
         self._by_step: dict[tuple[str, str], str] = {}

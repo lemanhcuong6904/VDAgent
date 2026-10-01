@@ -193,12 +193,12 @@ def _exact(value: Any) -> Any:
 def _source_labels(run: _Run) -> list[str]:
     """What the reader must know about the source. The mock DW holds a synthetic `net_area_m2` (B-3); the real DW's snapshot
     manifest carries no approval column, so its APPROVED status is assumed by the read layer and said so."""
-    return ["SYNTHETIC_SOURCE:net_area_m2"] if run.profile == "mock" else ["SNAPSHOT_STATUS_ASSUMED"]
+    return ["SNAPSHOT_STATUS_ASSUMED"] if run.profile == "real" else ["SYNTHETIC_SOURCE:net_area_m2"]
 
 
 def _project_labels(run: _Run) -> list[str]:
     """D2b (segment mapping to the Insight enum) is a question about the mock's segments only."""
-    return ["BLOCKED:D2b_segment_mapping"] if run.profile == "mock" else []
+    return [] if run.profile == "real" else ["BLOCKED:D2b_segment_mapping"]
 
 
 def _pct(part: int, total: int) -> str:
@@ -217,7 +217,10 @@ class _Run:
     sources: list[str] = field(default_factory=list)
     resolved: list[dict[str, str]] = field(default_factory=list)  # how each named entity was resolved (kept in the dataset's `request`)
     trace: Tracer = field(default_factory=Tracer)
-    profile: str = "mock"  # what the warehouse is: "mock" (the synthetic DW) or "real" (the DATA team's; DATA_DW_PROFILE)
+    # what the warehouse is: "mock" (the synthetic DW) or "real" (the DATA team's). Starts as the configured expectation
+    # (DATA_DW_PROFILE, None when unset) and is replaced by what the Backend reports serving on the first read.
+    profile: str | None = "mock"
+    warehouse: dict[str, Any] | None = None  # the Backend's identity of the DW that answered (no credentials)
 
     async def select(self, table: str, sql: str, why: str) -> list[dict[str, Any]]:
         """All rows of one scoped SELECT (paged), recorded by SQL hash; a truncated result is an error, not data.
@@ -243,10 +246,22 @@ class _Run:
             if not page["rows"]:
                 break
             rows.extend(page["rows"])
+        self._served_by(res.get("warehouse"))
         self.queries.append({"table": table, "sql_sha256": _sha(sql), "row_count": len(rows)})
         if f"re:{table}" not in self.sources:
             self.sources.append(f"re:{table}")
         return [{c: _exact(v) for c, v in zip(columns, r, strict=True)} for r in rows]
+
+    def _served_by(self, warehouse: dict[str, Any] | None) -> None:
+        """Label the data from the warehouse that actually answered, never from a setting that may disagree with it."""
+        if not warehouse or self.warehouse is not None:
+            return
+        self.warehouse = {k: warehouse[k] for k in ("backend", "host", "port", "database", "file") if k in warehouse}
+        served = "real" if warehouse.get("backend") == "postgresql" else "mock"
+        if self.profile not in (None, served):
+            log.warning("data: DATA_DW_PROFILE=%s ignored: the Backend reads %s, so the data is labelled %s",
+                        self.profile, warehouse.get("backend"), served)
+        self.profile = served
 
     async def put(self, kind: ArtifactType, schema: str, payload: dict[str, Any], limitations: Sequence[str],
                   inputs: Sequence[ArtifactRef] = (), *, partial: bool = False) -> tuple[ArtifactRef, str]:
@@ -284,7 +299,7 @@ class _Run:
 # ---- entry point -------------------------------------------------------------------------------------------------
 
 
-async def run_step(step: StepSpec, tools: Tools, observer: Observer | None = None, *, profile: str = "mock") -> AgentReport:
+async def run_step(step: StepSpec, tools: Tools, observer: Observer | None = None, *, profile: str | None = "mock") -> AgentReport:
     """Answer one StepSpec; every failure becomes a structured AgentReport, never an exception.
 
     `observer` (optional) is told what the step really does, as `vdagent_data.trace.TraceEvent`s; it never changes the
@@ -338,7 +353,7 @@ def _report(step: StepSpec, state: str, *, error: ReportError | None = None, que
     })
 
 
-async def _run(step: StepSpec, tools: Tools, tracer: Tracer, profile: str = "mock") -> AgentReport:
+async def _run(step: StepSpec, tools: Tools, tracer: Tracer, profile: str | None = "mock") -> AgentReport:
     run = _Run(step, tools, trace=tracer, profile=profile)
     tracer.enter("intake")
     await tracer.note("intake", "Nhận phiếu giao việc và kiểm tra hợp lệ trước khi đọc kho dữ liệu", operation=step.operation,
@@ -622,8 +637,9 @@ async def _check_note(run: _Run, dq: dict[str, Any], dq_limits: list[str]) -> No
 
 
 def _snapshot_block(run: _Run) -> dict[str, Any]:
-    return {"snapshot_id": run.snapshot_id, "snapshot_date": _day(run.snapshot_date_key).isoformat(),
-            "snapshot_date_key": run.snapshot_date_key, "semantic_config_version": run.semantic}
+    block = {"snapshot_id": run.snapshot_id, "snapshot_date": _day(run.snapshot_date_key).isoformat(),
+             "snapshot_date_key": run.snapshot_date_key, "semantic_config_version": run.semantic}
+    return {**block, "warehouse": run.warehouse} if run.warehouse else block
 
 
 def _sensors(units: Sequence[dict[str, Any]], inventory: Sequence[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:

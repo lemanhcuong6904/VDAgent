@@ -67,9 +67,9 @@ Biến môi trường hoặc `agents/orchestrator/.env` (file thắng process en
 | `ORCH_DAG_TIMEOUT_S` | Timeout vòng thực thi DAG, mặc định 300 giây; không gồm lập plan/tạo câu trả lời |
 | `ORCH_LEGACY_LOOP=on` | Debug vòng tool cũ khi có LLM; không dùng để kiểm chứng DAG |
 
-Chạy toàn stack không cần key: `make docker-offline-up` theo README ở repo root, mở
+Chạy toàn stack không cần key: `make mock-up` (kho giả) theo README ở repo root, mở
 `http://localhost:8001`, chọn Alice và Orchestrator. Offline Compose đặt pin demo
-`SNAP-2026-09-28` / `sc-1`. Live demo: `make docker-live-up` sau khi điền cấu hình cần thiết.
+`SNAP-2026-09-28` / `sc-1`. Live demo: `make up` sau khi điền `.env` (README "Quick Start").
 
 Đầu vào structured cũng được hỗ trợ; pin lấy trực tiếp từ request:
 

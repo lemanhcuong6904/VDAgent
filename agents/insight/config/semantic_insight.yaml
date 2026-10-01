@@ -72,6 +72,7 @@ semantic_config:
       cause_label_vi: "khuyết điểm vật lý của căn"
       action_code: DEFECT_COMPENSATION_DISCOUNT
       template: "Căn {{unit}} tồn {{dom}}; yếu tố có khả năng liên quan: {{cause_label}} (điểm phạt khuyết tật {{defect}}, giá so với nhóm tương đồng {{spread}})."
+      peer_free_template: "Căn {{unit}} tồn {{dom}}; yếu tố có khả năng liên quan: {{cause_label}} (điểm phạt khuyết tật {{defect}}; mức giá so với nhóm tương đồng theo kết quả so sánh)."
       required_evidence:
         - {slot: defect, table: dm_unit_friction_diagnostics, field: physical_defect_penalty, unit: SCORE}
         - {slot: spread, table: dm_unit_friction_diagnostics, field: price_spread_vs_peer_pct, unit: PCT, signed: true}
@@ -101,6 +102,7 @@ semantic_config:
       cause_label_vi: "giá cao hơn nhóm tương đồng"
       action_code: TARGETED_PRICE_CORRECTION
       template: "Căn {{unit}} tồn {{dom}}; yếu tố có khả năng liên quan: {{cause_label}} (đơn giá/m² so với trung vị peer {{spread}})."
+      peer_free_template: "Căn {{unit}} tồn {{dom}}; yếu tố có khả năng liên quan: {{cause_label}} (mức chênh đơn giá/m² so với nhóm tương đồng theo kết quả so sánh)."
       required_evidence:
         - {slot: spread, table: dm_unit_friction_diagnostics, field: price_spread_vs_peer_pct, unit: PCT, signed: true}
       supplementary_evidence:
