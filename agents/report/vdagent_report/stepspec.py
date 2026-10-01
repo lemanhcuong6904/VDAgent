@@ -60,7 +60,8 @@ def _report(step: StepSpec, state: str, *, error: ReportError | None = None, ref
         "run_id": step.run_id, "step_id": step.step_id, "idempotency_key": step.idempotency_key, "state": state,
         "partial": partial, "artifact_refs": [r.model_dump(mode="json") for r in refs or []],
         "snapshot_id": step.snapshot_id, "semantic_config_version": step.semantic_config_version,
-        "summary": summary or (error.message if error else ""), "warnings": sorted(set(warnings or [])), "error": error,
+        "summary": summary or (f"Không thể hoàn tất yêu cầu tạo báo cáo ({error.code})." if error else ""),
+        "warnings": sorted(set(warnings or [])), "error": error,
     })
 
 
