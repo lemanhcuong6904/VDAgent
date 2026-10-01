@@ -232,6 +232,18 @@ def test_unintelligible_question_gets_help_not_a_guess():
     ("Chủ đầu tư nên giảm giá.", False),
     ("Hãy tăng chiết khấu.", False),
     ("DOM của A12-08 đứng 6/6 trong 5 căn tương đồng.", True),
+    ("Giá của A12-08 đắt hơn trung vị 16%.", False),  # price: only "cao hơn"/"thấp hơn" (output rules, Compare)
+    ("Giá của A12-08 rẻ hơn A12-11.", False),
+    ("Giá 72.500.000 là mức tốt hơn nhóm.", False),
+    ("Giá của A12-08 rất tốt.", False),
+    ("Giá của A12-08 rất xấu.", False),
+    ("A12-08 có DOM 48 ngày.", False),
+    ("Giá của A12-08 là 62.500.000 VND.", False),
+    ("Giá của A12-08 là 72.500.000 VND.", True),
+    ("Trung vị DOM của nhóm là 48 ngày.", True),
+    ("DOM 138 ngày, xấu hơn trung vị.", False),
+    ("Căn đắt nhất nhóm.", False),
+    ("Giá cao hơn trung vị 16%; không dùng từ chẻ hơn.", True),  # "rẻ" only as a whole word
 ])
 def test_phrase_guard(text, ok):
     facts = "| Giá ròng/m² | 72.500.000 | 62.500.000 | 10.000.000 | 16 | 6/6 |\n| DOM | 138 | 48 | 90 | 187,5 | 6/6 |\n5 căn"

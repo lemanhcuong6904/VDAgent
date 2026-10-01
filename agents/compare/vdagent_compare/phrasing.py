@@ -11,6 +11,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from .llm import JsonLLM
+from .vh_service import LABELS
 
 PROMPT = (Path(__file__).parent / "prompts" / "phrase.md").read_text(encoding="utf-8").strip()
 ANSWER_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["text"],
@@ -22,7 +23,9 @@ _NOT_QUANTITIES = re.compile(r"\b[A-Z][A-Z0-9]*(?:[-.][A-Z0-9]+)+\b|\b\dPN\b|\bm
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 _THOUSANDS = re.compile(r"^\d{1,3}(?:\.\d{3})+(?:,\d+)?$")
 _FORBIDDEN = re.compile(
-    r"(?<!\w)(vì|do|bởi|khiến|dẫn đến|nguyên nhân|nên|hãy|khuyến nghị|đề xuất|cần phải)(?!\w)", re.IGNORECASE)
+    r"(?<!\w)(vì|do|bởi|khiến|dẫn đến|nguyên nhân|nên|hãy|khuyến nghị|đề xuất|cần phải"
+    r"|đắt|rẻ|tốt|xấu)(?!\w)",  # price is only higher/lower, never good or bad
+    re.IGNORECASE)
 
 
 def _value(token: str) -> Decimal | None:
@@ -38,12 +41,48 @@ def numbers_in(text: str) -> set[Decimal]:
     return {v for token in _NUMBER.findall(cleaned) if (v := _value(token)) is not None}
 
 
+def _wrong_direct_values(text: str, facts: str) -> set[str]:
+    """Reject a group number stated as the subject's value in a rendered metric row."""
+    labels = {entry[0] for entry in LABELS.values()}
+    price_prefix = LABELS["net_asking_price_per_m2"][0].split()[0]
+    one_price_metric = sum(line.startswith(f"| {price_prefix} ") for line in facts.splitlines()) == 1
+    wrong: set[str] = set()
+    for line in facts.splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) < 3 or cells[0] not in labels:
+            continue
+        label, subject_value = cells[0], _value(cells[1])
+        if subject_value is None:
+            continue
+        aliases = (label, price_prefix) if one_price_metric and label.startswith(price_prefix + " ") else (label,)
+        for alias in aliases:
+            metric = re.escape(alias)
+            direct_claims = (
+                rf"(?<!\w)(?:có|đạt)\s+{metric}\s+(?:là\s+)?(?P<value>{_NUMBER.pattern})(?!\w)",
+                rf"(?<!\w){metric}(?:\s+của\s+[A-Z][A-Z0-9.-]*)?\s+(?:là|đạt|ở mức)\s+(?P<value>{_NUMBER.pattern})(?!\w)",
+                rf"(?<!\w){metric}\s+(?P<value>{_NUMBER.pattern})\s+(?:ngày|VND|đồng|triệu|tỷ|lượt|tháng|%)(?!\w)",
+            )
+            for pattern in direct_claims:
+                for match in re.finditer(pattern, text, re.IGNORECASE):
+                    prefix = text[max(0, match.start() - 35):match.start()].casefold()
+                    if re.search(r"(?:trung vị|nhóm)\s*$", prefix):
+                        continue
+                    if _value(match.group("value")) != subject_value:
+                        wrong.add(label)
+    return wrong
+
+
 def check_phrase(text: str, facts: str) -> list[str]:
     """Problems with a model-written answer; empty means it may be published."""
     problems = []
     unknown = sorted(numbers_in(text) - numbers_in(facts))
     if unknown:
         problems.append("có số không nằm trong kết quả: " + ", ".join(format(v, "f") for v in unknown))
+    wrong_values = _wrong_direct_values(text, facts)
+    if wrong_values:
+        problems.append("gán sai giá trị của căn: " + ", ".join(sorted(wrong_values)))
     words = sorted({m.group(1).lower() for m in _FORBIDDEN.finditer(text)})
     if words:
         problems.append("có từ nhân quả hoặc khuyến nghị: " + ", ".join(words))
