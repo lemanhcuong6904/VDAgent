@@ -22,7 +22,8 @@ from typing import Any
 
 from .dag import InputBinding, Plan, PlanError, PlanStep
 
-UNIT_CODE = re.compile(r"\b([A-Z]{1,3}\d{1,3}-\d{1,3}(?:\.\d{1,3})?)\b")
+# A12-08 (the mock) or OCP-U00001 / SMC-U… / VGP-U… / MAS-U… / TST-U… (the DATA team's real warehouse)
+UNIT_CODE = re.compile(r"\b([A-Z]{1,3}\d{1,3}-\d{1,3}(?:\.\d{1,3})?|[A-Z]{2,4}-U\d{3,6})\b")
 WANTS = ("explain", "compare", "chart", "report")
 _KEYWORDS = {
     "explain": ("vi sao", "tai sao", "nguyen nhan", "ban cham", "ly do"),
