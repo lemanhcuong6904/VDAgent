@@ -24,18 +24,17 @@ Report trong 3 agent của team AGENT_A.
 Dependency chính (`agents/report/pyproject.toml`): `langgraph>=1.2`, `langchain-openai>=1.6`,
 `httpx`, `mcp`, `vdagent-sdk`.
 
-## 2. Luồng một turn (`LangGraphAgent.invoke`)
+## 2. Hai chế độ vận hành và luồng xử lý
 
-1. Mở một MCP session (`open_mcp_session`, streamable-HTTP, bearer token từ `ctx.mcp`).
-2. `list_tools()` — lấy toàn bộ tool MCP mà Report được cấp (trừ `send_to_agent`), chuyển sang
-   OpenAI tool schema (`openai_tool_schema`).
-3. Nếu có `ctx.peers`, thêm tool ảo `send_to_agent` (mô tả roster các agent khác) — nhưng theo
-   `docs/agents.md`/quy tắc AGENT_A, tool `agents.delegate` (`send_to_agent`) ở depth > 0 thường
-   bị chặn; test `test_concurrent_send_to_agent_calls_each_await_their_own_result` cho thấy code
-   *hỗ trợ* gọi peer khi `ctx.peers` không rỗng, nhưng việc peer có thực sự được cấp ở runtime là
-   do harness/tool-pool quyết định, không phải Report tự quyết.
-4. Dựng `ReportTurn` với state ban đầu `{"messages": convert_to_messages(ctx.history)}`, chạy
-   `turn.graph().ainvoke(...)` với `recursion_limit = 3 * ctx.max_steps + 10`.
+Report Agent hỗ trợ hai chế độ theo [spec.md](spec.md):
+
+1. **StepSpec@1 `draft_report` (Orchestrator)**: Chạy tất định, offline qua `stepspec.py` và `compose.py` mà không cần LLM hay Jev judge. Đọc các artifact đầu vào đã ghim hash (`insight`, `comparison`, `peer_definition`, `chart_spec`), kiểm chứng toàn bộ statement số liệu và chart bindings, gọi `save_report` để lưu markdown và `artifact_put` để lưu artifact `report@1`.
+2. **Direct Chat (Hỏi đáp & Giải thích)**: Khi nhận tin nhắn tự do (không phải `ContractMessage`), nếu `REPORT_LLM=off` sẽ trả về `AgentReport@1` `state: rejected` với mã `LLM_REQUIRED`. Khi có LLM, chạy qua `LangGraphAgent` với cờ `direct_chat=True`:
+   - Mở MCP session (`open_mcp_session`).
+   - Lọc tool chỉ gồm các tool hỏi đáp được phép (`ALLOWED_DIRECT_CHAT_TOOLS`: `describe_dataset`, `get_dataset_rows`, `artifact_get`). Không cung cấp và không cho phép `send_to_agent`, `create_chart`, `save_report`.
+   - Kiểm soát tham số tool: giới hạn `artifact_id` và `dataset_id` về các ID đã hiện diện trong ngữ cảnh (lịch sử, tóm tắt hoặc phát hiện trong lượt).
+   - Chạy graph LangGraph, qua Jev quality gate dùng tiêu chí grounded QA (không đòi chart/report ID hay số liệu khi nguồn không có). Nếu Jev không khả dụng, vẫn trả lời nhưng đánh dấu `partial` cùng warning `QUALITY_GATE_UNAVAILABLE`; nếu draft bị từ chối sau lần sửa, trả `rejected` mà không phát draft đó.
+   - Đầu ra cuối tại node `finalize` được đóng gói thành envelope `AgentReport@1` chuẩn; câu trả lời đạt gate dùng `state: completed`, còn draft bị Jev từ chối sau lần sửa dùng `state: rejected` kèm error. Direct chat hiện không tạo artifact nên `artifact_refs: []`.
 
 ## 3. Graph (`graph.py`) — các node
 
@@ -161,16 +160,8 @@ id, artifact, giới hạn không ghi rõ số từ trong code — số từ n�
 quan tới `sanitizeFinalAnswer` (đó là hàm của Orchestrator trong `analytics.ts`, không áp dụng
 cho Report).
 
-## 9. Điều còn open / cần xác nhận thêm
+## 9. Điều đã chốt theo spec.md (30/09/2026)
 
-- `task-contract-v0.1.md` (`ReportStepSpec`, `upstream_status`, `run_id`, `snapshot_refs`,
-  `semantic_config_version`...) mô tả một luồng Orchestrator → Report dạng structured task spec.
-  Không thấy field nào trong số đó trong code hiện tại: Report nhận input qua `ctx.history` (hội
-  thoại tự nhiên, message bắt đầu bằng `[from: user]` hoặc `[from: <agent>]`, xem
-  `prompts/system.md` mục "How messages reach you"), không nhận một object `ReportStepSpec` có
-  cấu trúc. Cần Orchestrator/Data team xác nhận đây là thay đổi kiến trúc đã chốt (bỏ StepSpec,
-  dùng tin nhắn tự do qua MCP `send_to_agent`) hay task-contract vẫn còn dự định áp dụng sau.
-- Thứ tự gọi `data → compare + insight → visualize → report` (ghi trong `TEAM_AGENT_A.md`) không
-  nằm trong code của Report — Report chỉ phản ứng theo nội dung message nó nhận được từ
-  `send_to_agent`; thứ tự đó do Orchestrator quyết định (`runAnalyticsWorkflow` cũ hoặc logic
-  tương đương ở Orchestrator Python, chưa đọc trong task này).
+- Contract runtime chính thức cho Orchestrator là `StepSpec@1` operation `draft_report`, catalog `contracts/vdagent_contracts/catalogs/report.json` và artifact `report@1` (WS6). `task-contract-v0.1.md` là tài liệu draft cũ, không dùng làm contract runtime.
+- Phản hồi worker ở cả hai chế độ (StepSpec và direct chat) đều chuẩn hóa theo `AgentReport@1` envelope (`render_agent_report`).
+- Trực quan hóa và Dashboard/PDF: Report Agent embed biểu đồ qua `{{chart_spec:...}}` và xuất artifact `report@1` cùng markdown; việc render PDF và Dashboard thuộc trách nhiệm phối hợp của Backend/Frontend. Chi tiết triển khai xem tại [spec.md](spec.md).
