@@ -122,6 +122,7 @@ export function explainWarning(warning: string): WarningView {
     SYNTHETIC_SOURCE: `Trường ${target} được ghi nhận là dữ liệu mô phỏng.`,
     BLOCKED: `${target} đang chờ quyết định nghiệp vụ nên chưa áp dụng.`,
     PEER_AREA_UNAVAILABLE: `${target} căn ứng viên bị loại vì thiếu diện tích thực.`,
+    QUALITY_GATE_UNAVAILABLE: "Cổng kiểm tra chất lượng đang tạm thời không kết nối được.",
   };
   return { code, target, text: known[code] ?? warning };
 }

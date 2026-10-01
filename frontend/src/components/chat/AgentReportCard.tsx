@@ -1,5 +1,6 @@
 import type { AgentReportView, StepSpecView } from "../../ui/agentReport";
 import { explainWarning, reportTone } from "../../ui/agentReport";
+import { MarkdownText } from "../Markdown";
 
 const TONE_LABEL = { ok: "Hoàn tất", partial: "Hoàn tất một phần", error: "Không hoàn thành", ask: "Cần bạn chọn" } as const;
 const STATE_LABEL: Record<string, string> = { rejected: "Bị từ chối", canceled: "Đã hủy", failed: "Không hoàn thành" };
@@ -17,7 +18,7 @@ function RawJson({ raw }: { raw: string }) {
   );
 }
 
-/** What an agent answered an Orchestrator step, as a card: state, artifacts, limitations, error or question. */
+/** Human-readable answer first; machine contract and provenance remain available as collapsed details. */
 export function AgentReportCard({ report, raw }: { report: AgentReportView; raw: string }) {
   const tone = reportTone(report);
   const label = tone === "error" ? (STATE_LABEL[report.state] ?? TONE_LABEL.error) : TONE_LABEL[tone];
@@ -25,15 +26,13 @@ export function AgentReportCard({ report, raw }: { report: AgentReportView; raw:
     <div className={`agent-card agent-card-${tone}`}>
       <div className="card-head">
         <span className={`card-badge card-badge-${tone}`}>{label}</span>
-        {report.step_id && <span className="card-chip mono">{report.step_id}</span>}
-        {report.snapshot_id && (
-          <span className="card-chip mono" title="Kỳ chốt và phiên bản cấu hình đã ghim">
-            {report.snapshot_id}
-            {report.semantic_config_version ? ` · ${report.semantic_config_version}` : ""}
-          </span>
-        )}
-        {report.data_confidence && <span className="card-chip">độ tin cậy {report.data_confidence}</span>}
       </div>
+
+      {report.summary && (
+        <div className="agent-report-summary">
+          <MarkdownText text={report.summary} />
+        </div>
+      )}
 
       {report.error && (
         <div className="card-error">
@@ -56,44 +55,46 @@ export function AgentReportCard({ report, raw }: { report: AgentReportView; raw:
         </div>
       )}
 
-      {report.artifact_refs.length > 0 && (
-        <div className="card-section">
-          <div className="card-title">Gói kết quả đã lưu</div>
-          <ul className="card-artifacts">
-            {report.artifact_refs.map((r) => (
-              <li key={`${r.artifact_id}@${r.version}`}>
-                <span className={`card-type card-type-${r.artifact_type}`}>{r.artifact_type}</span>
-                <span className="mono">
-                  {r.artifact_id}@{r.version}
-                </span>
-                {r.content_hash && (
-                  <span className="muted mono" title={r.content_hash}>
-                    {shortHash(r.content_hash)}
+      <details className="card-raw">
+        <summary>Nguồn và chi tiết</summary>
+        <div className="card-head">
+          {report.step_id && <span className="card-chip mono">Bước {report.step_id}</span>}
+          {report.snapshot_id && (
+            <span className="card-chip mono" title="Kỳ chốt và phiên bản cấu hình đã ghim">
+              {report.snapshot_id}
+              {report.semantic_config_version ? ` · ${report.semantic_config_version}` : ""}
+            </span>
+          )}
+          {report.data_confidence && <span className="card-chip">độ tin cậy {report.data_confidence}</span>}
+        </div>
+        {report.artifact_refs.length > 0 && (
+          <div className="card-section">
+            <div className="card-title">Nguồn dữ liệu</div>
+            <ul className="card-artifacts">
+              {report.artifact_refs.map((r) => (
+                <li key={`${r.artifact_id}@${r.version}`}>
+                  <span className={`card-type card-type-${r.artifact_type}`}>{r.artifact_type}</span>
+                  <span className="mono">
+                    {r.artifact_id}@{r.version}
+                    {r.content_hash ? ` · ${shortHash(r.content_hash)}` : ""}
                   </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {report.warnings.length > 0 && (
-        <div className="card-section">
-          <div className="card-title">Hạn chế cần biết</div>
-          <ul className="card-warnings">
-            {report.warnings.map((w) => {
-              const view = explainWarning(w);
-              return (
-                <li key={w} title={w}>
-                  <span className="card-code mono">{view.code}</span> {view.text === w ? "" : view.text}
                 </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
-
-      <RawJson raw={raw} />
+              ))}
+            </ul>
+          </div>
+        )}
+        {report.warnings.length > 0 && (
+          <div className="card-section">
+            <div className="card-title">Giới hạn dữ liệu</div>
+            <ul className="card-warnings">
+              {report.warnings.map((warning) => (
+                <li key={warning}>{explainWarning(warning).text}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <RawJson raw={raw} />
+      </details>
     </div>
   );
 }
