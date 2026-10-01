@@ -36,12 +36,28 @@ REVIEW: dict[str, str] = {
     "what you made (ids) and what it shows.",
 }
 
+DIRECT_CHAT_REVIEW: dict[str, str] = {
+    "none": "Improve the answer to address the user's question using only the supplied conversation and tool results. Do not require a new chart or saved report.",
+    "missing_part": "Address every part that can be answered from the supplied sources. Clearly state which requested details are unavailable; do not create a chart or report.",
+    "unsupported_claim": "Remove or qualify claims that are not supported by the supplied conversation or tool results. Do not invent values, causes, or artifact ids.",
+    "no_numbers": "Quote relevant values with units only when they appear in the sources. If a requested value is absent, say it is unavailable instead of guessing.",
+    "unclear": "Rewrite as a concise, clear Vietnamese answer that separates verified facts from missing information.",
+}
+
 _CRITERIA: dict[str, str] = {
     "none": "No real weakness: it answers the whole request with ids and numbers.",
     "missing_part": "A part of the request (a period, segment, chart or report) is not addressed.",
     "unsupported_claim": "It cites ids not in `artifacts` or states numbers nothing in the turn backs.",
     "no_numbers": "It lacks the key numbers or the ids of what was created.",
     "unclear": "It is hard to follow or badly structured.",
+}
+
+_DIRECT_CHAT_CRITERIA: dict[str, str] = {
+    "none": "The answer addresses the question using only supplied context/tool results, preserves relevant units and caveats, and says when the sources do not contain an answer.",
+    "missing_part": "It omits a part that is answerable from supplied sources or fails to explain which requested information is unavailable.",
+    "unsupported_claim": "It introduces a number, cause, fact, or artifact id that is not supported by supplied context/tool results.",
+    "no_numbers": "It omits a relevant source value requested by the user, or invents a number instead of saying the value is unavailable.",
+    "unclear": "It is hard to understand or does not distinguish verified information from uncertainty.",
 }
 
 QUESTIONS: dict[str, Any] = {
@@ -61,6 +77,22 @@ QUESTIONS: dict[str, Any] = {
     },
 }
 
+DIRECT_CHAT_QUESTIONS: dict[str, Any] = {
+    "acceptable": {
+        "type": "noul",
+        "instructions": "Is this grounded answer acceptable to send to the requester?",
+        "criteria": {
+            "true": "It answers from the supplied conversation/tool results, preserves relevant source values and caveats, and explicitly says when information is unavailable.",
+            "false": "It invents or overstates a claim, omits an answerable part, or does not disclose missing evidence.",
+        },
+    },
+    "problem": {
+        "type": "choice",
+        "instructions": "What is the main weakness of this grounded answer?",
+        "criteria": _DIRECT_CHAT_CRITERIA,
+    },
+}
+
 
 @dataclass(frozen=True)
 class Verdict:
@@ -75,6 +107,10 @@ class Verdict:
     @property
     def review(self) -> str:
         return REVIEW.get(self.problem or "none", REVIEW["none"])
+
+    @property
+    def direct_chat_review(self) -> str:
+        return DIRECT_CHAT_REVIEW.get(self.problem or "none", DIRECT_CHAT_REVIEW["none"])
 
 
 class Judge(Protocol):
@@ -98,10 +134,22 @@ class JevJudge:
         self._transport = transport
 
     async def assess(self, request: str, answer: str, artifacts: Sequence[str]) -> Verdict:
+        return await self._assess(request, answer, artifacts, QUESTIONS)
+
+    async def assess_direct(self, request: str, answer: str, artifacts: Sequence[str]) -> Verdict:
+        return await self._assess(request, answer, artifacts, DIRECT_CHAT_QUESTIONS)
+
+    async def _assess(
+        self,
+        request: str,
+        answer: str,
+        artifacts: Sequence[str],
+        questions: dict[str, Any],
+    ) -> Verdict:
         body = {
             "model": self._model,
             "state": {"request": request, "answer": answer, "artifacts": list(artifacts)},
-            "questions": QUESTIONS,
+            "questions": questions,
         }
         try:
             async with httpx.AsyncClient(timeout=self._timeout_s, transport=self._transport) as client:

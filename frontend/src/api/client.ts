@@ -1,5 +1,6 @@
 import type {
   AgentDTO,
+  ArtifactEnvelopeDTO,
   CancelTaskResponseDTO,
   ChartDTO,
   ChartSpecDTO,
@@ -144,6 +145,10 @@ export class ApiClient {
 
   getChartSpec(id: string, version: number): Promise<ChartSpecDTO> {
     return this.request("GET", `/api/chart-specs/${seg(id)}/${version}`);
+  }
+
+  getArtifact(id: string, version: number): Promise<ArtifactEnvelopeDTO> {
+    return this.request("GET", `/api/artifacts/${seg(id)}/${version}`);
   }
 
   listReports(): Promise<ReportSummaryDTO[]> {

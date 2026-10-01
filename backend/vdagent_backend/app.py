@@ -34,7 +34,9 @@ from vdagent_backend.persistence import create_database, migrate, sqlite_url
 from vdagent_backend.plugins import PluginManager
 from vdagent_backend.runtime import Engine
 from vdagent_backend.scopes import UserScopes
-from vdagent_backend.warehouse import RealEstateWarehouse, Warehouse
+from vdagent_backend.warehouse import RealEstateWarehouse, Warehouse, startup_lines
+
+log = logging.getLogger(__name__)
 
 
 def create_app(cfg: Config | None = None) -> FastAPI:
@@ -49,17 +51,15 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     db = create_database(url)
     bus, tokens = EventBus(), TokenRegistry()
     artifacts = ArtifactService(db)
-    tools = McpTools(
-        artifacts,
-        Warehouse(cfg.warehouse_db),
-        re_warehouse=RealEstateWarehouse(cfg.re_warehouse_db) if cfg.re_warehouse_db else None,
-        scopes=UserScopes(db),
-    )
+    re_warehouse = RealEstateWarehouse(cfg.re_warehouse_db) if cfg.re_warehouse_db else None
+    tools = McpTools(artifacts, Warehouse(cfg.warehouse_db), re_warehouse=re_warehouse, scopes=UserScopes(db))
     mcp = McpServer(tools, tokens)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await asyncio.to_thread(migrate, url)
+        for line in startup_lines(re_warehouse.source) if re_warehouse else ["Warehouse backend: none (re_warehouse_db unset)"]:
+            log.info(line)
         plugins = PluginManager()
         registry = await plugins.load(cfg.plugins)
         engine = Engine(cfg, db, bus, tokens, registry, on_interrupted=artifacts.interrupt_run)

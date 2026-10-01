@@ -82,6 +82,15 @@ export function useChartSpec(id: string, version: number) {
   });
 }
 
+export function useArtifactEnvelope(id: string, version: number) {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.artifact(id, version),
+    queryFn: () => api.getArtifact(id, version),
+    staleTime: Infinity,
+  });
+}
+
 export function useReports() {
   const api = useApi();
   return useQuery({ queryKey: queryKeys.reports, queryFn: () => api.listReports() });

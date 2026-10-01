@@ -55,6 +55,14 @@ def test_prompt_names_agent_and_operation_as_separate_fields() -> None:
     assert '"agent": "data", "operation": "fetch_units"' in prompt and "data.fetch_units" not in prompt
 
 
+def test_prompt_only_offers_operations_the_unit_workflow_can_compile() -> None:
+    from vdagent_contracts.catalogs import load_catalog
+    from vdagent_orchestrator.llm_planner import system_prompt
+
+    prompt = system_prompt({a: load_catalog(a) for a in ("data", "insight", "compare", "chart", "report")})
+    assert "aggregate_metrics" not in prompt
+
+
 def _with(**changes: Any) -> str:
     plan = json.loads(json.dumps(GOLDEN))
     for path, value in changes.items():
@@ -112,21 +120,34 @@ async def test_llm_plan_runs_on_the_existing_executor_with_b2_b3_in_parallel(mon
     (_with(B2__agent="pricing"), "UNSUPPORTED_AGENT"),
     (_with(B2__agent="orchestrator"), "UNSUPPORTED_AGENT"),
     (_with(B3__operation="compare_everything"), "UNSUPPORTED_OPERATION"),
+    (_with(B1__operation="aggregate_metrics"), "UNSUPPORTED_OPERATION"),
     (_with(B1__agent="data.fetch_units", B1__operation="data.fetch_units"), "UNSUPPORTED_AGENT"),  # seen live: no guessing
     (_with(B1__depends_on=["B4"]), "CYCLE"),
     (_with(B4__depends_on=["B2", "B9"]), "UNKNOWN_DEPENDENCY"),
     (_with(B2__depends_on=[]), "LLM_PLAN_INVALID_DEPENDENCY"),
     (_with(B4__depends_on=["B1"]), "LLM_PLAN_INVALID_DEPENDENCY"),
+    (_with(B4__depends_on=["B2"]), "LLM_PLAN_INVALID_DEPENDENCY"),
+    (_with(B5__depends_on=["B2", "B3"]), "LLM_PLAN_INVALID_DEPENDENCY"),
+    (_with(B5__depends_on=["B2", "B4"]), "LLM_PLAN_INVALID_DEPENDENCY"),
     (_with(B2__spec={"tasks": ["T9"]}), "LLM_PLAN_MALFORMED"),  # the LLM may not write specs
     (json.dumps({**GOLDEN, "steps": GOLDEN["steps"][:4]}), "LLM_PLAN_MISSING_STEP"),  # report asked, no report step
     (json.dumps({**GOLDEN, "steps": GOLDEN["steps"][1:]}), "LLM_PLAN_MISSING_STEP"),  # no data step
     (json.dumps({**GOLDEN, "intent": {**GOLDEN["intent"], "subject_unit_code": "B15-02"}}), "LLM_PLAN_UNGROUNDED"),
     (json.dumps({**GOLDEN, "snapshot_id": "latest"}), "LLM_PLAN_MALFORMED"),  # pins are code's, not the LLM's
+    (json.dumps({**GOLDEN, "intent": {**GOLDEN["intent"], "in_scope": "true"}}), "LLM_PLAN_MALFORMED"),
+    (json.dumps({**GOLDEN, "intent": {**GOLDEN["intent"], "wants": []}}), "LLM_PLAN_MALFORMED"),
+    (json.dumps({**GOLDEN, "intent": {**GOLDEN["intent"], "wants": ["explain"]}}), "LLM_PLAN_UNEXPECTED_STEP"),
 ])
 async def test_unsafe_llm_output_is_rejected(reply: str, code: str) -> None:
     with pytest.raises(PlanError) as err:
         await _plan(reply)
     assert err.value.code == code
+
+
+async def test_llm_cannot_choose_one_of_several_units_without_clarification() -> None:
+    with pytest.raises(PlanError) as err:
+        await _plan(json.dumps(GOLDEN), question=QUESTION + " Also consider B15-02.")
+    assert err.value.code == "LLM_PLAN_UNGROUNDED"
 
 
 @pytest.mark.parametrize("reply", ["not json", _with(B2__agent="pricing"), _with(B1__depends_on=["B4"])])

@@ -388,3 +388,41 @@ The producer never calculates a report number. Before `save_report` and `artifac
 > WS7 F-02 resolved: verify artifacts with `artifact_store.verify`; a SUPERSEDED version verifies against its status at write time, and hashes are never rewritten. F-08: Data artifacts carry no out-of-scope row counts (`hidden_rows` removed).
 
 > `run_state@1`: `payload.plan.provenance` (planner, model, prompt_version, llm_calls, latency_ms, llm_plan) is present only for LLM-planned runs. Deterministic plans are recorded exactly as before.
+
+## 10. `insight_evidence@2` and the canonical peer truth (IMPLEMENTED, VERIFIED, 2026-10-01)
+
+Code: [vdagent_contracts/insight_evidence.py](../../contracts/vdagent_contracts/insight_evidence.py) (models, metric
+catalog, `parse_evidence`, `comparison_facts`, `peer_bindings`, `peer_claims`); producer
+[vdagent_insight/evidence.py](../../agents/insight/vdagent_insight/evidence.py); consumers Chart
+([stepspec.py](../../agents/chart/vdagent_chart/stepspec.py)), Report ([compose.py](../../agents/report/vdagent_report/compose.py)),
+Orchestrator answer ([answer.py](../../agents/orchestrator/vdagent_orchestrator/answer.py)).
+
+**Ownership.** Data owns business facts; **Compare owns every peer/comparison fact** (explicit peer set in
+`peer_definition`, numbers in `comparison@1`); Insight interprets; Chart and Report present. The DW mart's
+`price_spread_vs_peer_pct` / `peer_n` are measured on the mart's own peer group, which is not published (the repo has no
+membership for it, `peer_n` is null in the DATA team's warehouse, and the VGP pipeline's 2-tier rule does not reproduce
+the stored value): they are never user-facing. In the integrated DAG Insight flags such candidates `PEER_BY_COMPARE`,
+never narrates their peer numbers (LLM not offered them, validation rejects them, a per-cause `peer_free_template` in
+TEMPLATE mode) and does not publish them as evidence.
+
+**`payload.evidence` of every `insight` artifact** (built from the deterministic candidates, never the narration):
+
+| Field | Meaning |
+|---|---|
+| `schema_version` | `insight_evidence@2` |
+| `snapshot_id`, `semantic_config_version` | equal to the step's pins |
+| `dataset_ref` | the Data `dataset` every `source_ref` points into, pinned by `content_hash` |
+| `candidates_ref` | Insight's own `insight_candidates` record (id + hash) |
+| `findings[]` | `finding_id` (candidate id), `insight_id` (narrated insight or null), `insight_type`, `cause_code`, `level`, `subject{type,id,label}`, `severity_rank`, `attribution_score`, `confidence`, `metrics[]`, `visual_intents[]`, `limitations[]` |
+| `metrics[]` | `metric_id` (`<table>.<field>`), `slot`, `label`, `value_exact`, `unit`, `role` (context/primary/supporting), `source_ref` (`<dataset>@<v>#/tables/<t>/<row>/<field>`, null when computed), `chartable`, `not_chartable_reason`. **A mart peer figure is rejected.** |
+| `visual_intents[]` | `current_value`/`kpi_card` on chartable metrics; `target_vs_peer`/`bar` on Compare's metric with `requires: comparison` when the finding stands on a peer comparison |
+
+**Comparison facts** (no new schema: `comparison@1` rows read by `comparison_facts`): `comparison_id`, `metric_id`
+(`sourceRef`), `metric`, `unit`, `subject_value`, `peer_value`, `peer_stat`, `delta`, `delta_pct`, `peer_count`,
+`peer_definition`, `snapshot_id`, `semantic_config_version`, `refs` (JSON pointers of each value). `peer_bindings` binds
+each narrated finding's `target_vs_peer` requirement to the run's fact by `metric_id`; Chart draws it, Report and the
+answer state it with those pointers. Without a comparison the requirement is stated, no number is invented.
+
+**Defensive check.** `peer_claims` finds a narrated peer number (stale or malformed artifact): Report and the answer
+withhold that sentence and report `PEER_BASIS_DIFFERS:<insight>:<slot>=<value>`; an @1 evidence block or one carrying a
+peer figure is `INSIGHT_EVIDENCE_INVALID` for Chart. In a valid run `PEER_BASIS_DIFFERS` does not occur.

@@ -167,6 +167,11 @@ async def test_user_context_comes_from_the_backend_only(tools: McpTools) -> None
 # ---- real-estate DW (scoped; Data only) -------------------------------------------------------------------------------
 
 
+async def test_re_run_query_says_which_warehouse_answered(tools: McpTools, re_db: str) -> None:
+    err, result = await call(tools, who("data"), "re_run_query", sql=CANDIDATES)
+    assert not err and result["warehouse"] == {"backend": "sqlite", "file": Path(re_db).name}
+
+
 async def test_re_run_query_rejects_non_select_and_other_agents(tools: McpTools) -> None:
     for sql in ("DELETE FROM dim_unit_master", "SELECT 1; DROP TABLE dim_unit_master", "PRAGMA table_info(x)"):
         err, _ = await call(tools, who("data"), "re_run_query", sql=sql)

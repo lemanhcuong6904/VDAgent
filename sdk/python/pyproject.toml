@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools==78.1.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "team6-agent-platform"
+version = "0.1.0"
+description = "Dependency-free Python SDK for the Team 6 cAi AgentRunner protocol"
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent_platform*"]
+
+[tool.setuptools.package-data]
+agent_platform = ["schemas/*.schema.json"]

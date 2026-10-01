@@ -1,8 +1,8 @@
 # VDaAgent
 
 Trợ lý phân tích gồm 6 agent, dành cho Sales Ops bất động sản. Bạn đặt câu hỏi bằng ngôn ngữ tự nhiên, ví dụ "Vì sao căn
-A12-08 bán chậm? So sánh với các căn tương đồng, vẽ biểu đồ và xuất báo cáo.". Hệ thống trả về câu trả lời có trích dẫn,
-biểu đồ và báo cáo 6 phần.
+MAS-U03832 bán chậm? So sánh với các căn tương đồng, vẽ biểu đồ và xuất báo cáo.". Hệ thống đọc **kho dữ liệu thật**
+(PostgreSQL của team DATA) và trả về câu trả lời có trích dẫn, biểu đồ và báo cáo 6 phần.
 
 - **Các agent:** Orchestrator, Data, Insight, Compare, Chart và Report. Chúng là plugin chạy trong cùng một tiến trình
   Backend, và chỉ giao tiếp qua engine của Backend cùng một artifact store dùng chung.
@@ -33,103 +33,110 @@ flowchart LR
 - Chi tiết: [docs/architecture/MULTI_AGENT_SYSTEM_ARCHITECTURE.md](docs/architecture/MULTI_AGENT_SYSTEM_ARCHITECTURE.md).
 - Trạng thái hiện tại và các blocker: [AGENTS.md](AGENTS.md).
 
-## Chạy POC (LLM bật) trong 3 bước
+## Quick Start
 
-**Cần có:** Docker kèm Compose v2 (`docker compose version`), GNU make, và một API key tương thích OpenAI.
-**Không cần** Node/npm hay Python trên máy: image tự build frontend, và một container phục vụ cả UI lẫn API.
+**Cần có:** Docker với Compose v2, GNU make, một API key tương thích OpenAI và **kho dữ liệu PostgreSQL** (xem bên dưới).
+Không cần Python hay Node trên máy.
 
-### Bước 1: clone
+### 1. Clone
 
 ```bash
 git clone git@github.com:HOANGQUANGMINH371195/Team_6_cAi.git
 cd Team_6_cAi
 ```
 
-### Bước 2: điền key
+### 2. Configure
 
 ```bash
-make docker-env     # tạo agents/<name>/.env từ .env.example (không ghi đè file đã có)
+cp .env.example .env
 ```
 
-Mở và điền các file sau. Mọi `.env` đều được gitignore, mount chỉ đọc vào container, không bao giờ vào image.
+Điền vào `.env`:
 
-| File | Cần điền | Ghi chú |
+| Biến | Bắt buộc? | Ghi chú |
 |---|---|---|
-| `agents/orchestrator/.env` | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `LLM_MODEL` | LLM planner. Đã kiểm chứng với `gpt-4o-mini`. |
-| `agents/data/.env`, `agents/report/.env` | cùng 3 biến trên | Thiếu thì plugin không load. Trên đường demo không gọi LLM. |
-| `agents/insight/.env` | `OPENAI_API_KEY` và/hoặc `GEMINI_API_KEY` | Không có key thì Insight diễn đạt bằng template. |
-| `agents/compare/.env`, `agents/chart/.env` | không bắt buộc | Chỉ cần file tồn tại. |
+| `OPENAI_API_KEY` | **bắt buộc** | key của endpoint tương thích OpenAI |
+| `OPENAI_BASE_URL` | **bắt buộc** | đã điền sẵn `https://api.openai.com/v1` |
+| `LLM_MODEL` | **bắt buộc** | đã điền sẵn `gpt-4o-mini` (đã kiểm chứng) |
+| `VDAGENT_RE_WAREHOUSE_DB` | **bắt buộc** | DSN của kho thật: `postgresql://vdagent_reader:<mật khẩu>@<host>:<port>/<db>`, nhìn **từ trong Docker** |
+| `ORCH_SNAPSHOT_ID` | **bắt buộc** | đã điền sẵn `SNAP-20260630-01`; phải là snapshot APPROVED trong kho |
+| `ORCH_SEMANTIC_VERSION` | **bắt buộc** | đã điền sẵn `3.1.0`; phải khớp snapshot |
+| `GEMINI_API_KEY` | tuỳ chọn | Insight dùng Gemini trước nếu có key này |
+| `VDAGENT_PORT` | tuỳ chọn | cổng của UI và API, mặc định `8000` |
 
-Không đặt biến `ORCH_*` trong `.env`. Service live tự đặt `ORCH_LLM=on`, `ORCH_SNAPSHOT_ID=SNAP-2026-09-28`,
-`ORCH_SEMANTIC_VERSION=sc-1`, `ORCH_DAG_TIMEOUT_S=300`.
+**Host trong DSN:** PostgreSQL ở máy khác thì dùng tên/IP của máy đó. PostgreSQL trên chính máy bạn thì dùng
+`host.docker.internal`, và cổng của nó phải mở cho Docker (vd `-p 172.17.0.1:5433:5432`); `127.0.0.1`/`localhost` bị
+từ chối vì trong container đó là chính container.
 
-### Bước 3: một lệnh, một URL
+**Chưa có endpoint kho thật?** Dựng bản snapshot `SNAP-20260630-01` mà team DATA giao trong `warehouse/backup/` theo
+[agents/data/README.md](agents/data/README.md#1-dựng-postgres-và-nạp-dw-một-lần) bước 1–2, rồi dùng
+`VDAGENT_RE_WAREHOUSE_DB=postgresql://vdagent_reader:<mật khẩu>@host.docker.internal:5433/cdw`.
+
+### 3. Run
 
 ```bash
-make docker-live-up
+make up
 ```
 
-Rồi mở **http://localhost:8022**.
-
-Lệnh này làm lần lượt:
-1. Tạo `.env` còn thiếu.
-2. Chạy **preflight** (`docker/check-env.sh`): chỉ in tên file và tên biến bị thiếu, không in giá trị, và dừng nếu còn thiếu.
-3. Build image và seed dữ liệu demo vào volume `vdagent_live_var`.
-4. Đợi container `healthy`, rồi in trạng thái.
-
-Lần đầu mất vài phút để build image; những lần sau khoảng 30 giây.
-
-Output cuối phải có (không bao giờ in key):
+Lần đầu mất vài phút để build image. `make up` dừng ngay với thông báo rõ ràng (không in giá trị bí mật) nếu `.env` thiếu
+biến, nếu kho không kết nối được từ Docker, hoặc nếu snapshot không có/không APPROVED trong kho. **Không bao giờ chạy
+trên kho giả.** Khi xong, lệnh in:
 
 ```
-ORCH_LLM               on
-ORCH_SNAPSHOT_ID       SNAP-2026-09-28
-ORCH_SEMANTIC_VERSION  sc-1
-health                 healthy
-agents                 orchestrator data compare insight report chart
-orchestrator: LLM planner on (model gpt-4o-mini), snapshot SNAP-2026-09-28, semantic sc-1
+Warehouse backend: PostgreSQL
+Warehouse source: host.docker.internal:5433/cdw
+Snapshot: SNAP-20260630-01 (APPROVED)
+Semantic version: 3.1.0
+agents loaded: chart compare data insight orchestrator report
+VDaAgent is up: http://localhost:8000  (UI and API)
 ```
 
-**Thử ngay:**
-1. Trên http://localhost:8022, chọn user **Alice**, click agent **orchestrator**.
-2. Dán câu sau rồi nhấn Enter:
-   ```
-   Vì sao căn A12-08 bán chậm? So sánh với các căn tương đồng, vẽ biểu đồ và xuất báo cáo.
-   ```
-3. Sau khoảng 20–30 giây: bảng B1…B5 "hoàn tất". Mở **Artifacts → Reports → "Báo cáo căn A12-08 @ SNAP-2026-09-28"**
-   để xem báo cáo 6 phần với 5 biểu đồ.
+### 4. Open
 
-| Việc | Lệnh |
-|---|---|
-| Xem lại trạng thái | `make docker-live-check` |
-| Xem log | `make docker-live-logs` |
-| Dừng (giữ dữ liệu) | `make docker-live-down` |
-| Xoá sạch (container và volume) | `make docker-live-clean` |
+UI: http://localhost:8000
+API: http://localhost:8000/api (header `X-User-Id: u_000000000001`)
 
-## Demo 4 happy case
+Thử: chọn user **Alice** (thấy dự án 100 và 400), click agent **orchestrator**, gửi
+`Vì sao căn MAS-U03832 bán chậm? So sánh với các căn tương đồng, vẽ biểu đồ và xuất báo cáo.`
+Sau khoảng 1 phút: bảng B1…B5 "hoàn tất"; báo cáo nằm ở **Artifacts → Reports**.
 
-Thao tác: chọn user **Alice**, click agent **orchestrator**, dán prompt, nhấn Enter.
+### Stop
 
-| # | Prompt | Plan do LLM lập | Kết quả cần thấy |
-|---|---|---|---|
-| HC1 | `Vì sao căn A12-08 bán chậm?` | Data → Insight | Tồn 138 ngày; "có khả năng liên quan" tới giá cao hơn peer 12,4% |
-| HC2 | `So sánh căn A12-08 với các căn tương đồng và chỉ ra những khác biệt đáng chú ý.` | Data → Compare | 72.500.000 so với 64.500.000 VND/m² (+12,40%), DOM 138 so với 61, **5 peer**, ghi chú B-11 |
-| HC3 | `Phân tích căn A12-08 và cho tôi các biểu đồ quan trọng.` | Data → [Insight ∥ Compare] → Chart | 5 id biểu đồ |
-| HC4 | `Vì sao căn A12-08 bán chậm? So sánh với các căn tương đồng, vẽ biểu đồ và xuất báo cáo.` | Data → [Insight ∥ Compare] → Chart → Report | đủ 6 agent; báo cáo 6 phần với 5 biểu đồ |
+```bash
+make down
+```
 
-- Plan do LLM lập nằm trong log: `docker compose --profile live logs backend-live | grep "llm plan accepted"`.
-- Kịch bản demo đầy đủ:
-  [docs/integration/DEMO_RUNBOOK_4_HAPPY_CASES.md](docs/integration/DEMO_RUNBOOK_4_HAPPY_CASES.md).
+Dữ liệu ứng dụng (người dùng, hội thoại, artifact) giữ trong Docker volume `vdagent_real_var`. Làm lại từ đầu:
+`make down && docker volume rm vdagent_real_var`.
+
+### Logs
+
+```bash
+make logs
+```
+
+## Câu hỏi thử trên kho thật
+
+Đã kiểm chứng 2026-10-01 trên `SNAP-20260630-01` / `3.1.0` (user **Alice**):
+
+| Prompt | Plan | Kết quả |
+|---|---|---|
+| `Vì sao căn MAS-U03832 bán chậm? So sánh với các căn tương đồng, vẽ biểu đồ và xuất báo cáo.` | Data → [Insight ∥ Compare] → Chart → Report | 13 căn tương đồng; 53.449.321 so với 52.577.623 VND/m² (+1,66%); `SEVERE_PHYSICAL_DEFECT`, `LOW_SALES_INCENTIVE`; biểu đồ; báo cáo 6 phần |
+| `Vì sao căn OCP-U00005 bán chậm? So sánh với các căn tương đồng, vẽ biểu đồ và xuất báo cáo.` | như trên | Insight `DEEP_FUNNEL_DROP_OFF`; Compare chỉ còn 1 căn cùng đợt mở bán nên báo **không đủ dữ liệu so sánh** (đúng luật, không bịa nhóm) |
+
+Plan do LLM lập nằm trong log: `make logs | grep "llm plan accepted"`.
 
 ## Các mode khác
 
 | Mode | Lệnh | URL | Dùng khi |
 |---|---|---|---|
-| Offline (không cần key, planner deterministic) | `make docker-offline-up` / `-down` / `-clean` | http://localhost:8001 | demo dự phòng, regression |
-| Stack dev (`./var` trên máy, LLM bật khi có key, đã pin snapshot/semantic) | `make docker-up` / `make docker-down` | http://localhost:8000 | phát triển; demo nên dùng `make docker-live-up` |
-| Bộ acceptance (stack mới, tách biệt) | `acceptance/ws7/run.sh` (đặt `WS7_BROWSER_PYTHON` là Python có Playwright) | cổng 8021 | phải in `WS7 acceptance: PASS` |
-| Bộ test trong Docker | `make docker-test` | — | lần chạy gần nhất: 1325 pass / 29 skip / 0 fail |
-| Chạy local không dùng Docker | `uv sync`, `make reset-db`, `make backend`, rồi `cd frontend && npm install && npm run dev` | :8000 / :5173 | phát triển |
+| **Kho giả** (dữ liệu tổng hợp, căn `A12-08`; không cần key, planner deterministic) | `make mock-up` / `make mock-down` | http://localhost:8001 | test, phát triển offline; **không** phải sản phẩm |
+| Bộ acceptance trên kho giả (stack mới, tách biệt) | `acceptance/ws7/run.sh` (đặt `WS7_BROWSER_PYTHON` là Python có Playwright) | cổng 8021 | regression |
+| Bộ test trong Docker | `make docker-test` | — | không cần mạng, không cần key |
+| Chạy local không dùng Docker | `uv sync`, `make reset-db`, `make backend`, rồi `cd frontend && npm install && npm run dev` | :8000 / :5173 | phát triển; kho thật: xem [agents/data/README.md](agents/data/README.md) |
+
+Kịch bản 4 happy case trên kho giả (căn `A12-08`):
+[docs/integration/DEMO_RUNBOOK_4_HAPPY_CASES.md](docs/integration/DEMO_RUNBOOK_4_HAPPY_CASES.md).
 
 Test trên máy: `uv sync && uv run pytest -q -p no:cacheprovider`. Test frontend: `cd frontend && npm test`.
 
@@ -137,19 +144,27 @@ Test trên máy: `uv sync && uv run pytest -q -p no:cacheprovider`. Test fronten
 
 | Triệu chứng | Cách xử lý |
 |---|---|
-| `MISSING agents/<name>/.env` / `EMPTY … : <KEY>` (preflight) | Chạy `make docker-env`, điền đúng biến được nêu, rồi chạy lại `make docker-live-up`. |
-| `SNAPSHOT_REQUIRED — no snapshot configured` | Container đang chạy được tạo từ cấu hình cũ. Chạy `make docker-live-up` (hoặc `make docker-up`) để tạo lại container. |
-| `port is already allocated` | Có thứ khác đang giữ cổng 8022. Chạy `docker ps --format '{{.Names}} {{.Ports}}'`, rồi `make docker-live-clean`. |
-| `Không hoàn thành: LLM_PLAN_…` | Plan của LLM bị bước kiểm tra từ chối, nên chưa có gì chạy. Xem `make docker-live-logs \| grep "llm plan rejected"`. Gửi lại, hoặc dùng mode offline. |
-| Thiếu một agent | Thiếu biến trong `agents/<name>/.env`. Xem `make docker-live-logs \| grep failed`. |
+| `MISSING .env` / `EMPTY .env: <KEY>` | `cp .env.example .env`, điền đúng biến được nêu, rồi `make up` lại. |
+| `ERROR: Real warehouse is required. Set VDAGENT_RE_WAREHOUSE_DB in .env.` | Điền DSN PostgreSQL của kho thật. Kho giả chỉ chạy bằng `make mock-up`. |
+| `points at 127.0.0.1/localhost` | Trong Docker đó là chính container. Dùng `host.docker.internal` (PostgreSQL trên máy bạn) hoặc host thật. |
+| `ERROR: cannot reach the warehouse at …` | Sai host/cổng/mật khẩu, hoặc PostgreSQL chưa mở cổng cho Docker (vd thêm `-p 172.17.0.1:5433:5432`). |
+| `ERROR: snapshot … is not in the warehouse` / `not APPROVED` / `semantic version` | Sửa `ORCH_SNAPSHOT_ID` / `ORCH_SEMANTIC_VERSION` trong `.env` theo danh sách thông báo in ra. |
+| `MISSING agents: …` | Một plugin không load. Xem `make logs \| grep failed`. |
+| `port is already allocated` | Cổng 8000 đang bận. Đặt `VDAGENT_PORT=8010` trong `.env`, rồi `make up`. |
+| `Không hoàn thành: LLM_PLAN_…` | Plan của LLM bị bước kiểm tra từ chối, nên chưa có gì chạy. Xem `make logs \| grep "llm plan rejected"`. Gửi lại. |
+| `UNIT_NOT_FOUND` | Mã căn không thuộc phạm vi của user (Alice: dự án 100, 400; Bob: 200). |
 | Gửi xong không thấy task nào | Chưa chọn user. Chọn Alice. |
 
 ## Cần biết trước khi demo
 
-- Compare dùng **5 peer**. Bộ "golden" 7 căn của nghiệp vụ chưa có luật chọn được duyệt (**B-11**, BLOCKED).
-- Chỉ **Orchestrator** (lập plan) và **Insight** (diễn đạt) gọi LLM.
-- Metric thiếu (`discount_pct`, `inquiry_leads_30d`) được báo là không có dữ liệu, không bao giờ là 0.
-- Các phát hiện là tương quan ("có khả năng liên quan"), không phải nguyên nhân.
+- Mỗi dataset ghi rõ nguồn trong `snapshot.warehouse` (`backend: postgresql`, host, database), và nhãn dữ liệu
+  (`SNAPSHOT_STATUS_ASSUMED` cho kho thật, `SYNTHETIC_SOURCE` cho kho giả) suy ra từ nguồn thật, không từ cấu hình.
+- Kho thật không có cột trạng thái duyệt snapshot: lớp view `re` ghi `APPROVED`, nên kết quả luôn kèm
+  `SNAPSHOT_STATUS_ASSUMED`. Một số cột (`discount_pct`, `asking_price_per_m2`, …) bị lớp view che nên báo thiếu
+  (xem [agents/data/README.md](agents/data/README.md#giới-hạn-đã-biết)).
+- Luật chọn căn tương đồng của Compare (cùng loại căn, cùng đợt mở bán, diện tích ±10%, cùng nhóm hướng) chưa được
+  nghiệp vụ duyệt (**B-11**); nhóm nhỏ hơn mức tối thiểu thì Compare báo không đủ dữ liệu.
+- Metric thiếu được báo là không có dữ liệu, không bao giờ là 0. Các phát hiện là tương quan, không phải nguyên nhân.
 - **Chưa sẵn sàng production.** Danh tính người dùng chỉ là header demo `X-User-Id` (F-05, BLOCKED); xem
   [docs/integration/AUTH_DESIGN.md](docs/integration/AUTH_DESIGN.md).
 
@@ -170,7 +185,7 @@ Test trên máy: `uv sync && uv run pytest -q -p no:cacheprovider`. Test fronten
 - Thêm agent: copy `agents/_template` thành `agents/<name>` (đổi `agent_template/` thành `vdagent_<name>/`); thêm vào
   `[tool.uv.workspace].members`, `[tool.basedpyright].extraPaths`, `dependencies` và `[tool.uv.sources]` của
   `pyproject.toml` gốc rồi `uv sync`; liệt kê `- module: vdagent_<name>` kèm `mcp_tools` trong cả hai file config; với
-  Docker thì copy `pyproject.toml` của nó trong `Dockerfile.python` và mount `.env` trong `docker-compose.yml`.
+  Docker thì copy `pyproject.toml` của nó trong `Dockerfile.python`; biến môi trường của nó đặt trong `.env` gốc.
 - Backend (kiến trúc mới từ `main`): `runtime/` (engine), `http/` (REST + SSE), `mcp/` (`catalog.py` + `handlers.py`),
   `persistence/` (SQLAlchemy Core + Alembic), `artifacts/`, `conversations/`. Contract (`StepSpec@1`, `AgentReport@1`,
   envelope, catalog) nằm trong `contracts/vdagent_contracts/`.

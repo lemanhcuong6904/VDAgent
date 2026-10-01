@@ -512,8 +512,8 @@ class Engine:
             self._publish.invocation(row)
         if run.parent is not None:
             self._calls.deliver(run, f"error: {run.agent} failed: {reason}")
-        else:
-            await self._finish_task(run.task_id, "failed")
+        else:  # a crashed or timed-out root run is a failed outcome too (WS7 F-03)
+            await self._finish_task(run.task_id, "failed", "failed")
 
     async def _finish_task(self, task_id: str, status: str, outcome: str | None = None) -> None:
         if task_id in self._cancelled:

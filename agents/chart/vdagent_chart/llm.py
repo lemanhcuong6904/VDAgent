@@ -47,6 +47,14 @@ class OpenAIVisualReasoner:
                 "visual_question must be an object with type and reason. candidates must be chart_type/reason pairs. "
                 "selection.chart_type must be one allowed value or null. "
                 "Encoding fields must come from the provided artifacts only. "
+                "Presentation must include a business-readable title and subtitle, plus axes.x.title and axes.y.title "
+                "when the chart has axes. The title must name the subject, metric, and comparison or meaning when available. "
+                "Axis title objects should use {format:'plain', value:'...'} or "
+                "{format:'math', value:'$...$'} for metrics such as price per square meter, DOM, deltas, or ratios. "
+                "Prefer concise Vietnamese labels and LaTeX/MathJax syntax for units and formulas where helpful. "
+                "Never wrap a full Vietnamese prose label in '$...$'; use plain format for prose and math format only for formulas. "
+                "If the chart has multiple series, include presentation.legend with a concise title and an items map from raw series values or measure fields to business labels. "
+                "If the chart has one series, omit legend or keep it optional. Avoid raw field names such as value, label, dom, net_asking_price_per_m2 in visible titles, axes, and legends. "
                 "Do not invent fields, do not change data values, do not generate Plotly code."
             ),
             prompt,
@@ -140,13 +148,14 @@ class OpenAIVisualReasoner:
         value = await self._complete_json(
             (
                 "You are the mock LLM Presentation Agent for a Chart Agent demo. Return only JSON. "
-                "Write a business-readable chart presentation with title and subtitle. "
-                "The title must describe what the chart means, not just the chart type. "
+                "Write a business-readable chart presentation with title, subtitle, optional axes, and optional legend. "
+                "The title must describe what the chart means, not just the chart type; include the subject, metric, and benchmark when available. "
                 "Avoid generic titles such as 'Composition — VHop', 'Relationship — VHop', or 'Chart'. "
+                "For axes, use plain Vietnamese labels unless the label is a compact formula. For legends, map raw series values to labels a Sales Ops user understands. "
                 "Use the user's intent, visual question, fields, sample records, insight, and comparison context. "
                 "Do not include causal claims unless explicitly supported by the insight payload. "
                 "Do not include PII, HTML, markdown, Plotly code, or prompt text. "
-                "Return keys: title, subtitle, optional annotations, optional axes."
+                "Return keys: title, subtitle, optional annotations, optional axes, optional legend."
             ),
             {
                 "orchestration_plan": plan,

@@ -2,13 +2,15 @@
 
 A failed run starts with "Không hoàn thành" and names the failing step and error code; a partial run says what is
 missing. Every figure comes from a comparison / insight artifact returned by a completed step and every artifact is
-cited by id. The peer set is flagged with B-11 (no approved rule for the seven golden peers).
+cited by id. The peer set is flagged with B-11 (no business-approved peer rule yet).
 """
 
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 from typing import Any
+
+from vdagent_contracts.insight_evidence import METRICS, peer_bindings, peer_claims
 
 from .dag import Plan
 from .executor import RunOutcome
@@ -35,6 +37,39 @@ def vn_number(value: Any, places: int | None = None) -> str:
 async def _payload(tools: Any, ref: dict[str, Any]) -> dict[str, Any]:
     env = await tools.call("artifact_get", {"artifact_id": ref["artifact_id"], "version": ref["version"]})
     return env["payload"]
+
+
+async def _envelope(tools: Any, ref: dict[str, Any]) -> dict[str, Any]:
+    return await tools.call("artifact_get", {"artifact_id": ref["artifact_id"], "version": ref["version"]})
+
+
+def insight_lines(insight: dict[str, Any], comparison: dict[str, Any] | None, limit: int = 3) -> tuple[list[str], list[str]]:
+    """The answer's Insight lines: peer facts only from Compare (bound by metric id through insight_evidence@2);
+    a sentence carrying its own peer number (stale/malformed artifact) is withheld and reported."""
+    stale: dict[str, list[str]] = {}
+    for insight_id, slot, value in peer_claims(insight["payload"]):
+        stale.setdefault(insight_id, []).append(f"PEER_BASIS_DIFFERS:{insight_id}:{slot}={value}")
+    bindings = peer_bindings(insight, comparison)
+    lines: list[str] = []
+    for item in (insight["payload"].get("insight") or {}).get("insights", [])[:limit]:
+        text = (item.get("claim") or {}).get("rendered_text")
+        cause = f"{item['cause_code']}: " if item.get("cause_code") else ""
+        if item.get("insight_id") in stale:
+            lines.append(f"- {cause}(câu diễn giải nêu số liệu nhóm tương đồng không phải của Compare — không hiển thị) [{insight['artifact_id']}]")
+            continue
+        if not text:
+            continue
+        peer = ""
+        for b in bindings.get(item.get("insight_id") or "", []):
+            fact = b.fact
+            if fact is None or fact.delta_pct is None:
+                peer += " Mức chênh so với nhóm tương đồng cần bước so sánh (Compare); lần chạy này không có kết quả đó."
+                continue
+            name = METRICS[fact.metric_id].label if fact.metric_id in METRICS else fact.metric
+            peer += (f" So với nhóm tương đồng của Compare ({fact.peer_count} căn): {name} chênh {vn_number(fact.delta_pct, 2)}%"
+                     f" [{fact.comparison_id.split('@')[0]}].")
+        lines.append(f"- {cause}{text}{peer} [{insight['artifact_id']}]")
+    return lines, sorted({c for codes in stale.values() for c in codes})
 
 
 async def compose_answer(plan: Plan, outcome: RunOutcome, tools: Any) -> str:
@@ -65,14 +100,12 @@ async def compose_answer(plan: Plan, outcome: RunOutcome, tools: Any) -> str:
             peers = (await _payload(tools, refs["peer_definition"])).get("peers") or []
             codes = ", ".join(p.get("entityCode", "?") for p in peers)
             lines.append(f"- Nhóm tương đồng theo luật hiện hành của Compare: {len(peers)} căn ({codes})"
-                         f" [{refs['peer_definition']['artifact_id']}]. Tập 7 căn golden chưa có luật được duyệt (B-11).")
+                         f" [{refs['peer_definition']['artifact_id']}]. Luật chọn nhóm tương đồng chưa được nghiệp vụ duyệt (B-11).")
+    peer_codes: list[str] = []
     if "insight" in refs:
-        insight = await _payload(tools, refs["insight"])
-        for item in (insight.get("insight") or {}).get("insights", [])[:3]:
-            text = (item.get("claim") or {}).get("rendered_text")
-            if text:
-                cause = f"{item['cause_code']}: " if item.get("cause_code") else ""
-                lines.append(f"- {cause}{text} [{refs['insight']['artifact_id']}]")
+        comparison = await _envelope(tools, refs["comparison"]) if "comparison" in refs else None
+        insight_text, peer_codes = insight_lines(await _envelope(tools, refs["insight"]), comparison)
+        lines += insight_text
     charts = [r for s in steps.values() if s.agent == "chart" and s.status == "completed" for r in s.output_refs]
     chart_steps = [s for s in steps.values() if s.agent == "chart"]
     if charts:
@@ -96,7 +129,7 @@ async def compose_answer(plan: Plan, outcome: RunOutcome, tools: Any) -> str:
     for s in steps.values():
         ids = ", ".join(r["artifact_id"] for r in s.output_refs) or ((s.error or {}).get("code") or "—")
         lines.append(f"| {s.step_id} | {s.agent}.{s.operation} | {STATUS_VI.get(s.status, s.status)}{' (dùng lại)' if s.reused else ''} | {ids} |")
-    limits = sorted({lim for s in steps.values() for lim in s.limitations})
+    limits = sorted({lim for s in steps.values() for lim in s.limitations} | set(peer_codes))
     if limits:
         lines.append("")
         lines.append("Hạn chế: " + ", ".join(limits))

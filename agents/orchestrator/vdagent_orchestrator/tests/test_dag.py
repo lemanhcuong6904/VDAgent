@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from vdagent_contracts.catalogs import load_catalog
+from vdagent_contracts.reports import AgentReport, parse_agent_report, render_agent_report
 from vdagent_orchestrator.dag import InputBinding, Plan, PlanError, PlanStep, validate_plan
 from vdagent_orchestrator.answer import run_and_answer
 from vdagent_orchestrator.planner import AnalysisRequest, build_plan, classify, parse_request
@@ -297,6 +298,69 @@ async def test_unknown_agent_reply_is_a_failed_step() -> None:
     del handlers["chart"]
     outcome, _ = await run(handlers, tools)
     assert outcome.steps["B4"].error["code"] == "CALL_REJECTED"
+
+
+@pytest.mark.parametrize("wants", [[{}], [[]], ["explain", {}]])
+def test_invalid_request_wants_is_a_plan_error(wants: list[Any]) -> None:
+    with pytest.raises(PlanError) as exc:
+        parse_request({"contract": "AnalysisRequest@1", "question": QUESTION, "subject_unit_code": "A12-08",
+                       "wants": wants, "snapshot_id": SNAP, "semantic_config_version": SEM})
+    assert exc.value.code == "INVALID_REQUEST"
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("run_id", "another_run"), ("snapshot_id", "another_snapshot"), ("semantic_config_version", "another_semantic"),
+])
+async def test_report_must_match_the_run_pins(field: str, value: str) -> None:
+    tools = FakeTools()
+    handlers = golden_handlers(tools)
+
+    async def wrong_report(step: dict[str, Any]) -> str:
+        result = parse_agent_report(await handlers["data"](step))
+        assert isinstance(result, AgentReport)
+        return render_agent_report("wrong metadata", result.model_copy(update={field: value}))
+
+    outcome, ctx = await run({**handlers, "data": wrong_report}, tools)
+    assert outcome.steps["B1"].error["code"] == "MALFORMED_REPORT"
+    assert [agent for agent, _ in ctx.sent] == ["data"]
+
+
+@pytest.mark.parametrize(("field", "value", "code"), [
+    ("artifact_type", "comparison", "REF_TYPE_UNEXPECTED"),
+    ("status", "INVALID", "REF_STATUS_INVALID"),
+    ("status", "DRAFT", "REF_STATUS_INVALID"),
+])
+async def test_stored_artifact_must_be_usable_and_match_declared_type(field: str, value: str, code: str) -> None:
+    tools = FakeTools()
+    handlers = golden_handlers(tools)
+
+    async def wrong_artifact(step: dict[str, Any]) -> str:
+        result = parse_agent_report(await handlers["chart"](step))
+        assert isinstance(result, AgentReport)
+        for ref in result.artifact_refs:
+            tools.arts[(ref.artifact_id, ref.version)][field] = value
+        return render_agent_report("wrong artifact", result)
+
+    # Chart is terminal here: no downstream resolver can mask a missing executor check.
+    outcome, _ = await run({**handlers, "chart": wrong_artifact}, tools)
+    assert outcome.steps["B4"].status == "failed"
+    assert outcome.steps["B4"].error["code"] == code
+
+
+async def test_artifact_partial_and_limitations_reach_the_answer() -> None:
+    tools = FakeTools()
+    handlers = golden_handlers(tools)
+
+    async def partial_chart(step: dict[str, Any]) -> str:
+        result = parse_agent_report(await handlers["chart"](step))
+        assert isinstance(result, AgentReport)
+        for ref in result.artifact_refs:
+            tools.arts[(ref.artifact_id, ref.version)].update(status="PARTIAL", limitations=["CHART_DATA_MISSING"])
+        return render_agent_report("completed", result.model_copy(update={"partial": False, "warnings": []}))
+
+    outcome, ctx = await run({**handlers, "chart": partial_chart}, tools)
+    assert outcome.steps["B4"].partial is True
+    assert "CHART_DATA_MISSING" in ctx.answer
 
 
 def test_request_json_round_trip() -> None:

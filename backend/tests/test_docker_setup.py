@@ -1,5 +1,7 @@
-"""The local POC setup: compose pins every LLM-planned backend, and `docker/check-env.sh` fails fast (names only, never
-values) when an agent `.env` is missing or a required key is empty."""
+"""The Docker setup: `make up` starts the whole product against the real PostgreSQL warehouse, from the project's own
+compose file (never an unrelated `docker-compose.override.yml`), configured by one root `.env`. `docker/check-env.sh`
+fails fast (names only, never values) when that `.env`, a required key or the warehouse DSN is missing; the synthetic
+mock only runs through the explicit `make mock-up`."""
 
 from __future__ import annotations
 
@@ -12,34 +14,106 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[2]
 CHECK = REPO / "docker" / "check-env.sh"
-AGENTS = ("orchestrator", "data", "insight", "compare", "chart", "report")
-FULL = {"OPENAI_API_KEY": "sk-test-secret-value", "OPENAI_BASE_URL": "https://llm.test/v1", "LLM_MODEL": "m"}
+REQUIRED = ("OPENAI_API_KEY", "OPENAI_BASE_URL", "LLM_MODEL", "VDAGENT_RE_WAREHOUSE_DB", "ORCH_SNAPSHOT_ID",
+            "ORCH_SEMANTIC_VERSION")
+FULL = {"OPENAI_API_KEY": "sk-test-secret-value", "OPENAI_BASE_URL": "https://llm.test/v1", "LLM_MODEL": "m",
+        "VDAGENT_RE_WAREHOUSE_DB": "postgresql://vdagent_reader:pg-secret@host.docker.internal:5433/cdw",
+        "ORCH_SNAPSHOT_ID": "SNAP-20260630-01", "ORCH_SEMANTIC_VERSION": "3.1.0"}
 
 
-def _services() -> dict[str, dict]:
-    return yaml.safe_load((REPO / "docker-compose.yml").read_text())["services"]
+def _compose() -> dict:
+    return yaml.safe_load((REPO / "docker-compose.yml").read_text())
 
 
-@pytest.mark.parametrize("service", ["backend", "backend-live"])
-def test_llm_planned_backends_pin_snapshot_and_semantic(service: str) -> None:
-    env = _services()[service]["environment"]
-    assert env["ORCH_SNAPSHOT_ID"] == "SNAP-2026-09-28" and env["ORCH_SEMANTIC_VERSION"] == "sc-1"
-    assert env.get("ORCH_LLM", "on") != "off"  # the default stacks plan with the LLM
+def test_default_backend_is_the_llm_planned_product_on_8000_pinned_from_the_env() -> None:
+    backend = _compose()["services"]["backend"]
+    env = backend["environment"]
+    assert "profiles" not in backend  # `make up` needs no profile
+    assert env["ORCH_LLM"] == "on" and env["ORCH_DAG_TIMEOUT_S"] == "300"
+    assert "ORCH_SNAPSHOT_ID" not in env and "ORCH_SEMANTIC_VERSION" not in env  # from .env, checked against the DW
+    assert backend["ports"] == ["${VDAGENT_PORT:-8000}:8000"]
 
 
-def test_live_stack_serves_the_ui_and_api_on_8022() -> None:
-    live = _services()["backend-live"]
-    assert live["environment"]["ORCH_LLM"] == "on" and live["ports"] == ["8022:8000"]
+def test_default_stack_reads_the_root_env_and_keeps_data_in_its_own_volume() -> None:
+    compose = _compose()
+    for name in ("seed", "backend"):
+        service = compose["services"][name]
+        assert service["volumes"][0] == "app-var:/app/var"  # no root-owned ./var on the host
+        assert all("agents/" not in str(v) for v in service["volumes"])  # no per-agent .env bind mounts
+    assert compose["services"]["backend"]["env_file"] == [{"path": ".env", "required": True}]
+    assert compose["volumes"]["app-var"]["name"] == "vdagent_real_var"  # never the mock's demo scopes
 
 
-def _repo_with(tmp_path: Path, envs: dict[str, dict[str, str] | None]) -> Path:
+def test_the_backend_starts_only_after_the_real_warehouse_was_checked_from_inside_docker() -> None:
+    services = _compose()["services"]
+    check, backend = services["warehouse-check"], services["backend"]
+    assert check["command"] == ["python", "docker/check_warehouse.py"]
+    assert check["env_file"] == [{"path": ".env", "required": True}] and "profiles" not in check
+    assert backend["depends_on"]["warehouse-check"] == {"condition": "service_completed_successfully"}
+    for service in (check, backend):  # a PostgreSQL on the developer's machine is reachable as host.docker.internal
+        assert service["extra_hosts"] == ["host.docker.internal:host-gateway"]
+
+
+def test_the_seed_gives_real_scopes_and_never_builds_the_mock_warehouse() -> None:
+    env = _compose()["services"]["seed"]["environment"]
+    assert env["VDAGENT_SCOPE_PROFILE"] == "real" and env["SEED_RE_MOCK"] == "off"
+
+
+def test_the_live_profile_is_gone() -> None:
+    assert not {"seed-live", "backend-live"} & set(_compose()["services"])
+
+
+def _make_dry_run(target: str) -> str:
+    assert shutil.which("make")
+    return subprocess.run(["make", "-n", "-C", str(REPO), target], capture_output=True, text=True, check=True).stdout
+
+
+@pytest.mark.parametrize("target", ["up", "down", "logs", "mock-up", "mock-down"])
+def test_make_targets_use_only_the_project_compose_file(target: str) -> None:
+    lines = [line for line in _make_dry_run(target).splitlines() if "docker compose" in line]
+    assert lines and all("-f docker-compose.yml" in line for line in lines)  # never auto-merges an override
+
+
+def test_make_up_checks_the_env_then_builds_and_waits_for_health() -> None:
+    out = _make_dry_run("up")
+    assert out.index("check-env.sh") < out.index("up -d --build --wait backend")
+    assert "logs --no-log-prefix warehouse-check" in out  # a failed warehouse check is shown, not hidden
+
+
+def test_the_mock_only_starts_explicitly() -> None:
+    assert "--profile offline up -d --build --wait backend-offline" in _make_dry_run("mock-up")
+    assert "offline" not in _make_dry_run("up")
+
+
+def _seed(tmp_path: Path, seed_re_mock: str) -> list[str]:
+    bin_dir, log = tmp_path / "bin", tmp_path / "calls.log"
+    bin_dir.mkdir()
+    (bin_dir / "python").write_text(f'#!/bin/sh\necho "$*" >> {log}\n')
+    (bin_dir / "python").chmod(0o755)
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "SEED_RE_MOCK": seed_re_mock}
+    subprocess.run(["sh", str(REPO / "docker" / "seed-if-missing.sh")], cwd=tmp_path, env=env, check=True, capture_output=True)
+    return log.read_text().splitlines()
+
+
+def test_the_seed_skips_the_mock_warehouse_when_told_to(tmp_path: Path) -> None:
+    calls = _seed(tmp_path, "off")
+    assert calls == ["data/seed_warehouse.py", "data/seed_users.py"]
+
+
+def test_the_seed_still_builds_the_mock_for_the_mock_stack(tmp_path: Path) -> None:
+    assert "data/seed_re_warehouse.py" in _seed(tmp_path, "")
+
+
+def test_env_example_lists_every_required_key() -> None:
+    example = (REPO / ".env.example").read_text()
+    assert all(f"\n{key}=" in f"\n{example}" for key in REQUIRED)
+
+
+def _repo_with(tmp_path: Path, values: dict[str, str] | None) -> Path:
     root = tmp_path / "repo"
-    for agent in AGENTS:
-        (root / "agents" / agent).mkdir(parents=True)
-        (root / "agents" / agent / ".env.example").write_text("OPENAI_API_KEY=\n")
-        values = envs.get(agent, {})
-        if values is not None:
-            (root / "agents" / agent / ".env").write_text("".join(f"{k}={v}\n" for k, v in values.items()))
+    root.mkdir()
+    if values is not None:
+        (root / ".env").write_text("# comment\n" + "".join(f"{k}={v}\n" for k, v in values.items()))
     return root
 
 
@@ -49,26 +123,42 @@ def _check(root: Path) -> subprocess.CompletedProcess[str]:
 
 
 def test_complete_env_passes_without_printing_values(tmp_path: Path) -> None:
-    root = _repo_with(tmp_path, {a: FULL for a in ("orchestrator", "data", "report")} | {"insight": {"OPENAI_API_KEY": "sk-x"}})
-    result = _check(root)
+    result = _check(_repo_with(tmp_path, FULL))
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "sk-test-secret-value" not in result.stdout + result.stderr and "OK" in result.stdout
+    out = result.stdout + result.stderr
+    assert "sk-test-secret-value" not in out and "pg-secret" not in out and "OK" in result.stdout
 
 
 def test_missing_env_file_fails_with_the_fix(tmp_path: Path) -> None:
-    root = _repo_with(tmp_path, {"orchestrator": FULL, "data": FULL, "report": FULL, "chart": None})
-    result = _check(root)
-    assert result.returncode == 1 and "agents/chart/.env" in result.stdout and "make docker-env" in result.stdout
+    result = _check(_repo_with(tmp_path, None))
+    assert result.returncode == 1 and "cp .env.example .env" in result.stdout
 
 
-def test_empty_required_key_fails_naming_it_only(tmp_path: Path) -> None:
-    root = _repo_with(tmp_path, {"orchestrator": {**FULL, "OPENAI_API_KEY": ""}, "data": FULL, "report": FULL})
-    result = _check(root)
-    assert result.returncode == 1
-    assert "agents/orchestrator/.env: OPENAI_API_KEY" in result.stdout and "sk-test" not in result.stdout
+@pytest.mark.parametrize("key", REQUIRED)
+def test_empty_required_key_fails_naming_it_only(tmp_path: Path, key: str) -> None:
+    result = _check(_repo_with(tmp_path, {**FULL, key: ""}))
+    assert result.returncode == 1 and f".env: {key}" in result.stdout
+    assert "sk-test" not in result.stdout + result.stderr and "pg-secret" not in result.stdout + result.stderr
 
 
-def test_insight_without_any_key_is_a_warning_not_a_failure(tmp_path: Path) -> None:
-    root = _repo_with(tmp_path, {"orchestrator": FULL, "data": FULL, "report": FULL})
-    result = _check(root)
-    assert result.returncode == 0 and "insight" in result.stdout and "template" in result.stdout
+def test_without_a_warehouse_dsn_the_error_says_the_real_warehouse_is_required(tmp_path: Path) -> None:
+    result = _check(_repo_with(tmp_path, {**FULL, "VDAGENT_RE_WAREHOUSE_DB": ""}))
+    assert "ERROR: Real warehouse is required. Set VDAGENT_RE_WAREHOUSE_DB in .env." in result.stdout
+
+
+@pytest.mark.parametrize("dsn", ["./var/re_warehouse.db", "sqlite:///var/re_warehouse.db"])
+def test_a_sqlite_warehouse_is_refused(tmp_path: Path, dsn: str) -> None:
+    result = _check(_repo_with(tmp_path, {**FULL, "VDAGENT_RE_WAREHOUSE_DB": dsn}))
+    assert result.returncode == 1 and "postgresql://" in result.stdout
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost"])
+def test_a_loopback_warehouse_host_is_refused_with_the_docker_fix(tmp_path: Path, host: str) -> None:
+    dsn = f"postgresql://vdagent_reader:pg-secret@{host}:5433/cdw"
+    result = _check(_repo_with(tmp_path, {**FULL, "VDAGENT_RE_WAREHOUSE_DB": dsn}))
+    assert result.returncode == 1 and "host.docker.internal" in result.stdout and "pg-secret" not in result.stdout
+
+
+def test_quoted_values_count_as_set(tmp_path: Path) -> None:
+    result = _check(_repo_with(tmp_path, {k: f'"{v}"' for k, v in FULL.items()}))
+    assert result.returncode == 0, result.stdout

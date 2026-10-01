@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useUi } from "../ui/UiContext";
 import { ARTIFACT_SPLIT, artifactKind } from "../ui/artifacts";
 
-const KIND_LABEL = { dataset: "Dataset", chart: "Chart", report: "Report" } as const;
+const KIND_LABEL = { dataset: "Dataset", chart: "Chart", report: "Report", envelope: "Artifact" } as const;
 
 /** Clickable artifact id; opens the Inspector's Artifact tab. */
 export function ArtifactLink({ id, children }: { id: string; children?: ReactNode }) {

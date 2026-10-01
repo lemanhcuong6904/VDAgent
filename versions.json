@@ -1,0 +1,288 @@
+{
+  "registryVersion": 1,
+  "description": "Single source of truth for contract versions and the migration revision chain. Edit with `pnpm versions`; file names and folder order carry no version meaning.",
+  "contracts": {
+    "agent-event": {
+      "schema": "schemas/agent-event.schema.json",
+      "id": "urn:team6:schema:agent-event:v1",
+      "version": 1,
+      "generated": "src/contracts/generated/agent-event.ts",
+      "history": [
+        {
+          "version": 1,
+          "note": "Adopted into versions.json 2026-09-27"
+        }
+      ]
+    },
+    "agent-manifest": {
+      "schema": "schemas/agent-manifest.schema.json",
+      "id": "urn:team6:schema:agent-manifest:v1",
+      "version": 1,
+      "generated": "src/contracts/generated/agent-manifest.ts",
+      "history": [
+        {
+          "version": 1,
+          "note": "Adopted into versions.json 2026-09-27"
+        }
+      ]
+    },
+    "agent-protocol": {
+      "schema": "schemas/agent-protocol.schema.json",
+      "id": "urn:team6:schema:agent-protocol:v2",
+      "version": 2,
+      "generated": "src/contracts/generated/agent-protocol.ts",
+      "history": [
+        {
+          "version": 2,
+          "note": "Adopted into versions.json 2026-09-27"
+        }
+      ]
+    },
+    "agent-result": {
+      "schema": "schemas/agent-result.schema.json",
+      "id": "urn:team6:schema:agent-result:v1",
+      "version": 1,
+      "generated": "src/contracts/generated/agent-result.ts",
+      "history": [
+        {
+          "version": 1,
+          "note": "Adopted into versions.json 2026-09-27"
+        }
+      ]
+    },
+    "agent-scope": {
+      "schema": "schemas/agent-scope.schema.json",
+      "id": "urn:team6:schema:agent-scope:v1",
+      "version": 1,
+      "generated": "src/contracts/generated/agent-scope.ts",
+      "history": [
+        {
+          "version": 1,
+          "note": "Adopted into versions.json 2026-09-27"
+        }
+      ]
+    },
+    "artifact-ref": {
+      "schema": "schemas/artifact-ref.schema.json",
+      "id": "urn:team6:schema:artifact-ref:v1",
+      "version": 1,
+      "generated": "src/contracts/generated/artifact-ref.ts",
+      "history": [
+        {
+          "version": 1,
+          "note": "Adopted into versions.json 2026-09-27"
+        }
+      ]
+    },
+    "checkpoint-ref": {
+      "schema": "schemas/checkpoint-ref.schema.json",
+      "id": "urn:team6:schema:checkpoint-ref:v1",
+      "version": 1,
+      "generated": "src/contracts/generated/checkpoint-ref.ts",
+      "history": [
+        {
+          "version": 1,
+          "note": "Adopted into versions.json 2026-09-27"
+        }
+      ]
+    },
+    "evidence-ref": {
+      "schema": "schemas/evidence-ref.schema.json",
+      "id": "urn:team6:schema:evidence-ref:v1",
+      "version": 1,
+      "generated": "src/contracts/generated/evidence-ref.ts",
+      "history": [
+        {
+          "version": 1,
+          "note": "Adopted into versions.json 2026-09-27"
+        }
+      ]
+    },
+    "execution-limits": {
+      "schema": "schemas/execution-limits.schema.json",
+      "id": "urn:team6:schema:execution-limits:v1",
+      "version": 1,
+      "generated": "src/contracts/generated/execution-limits.ts",
+      "history": [
+        {
+          "version": 1,
+          "note": "Adopted into versions.json 2026-09-27"
+        }
+      ]
+    },
+    "execution-receipt": {
+      "schema": "schemas/execution-receipt.schema.json",
+      "id": "urn:team6:schema:execution-receipt:v1",
+      "version": 1,
+      "generated": null,
+      "history": [
+        {
+          "version": 1,
+          "note": "Adopted into versions.json 2026-09-27"
+        }
+      ]
+    },
+    "port-call": {
+      "schema": "schemas/port-call.schema.json",
+      "id": "urn:team6:schema:port-call:v1",
+      "version": 1,
+      "generated": "src/contracts/generated/port-call.ts",
+      "history": [
+        {
+          "version": 1,
+          "note": "Adopted into versions.json 2026-09-27"
+        }
+      ]
+    },
+    "port-result": {
+      "schema": "schemas/port-result.schema.json",
+      "id": "urn:team6:schema:port-result:v1",
+      "version": 1,
+      "generated": "src/contracts/generated/port-result.ts",
+      "history": [
+        {
+          "version": 1,
+          "note": "Adopted into versions.json 2026-09-27"
+        }
+      ]
+    },
+    "structured-error": {
+      "schema": "schemas/structured-error.schema.json",
+      "id": "urn:team6:schema:structured-error:v1",
+      "version": 1,
+      "generated": "src/contracts/generated/structured-error.ts",
+      "history": [
+        {
+          "version": 1,
+          "note": "Adopted into versions.json 2026-09-27"
+        }
+      ]
+    },
+    "usage-summary": {
+      "schema": "schemas/usage-summary.schema.json",
+      "id": "urn:team6:schema:usage-summary:v1",
+      "version": 1,
+      "generated": "src/contracts/generated/usage-summary.ts",
+      "history": [
+        {
+          "version": 1,
+          "note": "Adopted into versions.json 2026-09-27"
+        }
+      ]
+    },
+    "wait-request": {
+      "schema": "schemas/wait-request.schema.json",
+      "id": "urn:team6:schema:wait-request:v1",
+      "version": 1,
+      "generated": "src/contracts/generated/wait-request.ts",
+      "history": [
+        {
+          "version": 1,
+          "note": "Adopted into versions.json 2026-09-27"
+        }
+      ]
+    }
+  },
+  "migrations": [
+    {
+      "revision": "001_agent_memory_and_pi_sessions",
+      "downRevision": null,
+      "file": "db/migrations/001_agent_memory_and_pi_sessions.sql"
+    },
+    {
+      "revision": "002_web_workflow",
+      "downRevision": "001_agent_memory_and_pi_sessions",
+      "file": "db/migrations/002_web_workflow.sql"
+    },
+    {
+      "revision": "003_invocation_tree",
+      "downRevision": "002_web_workflow",
+      "file": "db/migrations/003_invocation_tree.sql"
+    },
+    {
+      "revision": "004_agent_memory_search",
+      "downRevision": "003_invocation_tree",
+      "file": "db/migrations/004_agent_memory_search.sql"
+    },
+    {
+      "revision": "005_agent_memory_lifecycle",
+      "downRevision": "004_agent_memory_search",
+      "file": "db/migrations/005_agent_memory_lifecycle.sql"
+    },
+    {
+      "revision": "006_platform_runtime",
+      "downRevision": "005_agent_memory_lifecycle",
+      "file": "db/migrations/006_platform_runtime.sql"
+    },
+    {
+      "revision": "007_durable_web_runs",
+      "downRevision": "006_platform_runtime",
+      "file": "db/migrations/007_durable_web_runs.sql"
+    },
+    {
+      "revision": "008_agent_message_runs",
+      "downRevision": "007_durable_web_runs",
+      "file": "db/migrations/008_agent_message_runs.sql"
+    },
+    {
+      "revision": "009_web_event_cursor",
+      "downRevision": "008_agent_message_runs",
+      "file": "db/migrations/009_web_event_cursor.sql"
+    },
+    {
+      "revision": "010_usage_outbox_claims",
+      "downRevision": "009_web_event_cursor",
+      "file": "db/migrations/010_usage_outbox_claims.sql"
+    },
+    {
+      "revision": "011_audit_events",
+      "downRevision": "010_usage_outbox_claims",
+      "file": "db/migrations/011_audit_events.sql"
+    },
+    {
+      "revision": "012_artifact_metadata",
+      "downRevision": "011_audit_events",
+      "file": "db/migrations/012_artifact_metadata.sql"
+    },
+    {
+      "revision": "013_evidence_refs",
+      "downRevision": "012_artifact_metadata",
+      "file": "db/migrations/013_evidence_refs.sql"
+    },
+    {
+      "revision": "014_terminal_receipts",
+      "downRevision": "013_evidence_refs",
+      "file": "db/migrations/014_terminal_receipts.sql"
+    },
+    {
+      "revision": "015_observability_logs",
+      "downRevision": "014_terminal_receipts",
+      "file": "db/migrations/015_observability_logs.sql"
+    },
+    {
+      "revision": "016_platform_alerts",
+      "downRevision": "015_observability_logs",
+      "file": "db/migrations/016_platform_alerts.sql"
+    },
+    {
+      "revision": "017_a2a_tasks",
+      "downRevision": "016_platform_alerts",
+      "file": "db/migrations/017_a2a_tasks.sql"
+    },
+    {
+      "revision": "449adea76816_agent_asks",
+      "downRevision": "017_a2a_tasks",
+      "file": "db/migrations/449adea76816_agent_asks.sql"
+    },
+    {
+      "revision": "450_memory_audit_retention",
+      "downRevision": "449adea76816_agent_asks",
+      "file": "db/migrations/450_memory_audit_retention.sql"
+    },
+    {
+      "revision": "b38d5594c219_artifact_owner_user",
+      "downRevision": "450_memory_audit_retention",
+      "file": "db/migrations/b38d5594c219_artifact_owner_user.sql"
+    }
+  ]
+}

@@ -47,13 +47,21 @@ class GrantedTools:
         self.artifacts = ArtifactService(db)
         self.use_re_warehouse(re_db)
 
-    def use_re_warehouse(self, path: str) -> None:
-        """Point the real-estate tools at another DW file (tamper tests)."""
+    def use_re_warehouse(self, path: str, warehouse: type[RealEstateWarehouse] = RealEstateWarehouse) -> None:
+        """Point the real-estate tools at another DW file (tamper tests), optionally served as another backend."""
         self.tools = McpTools(self.artifacts, Warehouse(self._warehouse_db, self._timeout_s),
-                              re_warehouse=RealEstateWarehouse(path, self._timeout_s), scopes=UserScopes(self.db))
+                              re_warehouse=warehouse(path, self._timeout_s), scopes=UserScopes(self.db))
 
     async def call(self, identity: McpIdentity, name: str, args: dict[str, Any]) -> types.CallToolResult:
         return await self.tools.call(identity, GRANTS.get(identity.agent, frozenset()), name, args)
+
+
+class ServedByPostgres(RealEstateWarehouse):
+    """TEST ADAPTER: the mock file, reported by the Backend as the PostgreSQL warehouse (what `re_pg` would report)."""
+
+    @property
+    def source(self) -> dict[str, Any]:
+        return {"backend": "postgresql", "host": "dw.test", "port": 5432, "database": "cdw"}
 
 
 @pytest.fixture(scope="session")

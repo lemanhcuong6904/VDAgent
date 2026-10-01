@@ -36,6 +36,8 @@ COPY agents/report/pyproject.toml agents/report/pyproject.toml
 COPY agents/chart/pyproject.toml agents/chart/pyproject.toml
 
 FROM base AS test
+# make: backend/tests/test_docker_setup.py dry-runs the Makefile (`make -n up`)
+RUN apt-get update && apt-get install -y --no-install-recommends make && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-workspace
 COPY sdk/ sdk/
@@ -44,7 +46,7 @@ COPY backend/ backend/
 COPY agents/ agents/
 COPY data/ data/
 # repo tooling checked by backend/tests/test_docker_setup.py (no .env: .dockerignore excludes every one)
-COPY docker-compose.yml ./
+COPY docker-compose.yml Makefile .env.example ./
 COPY docker/ docker/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen \
