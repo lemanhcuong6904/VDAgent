@@ -1,0 +1,727 @@
+[
+  {
+    "id": "E01",
+    "title": "DISPATCH B1 cho Data (fetch_units). Chưa có snapshot; xong thì chuyển cho B2 (chỉ snapshot) và B3.",
+    "message": {
+      "contract_version": "1.0.0",
+      "message_id": "cmd-0f6c-0001",
+      "message_type": "DISPATCH",
+      "sent_at": "2026-09-29T04:30:05Z",
+      "run_id": "0f6c2d4e-5a1b-4c7e-9d2f-3b8a7c6e5d41",
+      "plan_id": "pl-0f6c2d4e",
+      "step_id": "B1",
+      "agent": "DATA",
+      "idempotency_key": "pl-0f6c2d4e:B1",
+      "trace": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      },
+      "body": {
+        "operation": "fetch_units",
+        "catalog_version": "1.0.0",
+        "plan_version": 1,
+        "objective": "Lấy danh sách căn của phân khu Landmark kèm thuộc tính và chẩn đoán",
+        "original_question": "Tại sao phân khu Landmark bán chậm?",
+        "task_kinds": [
+          "EXPLAIN"
+        ],
+        "locale": "vi-VN",
+        "user_context": {
+          "user_id": "u-salesops-017",
+          "role": "SALES_OPS",
+          "authorized_scope": {
+            "project_ids": [
+              "PRJ-X"
+            ],
+            "zone_ids": []
+          }
+        },
+        "conversation_id": "c9e1a7b2-4d3f-4a8e-b6c5-2f1d0e9a8b7c",
+        "parent_run_id": null,
+        "snapshot_id": null,
+        "deadline_s": 90,
+        "wait_list": [],
+        "forward_to": [
+          {
+            "step_id": "B2",
+            "agent": "DATA"
+          },
+          {
+            "step_id": "B3",
+            "agent": "INSIGHT"
+          }
+        ],
+        "spec": {
+          "entities": [
+            {
+              "mention": "phân khu Landmark",
+              "kind_hint": "ZONE"
+            }
+          ],
+          "attributes": [
+            "floor_band",
+            "balcony_orientation",
+            "view_type"
+          ],
+          "success_criteria": {
+            "allow_empty": false
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "E03",
+    "title": "DISPATCH B3 cho Insight. Chờ B1 (dataset) và B2 (metric) kiểu HARD.",
+    "message": {
+      "contract_version": "1.0.0",
+      "message_id": "cmd-0f6c-0003",
+      "message_type": "DISPATCH",
+      "sent_at": "2026-09-29T04:30:05Z",
+      "run_id": "0f6c2d4e-5a1b-4c7e-9d2f-3b8a7c6e5d41",
+      "plan_id": "pl-0f6c2d4e",
+      "step_id": "B3",
+      "agent": "INSIGHT",
+      "idempotency_key": "pl-0f6c2d4e:B3",
+      "trace": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      },
+      "body": {
+        "operation": "generate_insights",
+        "catalog_version": "1.0.0",
+        "plan_version": 1,
+        "objective": "Tìm các yếu tố có khả năng liên quan tới việc phân khu Landmark bán chậm",
+        "original_question": "Tại sao phân khu Landmark bán chậm?",
+        "task_kinds": [
+          "EXPLAIN"
+        ],
+        "locale": "vi-VN",
+        "user_context": {
+          "user_id": "u-salesops-017",
+          "role": "SALES_OPS",
+          "authorized_scope": {
+            "project_ids": [
+              "PRJ-X"
+            ],
+            "zone_ids": []
+          }
+        },
+        "conversation_id": "c9e1a7b2-4d3f-4a8e-b6c5-2f1d0e9a8b7c",
+        "parent_run_id": null,
+        "snapshot_id": null,
+        "deadline_s": 120,
+        "wait_list": [
+          {
+            "step_id": "B1",
+            "agent": "DATA",
+            "operation": "fetch_units",
+            "dependency": "HARD",
+            "purpose": "INPUT",
+            "input_slot": "dataset",
+            "expected_kind": "unit_set"
+          },
+          {
+            "step_id": "B2",
+            "agent": "DATA",
+            "operation": "aggregate_metrics",
+            "dependency": "HARD",
+            "purpose": "INPUT",
+            "input_slot": "metric",
+            "expected_kind": "metric_table"
+          }
+        ],
+        "forward_to": [
+          {
+            "step_id": "B4",
+            "agent": "CHART"
+          },
+          {
+            "step_id": "B5",
+            "agent": "REPORT"
+          }
+        ],
+        "spec": {
+          "tasks": [
+            "T2",
+            "T3",
+            "T6",
+            "T7"
+          ],
+          "analysis_level": "ZONE",
+          "constraints": {
+            "max_key_insights": 5
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "E07",
+    "title": "START B1 sau khi mọi agent đã ACK phần việc.",
+    "message": {
+      "contract_version": "1.0.0",
+      "message_id": "cmd-0f6c-0006",
+      "message_type": "START",
+      "sent_at": "2026-09-29T04:30:07Z",
+      "run_id": "0f6c2d4e-5a1b-4c7e-9d2f-3b8a7c6e5d41",
+      "plan_id": "pl-0f6c2d4e",
+      "step_id": "B1",
+      "agent": "DATA",
+      "idempotency_key": "pl-0f6c2d4e:B1",
+      "trace": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      },
+      "body": {
+        "snapshot_id": null,
+        "inputs": []
+      }
+    }
+  },
+  {
+    "id": "E09",
+    "title": "QUESTION của Data: \"Landmark\" khớp 2 phân khu (Orch V1).",
+    "message": {
+      "contract_version": "1.0.0",
+      "message_id": "rpt-b1-0002",
+      "message_type": "REPORT",
+      "sent_at": "2026-09-29T04:30:11Z",
+      "run_id": "0f6c2d4e-5a1b-4c7e-9d2f-3b8a7c6e5d41",
+      "plan_id": "pl-0f6c2d4e",
+      "step_id": "B1",
+      "agent": "DATA",
+      "idempotency_key": "pl-0f6c2d4e:B1",
+      "trace": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      },
+      "body": {
+        "kind": "QUESTION",
+        "agent_state": "input_required",
+        "question": {
+          "question_id": "q-b1-1",
+          "reason_code": "AMBIGUOUS_REQUEST",
+          "text": "\"Landmark\" khớp 2 phân khu. Bạn muốn xem phân khu nào?",
+          "options": [
+            {
+              "option_id": "opt-1",
+              "label": "Landmark (dự án PRJ-X)",
+              "value": {
+                "entity_id": "ZN-LMK",
+                "entity_kind": "ZONE",
+                "display_name": "Landmark"
+              }
+            },
+            {
+              "option_id": "opt-2",
+              "label": "Landmark Park (dự án PRJ-X)",
+              "value": {
+                "entity_id": "ZN-LMP",
+                "entity_kind": "ZONE",
+                "display_name": "Landmark Park"
+              }
+            }
+          ],
+          "max_selections": 1,
+          "subject_text": "Landmark"
+        }
+      }
+    }
+  },
+  {
+    "id": "E11",
+    "title": "ANSWER: Sales Ops chọn phân khu Landmark.",
+    "message": {
+      "contract_version": "1.0.0",
+      "message_id": "cmd-0f6c-0007",
+      "message_type": "ANSWER",
+      "sent_at": "2026-09-29T04:31:02Z",
+      "run_id": "0f6c2d4e-5a1b-4c7e-9d2f-3b8a7c6e5d41",
+      "plan_id": "pl-0f6c2d4e",
+      "step_id": "B1",
+      "agent": "DATA",
+      "idempotency_key": "pl-0f6c2d4e:B1",
+      "trace": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      },
+      "body": {
+        "question_id": "q-b1-1",
+        "selected_option_ids": [
+          "opt-1"
+        ],
+        "answered_by": "u-salesops-017",
+        "answered_at": "2026-09-29T04:31:00Z"
+      }
+    }
+  },
+  {
+    "id": "E12",
+    "title": "DONE của B1: gói unit_set, snapshot đã khóa, độ tin cậy dữ liệu.",
+    "message": {
+      "contract_version": "1.0.0",
+      "message_id": "rpt-b1-0003",
+      "message_type": "REPORT",
+      "sent_at": "2026-09-29T04:31:20Z",
+      "run_id": "0f6c2d4e-5a1b-4c7e-9d2f-3b8a7c6e5d41",
+      "plan_id": "pl-0f6c2d4e",
+      "step_id": "B1",
+      "agent": "DATA",
+      "idempotency_key": "pl-0f6c2d4e:B1",
+      "trace": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      },
+      "body": {
+        "kind": "DONE",
+        "agent_state": "completed",
+        "usage": {
+          "llm_calls": 1,
+          "elapsed_ms": 17800
+        },
+        "result": {
+          "package": {
+            "package_id": "art-b1-7c21@1",
+            "kind": "unit_set",
+            "status": "VALID",
+            "content_hash": "9a1f3c0d2b4e6f8a1c3e5a7b9d0f2e4c6a8b0d2f4e6a8c0e2a4c6e8a0c2e4a6b"
+          },
+          "snapshot_id": "SNAP-20260630-01",
+          "summary": "Phân khu Landmark (PRJ-X): 214 căn trong phạm vi, 61 căn còn hàng quá hạn. Kỳ dữ liệu 30/06/2026.",
+          "warnings": []
+        },
+        "ext": {
+          "data_confidence": {
+            "level": "HIGH",
+            "reasons": [
+              "Truy vấn T1, chỉ số approved"
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "E13",
+    "title": "FORWARD B1 → B3 (Insight nhận gói làm dataset).",
+    "message": {
+      "contract_version": "1.0.0",
+      "message_id": "fwd-b1-b3",
+      "message_type": "FORWARD",
+      "sent_at": "2026-09-29T04:31:20Z",
+      "run_id": "0f6c2d4e-5a1b-4c7e-9d2f-3b8a7c6e5d41",
+      "plan_id": "pl-0f6c2d4e",
+      "step_id": "B3",
+      "agent": "INSIGHT",
+      "idempotency_key": "pl-0f6c2d4e:B3",
+      "trace": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      },
+      "body": {
+        "from_step_id": "B1",
+        "from_agent": "DATA",
+        "package": {
+          "package_id": "art-b1-7c21@1",
+          "kind": "unit_set",
+          "status": "VALID",
+          "content_hash": "9a1f3c0d2b4e6f8a1c3e5a7b9d0f2e4c6a8b0d2f4e6a8c0e2a4c6e8a0c2e4a6b"
+        },
+        "snapshot_id": "SNAP-20260630-01"
+      }
+    }
+  },
+  {
+    "id": "E16",
+    "title": "ERROR của B3: kết quả tự kiểm vẫn sai (lớp WRONG_RESULT → tầng 2).",
+    "message": {
+      "contract_version": "1.0.0",
+      "message_id": "rpt-b3-0001",
+      "message_type": "REPORT",
+      "sent_at": "2026-09-29T04:32:40Z",
+      "run_id": "0f6c2d4e-5a1b-4c7e-9d2f-3b8a7c6e5d41",
+      "plan_id": "pl-0f6c2d4e",
+      "step_id": "B3",
+      "agent": "INSIGHT",
+      "idempotency_key": "pl-0f6c2d4e:B3",
+      "trace": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      },
+      "body": {
+        "kind": "ERROR",
+        "agent_state": "FAILED",
+        "usage": {
+          "llm_calls": 2,
+          "elapsed_ms": 21400,
+          "cost_usd": "0.00719"
+        },
+        "error": {
+          "code": "OUTPUT_VALIDATION_FAILED",
+          "class": "WRONG_RESULT",
+          "reason": "Validator vẫn báo NUMERIC_BINDING_VIOLATION ở 2 insight KEY sau bước sửa và TEMPLATE."
+        }
+      }
+    }
+  },
+  {
+    "id": "E17",
+    "title": "DISPATCH B6 thay B3 (kế hoạch phiên bản 2).",
+    "message": {
+      "contract_version": "1.0.0",
+      "message_id": "cmd-0f6c-0010",
+      "message_type": "DISPATCH",
+      "sent_at": "2026-09-29T04:32:58Z",
+      "run_id": "0f6c2d4e-5a1b-4c7e-9d2f-3b8a7c6e5d41",
+      "plan_id": "pl-0f6c2d4e",
+      "step_id": "B6",
+      "agent": "INSIGHT",
+      "idempotency_key": "pl-0f6c2d4e:B6",
+      "trace": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      },
+      "body": {
+        "operation": "generate_insights",
+        "catalog_version": "1.0.0",
+        "plan_version": 2,
+        "objective": "Giải thích nguyên nhân bán chậm của phân khu Landmark ở cấp phân khu, bỏ phân tích pattern",
+        "original_question": "Tại sao phân khu Landmark bán chậm?",
+        "task_kinds": [
+          "EXPLAIN"
+        ],
+        "locale": "vi-VN",
+        "user_context": {
+          "user_id": "u-salesops-017",
+          "role": "SALES_OPS",
+          "authorized_scope": {
+            "project_ids": [
+              "PRJ-X"
+            ],
+            "zone_ids": []
+          }
+        },
+        "conversation_id": "c9e1a7b2-4d3f-4a8e-b6c5-2f1d0e9a8b7c",
+        "parent_run_id": null,
+        "snapshot_id": "SNAP-20260630-01",
+        "deadline_s": 120,
+        "wait_list": [
+          {
+            "step_id": "B1",
+            "agent": "DATA",
+            "operation": "fetch_units",
+            "dependency": "HARD",
+            "purpose": "INPUT",
+            "input_slot": "dataset",
+            "expected_kind": "unit_set"
+          },
+          {
+            "step_id": "B2",
+            "agent": "DATA",
+            "operation": "aggregate_metrics",
+            "dependency": "HARD",
+            "purpose": "INPUT",
+            "input_slot": "metric",
+            "expected_kind": "metric_table"
+          }
+        ],
+        "forward_to": [
+          {
+            "step_id": "B4",
+            "agent": "CHART"
+          },
+          {
+            "step_id": "B5",
+            "agent": "REPORT"
+          }
+        ],
+        "spec": {
+          "tasks": [
+            "T2",
+            "T6",
+            "T7"
+          ],
+          "analysis_level": "ZONE"
+        },
+        "replaces_step_id": "B3",
+        "retry_kind": "REPLAN"
+      }
+    }
+  },
+  {
+    "id": "E18",
+    "title": "REWIRE cho B4: đầu vào từ B3 nay lấy từ B6.",
+    "message": {
+      "contract_version": "1.0.0",
+      "message_id": "cmd-0f6c-0011",
+      "message_type": "REWIRE",
+      "sent_at": "2026-09-29T04:32:59Z",
+      "run_id": "0f6c2d4e-5a1b-4c7e-9d2f-3b8a7c6e5d41",
+      "plan_id": "pl-0f6c2d4e",
+      "step_id": "B4",
+      "agent": "CHART",
+      "idempotency_key": "pl-0f6c2d4e:B4",
+      "trace": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      },
+      "body": {
+        "old_step_id": "B3",
+        "new_step_id": "B6",
+        "new_agent": "INSIGHT",
+        "new_operation": "generate_insights"
+      }
+    }
+  },
+  {
+    "id": "E19",
+    "title": "START B6 kèm gói của B1, B2 (bước cũ không biết bước mới nên không tự chuyển tiếp).",
+    "message": {
+      "contract_version": "1.0.0",
+      "message_id": "cmd-0f6c-0013",
+      "message_type": "START",
+      "sent_at": "2026-09-29T04:33:00Z",
+      "run_id": "0f6c2d4e-5a1b-4c7e-9d2f-3b8a7c6e5d41",
+      "plan_id": "pl-0f6c2d4e",
+      "step_id": "B6",
+      "agent": "INSIGHT",
+      "idempotency_key": "pl-0f6c2d4e:B6",
+      "trace": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      },
+      "body": {
+        "snapshot_id": "SNAP-20260630-01",
+        "inputs": [
+          {
+            "from_step_id": "B1",
+            "from_agent": "DATA",
+            "package": {
+              "package_id": "art-b1-7c21@1",
+              "kind": "unit_set",
+              "status": "VALID",
+              "content_hash": "9a1f3c0d2b4e6f8a1c3e5a7b9d0f2e4c6a8b0d2f4e6a8c0e2a4c6e8a0c2e4a6b"
+            }
+          },
+          {
+            "from_step_id": "B2",
+            "from_agent": "DATA",
+            "package": {
+              "package_id": "art-b2-91d0@1",
+              "kind": "metric_table",
+              "status": "VALID",
+              "content_hash": "2c4e6a8c0e2a4c6e8a0c2e4a6c8e0a2c4e6a8c0e2a4c6e8a0c2e4a6c8e0a2c4e"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "E20",
+    "title": "RELEASE cho B4: B6 cũng sai, Sales Ops chọn \"Dùng kết quả hiện có\".",
+    "message": {
+      "contract_version": "1.0.0",
+      "message_id": "cmd-0f6c-0020",
+      "message_type": "RELEASE",
+      "sent_at": "2026-09-29T04:36:10Z",
+      "run_id": "0f6c2d4e-5a1b-4c7e-9d2f-3b8a7c6e5d41",
+      "plan_id": "pl-0f6c2d4e",
+      "step_id": "B4",
+      "agent": "CHART",
+      "idempotency_key": "pl-0f6c2d4e:B4",
+      "trace": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      },
+      "body": {
+        "missing": {
+          "step_id": "B6",
+          "agent": "INSIGHT",
+          "part_label": "Giải thích nguyên nhân",
+          "root_step_id": "B6",
+          "reason_class": "WRONG_RESULT",
+          "error_code": "OUTPUT_VALIDATION_FAILED",
+          "user_message": "Phần \"Giải thích nguyên nhân\" chưa dùng được; bạn đã chọn dùng kết quả hiện có."
+        }
+      }
+    }
+  },
+  {
+    "id": "E21",
+    "title": "DONE của Chart: 1 mục tiêu xong, 1 mục tiêu không có dữ liệu Insight → gói PARTIAL.",
+    "message": {
+      "contract_version": "1.0.0",
+      "message_id": "rpt-b4-0001",
+      "message_type": "REPORT",
+      "sent_at": "2026-09-29T04:36:30Z",
+      "run_id": "0f6c2d4e-5a1b-4c7e-9d2f-3b8a7c6e5d41",
+      "plan_id": "pl-0f6c2d4e",
+      "step_id": "B4",
+      "agent": "CHART",
+      "idempotency_key": "pl-0f6c2d4e:B4",
+      "trace": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      },
+      "body": {
+        "kind": "DONE",
+        "agent_state": "PARTIAL",
+        "result": {
+          "package": {
+            "package_id": "chartset-b4-3e10@1",
+            "kind": "chart_bundle",
+            "status": "PARTIAL"
+          },
+          "snapshot_id": "SNAP-20260630-01",
+          "summary": "1 biểu đồ cột tốc độ hấp thụ theo nhóm tầng; thiếu biểu đồ cơ cấu nguyên nhân.",
+          "warnings": [
+            {
+              "code": "DEP-001",
+              "message": "Không có kết quả Insight cho mục tiêu cơ cấu nguyên nhân.",
+              "target": "vt_cause_mix",
+              "details": {
+                "fallback": "no_chart"
+              }
+            }
+          ]
+        },
+        "ext": {
+          "chart_package_ids": [
+            "chart-absorption-floor@1"
+          ],
+          "target_results": [
+            {
+              "target_id": "vt_absorption_floor",
+              "status": "success",
+              "chart_package_id": "chart-absorption-floor@1"
+            },
+            {
+              "target_id": "vt_cause_mix",
+              "status": "failed",
+              "chart_package_id": null,
+              "fallback": "no_chart",
+              "reason_code": "DEP-001"
+            }
+          ],
+          "versions": {
+            "chart_agent_version": "3.0",
+            "ruleset_version": "chart-policy/1.0",
+            "validator_version": "chart-validator/1.0",
+            "renderer_contract_version": "renderer/1.0"
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "E22",
+    "title": "DONE của Report: báo cáo nháp PARTIAL, chờ người duyệt.",
+    "message": {
+      "contract_version": "1.0.0",
+      "message_id": "rpt-b5-0001",
+      "message_type": "REPORT",
+      "sent_at": "2026-09-29T04:37:40Z",
+      "run_id": "0f6c2d4e-5a1b-4c7e-9d2f-3b8a7c6e5d41",
+      "plan_id": "pl-0f6c2d4e",
+      "step_id": "B5",
+      "agent": "REPORT",
+      "idempotency_key": "pl-0f6c2d4e:B5",
+      "trace": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      },
+      "body": {
+        "kind": "DONE",
+        "agent_state": "PARTIAL",
+        "result": {
+          "package": {
+            "package_id": "rpt-b5-44aa@1",
+            "kind": "report_draft",
+            "status": "PARTIAL"
+          },
+          "snapshot_id": "SNAP-20260630-01",
+          "summary": "Báo cáo nháp 6 phần; phần Phân tích và nhận định thiếu mục nguyên nhân.",
+          "warnings": [
+            {
+              "code": "UPSTREAM_MISSING",
+              "message": "Thiếu phần Giải thích nguyên nhân.",
+              "target": "ANALYSIS_INSIGHTS"
+            }
+          ]
+        },
+        "ext": {
+          "report_version": 1,
+          "sections": [
+            {
+              "section": "EXECUTIVE_SUMMARY",
+              "status": "COMPLETE"
+            },
+            {
+              "section": "OBJECTIVES_KPIS",
+              "status": "COMPLETE"
+            },
+            {
+              "section": "DATA_FINDINGS",
+              "status": "COMPLETE"
+            },
+            {
+              "section": "ANALYSIS_INSIGHTS",
+              "status": "PARTIAL"
+            },
+            {
+              "section": "RECOMMENDATIONS",
+              "status": "COMPLETE"
+            },
+            {
+              "section": "APPENDIX",
+              "status": "COMPLETE"
+            }
+          ],
+          "render": {
+            "web": "OK",
+            "pdf": "OK"
+          },
+          "review_state": "PENDING_REVIEW"
+        }
+      }
+    }
+  },
+  {
+    "id": "E29",
+    "title": "ERROR của Chart: thiếu artifact bắt buộc, kèm dependency_requests.",
+    "message": {
+      "contract_version": "1.0.0",
+      "message_id": "rpt-5d1e-b5-01",
+      "message_type": "REPORT",
+      "sent_at": "2026-09-29T05:03:05Z",
+      "run_id": "5d1e8b3a-7c2f-4e6d-a9b8-1c0d2e3f4a5b",
+      "plan_id": "pl-5d1e8b3a",
+      "step_id": "B5",
+      "agent": "CHART",
+      "idempotency_key": "pl-5d1e8b3a:B5",
+      "trace": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      },
+      "body": {
+        "kind": "ERROR",
+        "agent_state": "FAILED",
+        "error": {
+          "code": "DEP-001",
+          "class": "SPEC_ISSUE",
+          "reason": "Mục tiêu target_vs_peer cần Comparison Artifact nhưng không có trong đầu vào."
+        },
+        "ext": {
+          "errors": [
+            {
+              "code": "DEP-001",
+              "category": "dependency",
+              "severity": "error",
+              "retryable": false,
+              "message": "Required artifact thiếu",
+              "target_id": "vt_gap_01"
+            }
+          ],
+          "dependency_requests": [
+            {
+              "request_id": "dep_req_001",
+              "target_id": "vt_gap_01",
+              "missing_type": "comparison",
+              "missing_ref": null,
+              "reason_code": "DEP-001",
+              "required_status": "VALID",
+              "suggested_upstream_action": "resolve_or_execute_compare_task"
+            }
+          ]
+        }
+      }
+    }
+  }
+]

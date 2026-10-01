@@ -1009,3 +1009,42 @@ pre {
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border);
 }
+
+/* ---------- agent cards: an agent's report / a task, instead of raw JSON ---------- */
+.agent-card {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  font-size: 13px;
+}
+.agent-card-ok { border-left-color: var(--ok); }
+.agent-card-partial { border-left-color: var(--warn); }
+.agent-card-error { border-left-color: var(--err); background: var(--err-soft); }
+.agent-card-ask { border-left-color: var(--accent); background: var(--accent-soft); }
+.agent-card-task { border-left-color: var(--accent); }
+.card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
+.card-badge { font-weight: 600; padding: 2px 8px; border-radius: 999px; color: #fff; background: var(--muted); }
+.card-badge-ok { background: var(--ok); }
+.card-badge-partial { background: var(--warn); }
+.card-badge-error { background: var(--err); }
+.card-badge-ask, .card-badge-task { background: var(--accent); }
+.card-chip { padding: 1px 7px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--bg); font-size: 12px; }
+.card-error { margin: 6px 0; color: var(--err); }
+.card-question ul { margin: 4px 0 0 18px; padding: 0; }
+.card-question-text { margin: 4px 0 6px; font-style: italic; }
+.card-section { margin-top: 8px; }
+.card-title { margin-bottom: 3px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+.card-artifacts, .card-warnings { margin: 0; padding: 0; list-style: none; }
+.card-artifacts li, .card-warnings li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; padding: 2px 0; }
+.card-type { padding: 0 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font-size: 12px; }
+.card-code { padding: 0 6px; border-radius: 4px; background: #fef3c7; color: #92400e; font-size: 12px; }
+.card-kv { display: grid; gap: 2px; margin: 4px 0; }
+.card-kv div { display: grid; grid-template-columns: 150px 1fr; gap: 8px; }
+.card-kv dt { color: var(--muted); }
+.card-kv dd { margin: 0; overflow-wrap: anywhere; }
+.card-raw { margin-top: 8px; }
+.card-raw summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.card-raw pre { margin: 6px 0 0; max-height: 260px; overflow: auto; padding: 8px; border-radius: 6px; background: var(--bg); font-size: 12px; }
