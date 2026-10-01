@@ -3,6 +3,7 @@ import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { queryKeys } from "../../api/keys";
 import { useApi } from "../../api/queries";
 import type { AgentDTO } from "../../api/types";
+import { composerPlaceholder } from "../../ui/composerHint";
 import { useUi } from "../../ui/UiContext";
 
 /** Posts a human message into the agent's chat (creates a task). */
@@ -41,7 +42,7 @@ export function Composer({ agent }: { agent: AgentDTO }) {
       <textarea
         rows={2}
         value={text}
-        placeholder={`Message ${agent.name}…  (Enter to send, Shift+Enter for a new line)`}
+        placeholder={composerPlaceholder(agent.name)}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKeyDown}
       />

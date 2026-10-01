@@ -273,6 +273,7 @@ async def _run(run: core._Run, step: StepSpec, tracer: Tracer, saved: Mapping[st
     resolved = await _resolve(run, spec, step, saved)
     out.resolved = [{"mention": r.mention, "kind": r.candidate.kind, "id": r.candidate.key, "name": r.candidate.label, "method": r.method}
                     for r in resolved]
+    run.resolved = list(out.resolved)
     if resolved:
         await tracer.note("resolve", "Đã nhận diện đối tượng người dùng nêu, không đoán và không dùng LLM",
                           entities=[f"{r.mention} → {r.candidate.kind} {r.candidate.label} ({r.method})" for r in resolved])
