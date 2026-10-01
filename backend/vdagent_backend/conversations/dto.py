@@ -12,9 +12,8 @@ def user_dto(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def task_dto(row: Mapping[str, Any]) -> dict[str, Any]:
-    """`{id, root_agent, status, outcome, created_at, finished_at}`; `outcome` is the run's business outcome
-    (completed | partial | failed | interrupted) or null when none was reported."""
-    return {
+    """Task fields, plus a bounded root-invocation preview for task-list rows."""
+    dto = {
         "id": row["id"],
         "root_agent": row["root_agent"],
         "status": row["status"],
@@ -22,6 +21,9 @@ def task_dto(row: Mapping[str, Any]) -> dict[str, Any]:
         "created_at": row["created_at"],
         "finished_at": row["finished_at"],
     }
+    if row.get("preview") is not None:
+        dto["preview"] = row["preview"][:240]
+    return dto
 
 
 _INVOCATION_FIELDS = (

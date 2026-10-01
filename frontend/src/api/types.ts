@@ -30,6 +30,7 @@ export type TaskOutcome = "completed" | "partial" | "failed" | "interrupted";
 export interface TaskDTO {
   id: string;
   root_agent: string;
+  preview?: string | null;
   status: TaskStatus;
   outcome?: TaskOutcome | null;
   created_at: string;

@@ -35,13 +35,24 @@ export function applyEvent(queryClient: QueryClient, ev: ServerEvent): void {
       queryClient.setQueryData<TaskDetailDTO>(queryKeys.task(inv.task_id), (old) =>
         old ? { ...old, invocations: upsertById(old.invocations, inv, "append") } : undefined,
       );
+      if (inv.depth === 0) {
+        queryClient.setQueryData<TaskDTO[]>(queryKeys.tasks, (old) =>
+          old
+            ? old.map((task) => (task.id === inv.task_id ? { ...task, preview: inv.inbound_text } : task))
+            : undefined,
+        );
+      }
       return;
     }
     case "task.updated": {
       const task = ev.data.task;
-      queryClient.setQueryData<TaskDTO[]>(queryKeys.tasks, (old) =>
-        old ? upsertById(old, task, "prepend").slice(0, TASK_LIST_LIMIT) : undefined,
-      );
+      queryClient.setQueryData<TaskDTO[]>(queryKeys.tasks, (old) => {
+        if (!old) return undefined;
+        const existingPreview = old.find((item) => item.id === task.id)?.preview;
+        const updatedTask =
+          task.preview == null && existingPreview != null ? { ...task, preview: existingPreview } : task;
+        return upsertById(old, updatedTask, "prepend").slice(0, TASK_LIST_LIMIT);
+      });
       queryClient.setQueryData<TaskDetailDTO>(queryKeys.task(task.id), (old) =>
         old ? { ...old, task } : undefined,
       );

@@ -12,6 +12,10 @@ export function Inspector({ taskId }: { taskId: string | null }) {
   const { tab, setTab } = useUi();
   return (
     <div className="inspector-inner">
+      <header className="inspector-header">
+        <span className="eyebrow">Run detail</span>
+        <span className="inspector-hint">{tab === "task" ? "Task activity" : "Data, charts & reports"}</span>
+      </header>
       <div className="tabs" role="tablist">
         <button
           type="button"
