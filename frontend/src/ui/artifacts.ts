@@ -1,15 +1,22 @@
 /** Artifact ids in message text (spec §3.2 ids): `ds_…` dataset, `ch_…` chart, `rp_…` report.
  * Has a capture group so `String.split` yields tokens at odd indices. */
-export const ARTIFACT_SPLIT = /(\b(?:ds|ch|rp)_[0-9a-f]{12}\b)/;
+export const ARTIFACT_SPLIT = /(\b(?:ds|ch|rp|art)_[0-9a-f]{12}\b)/;
 
-export const ARTIFACT_EXACT = /^(?:ds|ch|rp)_[0-9a-f]{12}$/;
+export const ARTIFACT_EXACT = /^(?:ds|ch|rp|art)_[0-9a-f]{12}$/;
 
-export type ArtifactKind = "dataset" | "chart" | "report";
+export type ArtifactKind = "dataset" | "chart" | "report" | "envelope";
 
 export function artifactKind(id: string): ArtifactKind {
   if (id.startsWith("ds_")) return "dataset";
   if (id.startsWith("ch_")) return "chart";
+  if (id.startsWith("art_")) return "envelope";
   return "report";
+}
+
+/** Distinct artifact ids mentioned in text, in order. */
+export function artifactIds(text: string): string[] {
+  const ids = text.split(ARTIFACT_SPLIT).filter((_, i) => i % 2 === 1);
+  return [...new Set(ids)];
 }
 
 /** Fragment used for artifact links inside rendered markdown (survives react-markdown's URL filter). */

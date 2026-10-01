@@ -166,6 +166,66 @@ async def test_golden_charts_from_real_ws3_artifacts(alice: McpPort, tmp_path: P
     assert all(s["payload"]["chart_type"] == "kpi_card" for s in kpis)
 
 
+async def test_stepspec_path_uses_chart_llm_for_presentation(alice: McpPort, tmp_path: Path) -> None:
+    class PresentationReasoner:
+        async def decide(self, payload: dict[str, Any], allowed_chart_types: tuple[str, ...]) -> dict[str, Any]:
+            return {
+                "presentation": {
+                    "title": "A12-08 lệch giá so với nhóm tương đồng",
+                    "subtitle": "So sánh $P_{net}/m^2$ và DOM tại snapshot được ghim.",
+                    "axes": {
+                        "x": {"title": {"format": "plain", "value": "Căn hộ / benchmark"}},
+                        "y": {"title": {"format": "math", "value": "$P_{net}/m^2$"}},
+                    },
+                },
+                "selection": {"chart_type": "bar"},
+                "encoding": {
+                    "x": {"field": "label", "type": "nominal"},
+                    "y": {"field": "net_asking_price_per_m2", "type": "quantitative"},
+                },
+            }
+
+        async def suggest(self, visual_question: str, allowed_chart_types: tuple[str, ...]) -> str | None:
+            return None
+
+    up = await upstream(alice, tmp_path)
+    step = chart_step([up["comparison"], up["peer_definition"]], spec={"chart_type": "bar"})
+    report = await run_step(step, alice.as_agent("chart"), reasoner=PresentationReasoner())
+    specs = await charts(alice, report)
+    [price] = [s for s in specs if s["payload"]["dataset"].get("comparison_metric") == "net_asking_price_per_m2"]
+
+    assert price["payload"]["title"] == "A12-08 lệch giá so với nhóm tương đồng"
+    assert price["payload"]["plotly"]["layout"]["title"]["text"] == "A12-08 lệch giá so với nhóm tương đồng"
+    assert price["payload"]["plotly"]["layout"]["xaxis"]["title"]["text"] == "Căn hộ / benchmark"
+    assert price["payload"]["plotly"]["layout"]["yaxis"]["title"]["text"] == "Giá ròng/m² (VND)"
+
+
+async def test_integrated_charts_have_business_titles_and_axes_without_llm(alice: McpPort, tmp_path: Path) -> None:
+    up = await upstream(alice, tmp_path)
+    report = await run_step(chart_step([up["comparison"], up["peer_definition"]]), alice.as_agent("chart"))
+    specs = await charts(alice, report)
+
+    forbidden = {"Target vs peer", "Relationship", "Label", "$P_{net}/m^2$"}
+    for spec in specs:
+        layout = spec["payload"]["plotly"]["layout"]
+        labels = [layout["title"]["text"]]
+        if "xaxis" in layout:
+            labels.append(layout["xaxis"]["title"]["text"])
+        if "yaxis" in layout:
+            labels.append(layout["yaxis"]["title"]["text"])
+        assert not forbidden.intersection(labels)
+
+    price = next(s for s in specs if s["payload"]["dataset"].get("comparison_metric") == "net_asking_price_per_m2")
+    assert price["payload"]["plotly"]["layout"]["title"]["text"] == "Giá ròng/m² của A12-08 so với trung vị 5 căn tương đồng"
+    assert price["payload"]["plotly"]["layout"]["xaxis"]["title"]["text"] == "Căn hộ / benchmark"
+    assert price["payload"]["plotly"]["layout"]["yaxis"]["title"]["text"] == "Giá ròng/m² (VND)"
+
+    scatter = next(s for s in specs if s["payload"]["visual_question"] == "relationship")
+    assert scatter["payload"]["plotly"]["layout"]["title"]["text"] == "Giá ròng/m² và DOM trong nhóm tương đồng"
+    assert scatter["payload"]["plotly"]["layout"]["xaxis"]["title"]["text"] == "Giá ròng/m² (VND)"
+    assert scatter["payload"]["plotly"]["layout"]["yaxis"]["title"]["text"] == "Thời gian trên thị trường (ngày)"
+
+
 async def test_limitations_are_carried_and_nulls_never_charted(alice: McpPort, tmp_path: Path) -> None:
     up = await upstream(alice, tmp_path)
     report = await run_step(chart_step([up["insight"], up["comparison"], up["peer_definition"]]), alice.as_agent("chart"))

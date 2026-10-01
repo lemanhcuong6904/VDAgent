@@ -103,6 +103,115 @@ def test_plotly_renderer_uses_presentation_math_text_and_theme() -> None:
     assert rendered["config"]["typesetMath"] is True
 
 
+def test_plotly_renderer_unwraps_prose_axis_titles_that_llm_marks_as_math() -> None:
+    rendered = render_plotly(
+        {
+            "chart_type": "scatter",
+            "dataset": {
+                "records": [{"dom": 138, "net_asking_price_per_m2": 72_500_000}],
+            },
+            "encoding": {
+                "x": {"field": "dom", "type": "quantitative"},
+                "y": {"field": "net_asking_price_per_m2", "type": "quantitative"},
+            },
+            "presentation": {
+                "title_spec": {"format": "plain", "value": "Giá và thời gian trên thị trường"},
+                "x_axis": {"title": {"format": "plain", "value": "Thời gian trên thị trường (ngày)"}},
+                "y_axis": {"title": {"format": "math", "value": "$Giá yêu cầu ròng (VND/m^2)$"}},
+            },
+        }
+    )
+
+    assert rendered["layout"]["yaxis"]["title"]["text"] == "Giá yêu cầu ròng (VND/m²)"
+
+
+def test_kpi_card_displays_unit_suffix_and_record_label() -> None:
+    rendered = render_plotly(
+        {
+            "chart_type": "kpi_card",
+            "dataset": {"unit": "DAY", "records": [{"label": "A12-08 · DOM", "value": 138}]},
+            "encoding": {"value": {"field": "value"}},
+            "presentation": {"title_spec": {"format": "plain", "value": "Thời gian bán của A12-08"}},
+        }
+    )
+
+    assert rendered["data"][0]["number"]["suffix"] == " ngày"
+    assert rendered["data"][0]["title"]["text"] == "A12-08 · DOM"
+
+
+def test_kpi_card_displays_percent_suffix_for_price_gap() -> None:
+    rendered = render_plotly(
+        {
+            "chart_type": "kpi_card",
+            "dataset": {"unit": "PCT", "records": [{"label": "A12-08 · chênh giá peer", "value": 12.4}]},
+            "encoding": {"value": {"field": "value"}},
+            "presentation": {"title_spec": {"format": "plain", "value": "Chênh giá so với peer"}},
+        }
+    )
+
+    assert rendered["data"][0]["number"]["suffix"] == "%"
+
+
+def test_plotly_renderer_uses_dashboard_polish_defaults() -> None:
+    rendered = render_plotly(
+        _spec(
+            "bar",
+            [{"label": "A12-08", "value": 72_500_000}, {"label": "Peer median", "value": 64_500_000}],
+            {"x": {"field": "label"}, "y": {"field": "value"}},
+        )
+    )
+
+    assert rendered["layout"]["template"] == "plotly_white"
+    assert rendered["layout"]["title"]["x"] == 0.02
+    assert rendered["layout"]["colorway"][:3] == ["#2563eb", "#14b8a6", "#f97316"]
+    assert rendered["layout"]["uniformtext"]["mode"] == "hide"
+    assert rendered["layout"]["bargap"] == 0.32
+    assert rendered["layout"]["xaxis"]["showgrid"] is False
+    assert rendered["layout"]["yaxis"]["gridcolor"] == "#e2e8f0"
+    assert rendered["data"][0]["marker"]["color"] == "#2563eb"
+    assert rendered["data"][0]["marker"]["line"]["color"] == "#1d4ed8"
+
+
+def test_single_series_chart_hides_legend_and_uses_business_trace_label() -> None:
+    rendered = render_plotly(
+        {
+            "chart_type": "bar",
+            "dataset": {"records": [{"label": "A12-08", "value": 72_500_000}]},
+            "encoding": {"x": {"field": "label"}, "y": {"field": "value"}},
+            "presentation": {
+                "title_spec": {"format": "plain", "value": "A12-08 cao hơn trung vị peer"},
+                "legend": {"title": "Chỉ số", "items": {"value": "Giá bán ròng/m²"}},
+            },
+        }
+    )
+
+    assert rendered["layout"]["showlegend"] is False
+    assert rendered["data"][0]["name"] == "Giá bán ròng/m²"
+
+
+def test_grouped_chart_shows_legend_with_business_title() -> None:
+    rendered = render_plotly(
+        {
+            "chart_type": "grouped_bar",
+            "dataset": {
+                "records": [
+                    {"label": "A12-08", "series": "target", "value": 72_500_000},
+                    {"label": "Peer", "series": "median", "value": 64_500_000},
+                ],
+            },
+            "encoding": {"x": {"field": "label"}, "y": {"field": "value"}, "series": {"field": "series"}},
+            "presentation": {
+                "title_spec": {"format": "plain", "value": "Giá A12-08 so với peer"},
+                "legend": {"title": "Nhóm so sánh", "items": {"target": "A12-08", "median": "Trung vị peer"}},
+            },
+        }
+    )
+
+    assert rendered["layout"]["showlegend"] is True
+    assert rendered["layout"]["legend"]["title"]["text"] == "Nhóm so sánh"
+    assert [trace["name"] for trace in rendered["data"]] == ["A12-08", "Trung vị peer"]
+
+
 def test_plotly_renderer_preserves_funnel_order_and_values() -> None:
     rendered = render_plotly(
         {

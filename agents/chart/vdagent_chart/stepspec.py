@@ -10,9 +10,9 @@
    - per Insight numeric binding: a `current_value` (KPI) view.
    Each displayed value keeps `value_exact` (the upstream string/int) and a `source_ref`
    (`<artifact_id>@<version>#<json pointer>`). Null upstream values are not charted (limitation, never 0).
-4. Run the unchanged deterministic pipeline once per view (`ChartAgentService.execute`: validation, evidence map, selection
-   policy, dataset, semantic spec, output validation, Vega-Lite + Plotly renderers) over an in-memory exact-version
-   store holding only those views. No demo artifact, no mock upstream, no LLM.
+4. Run the unchanged deterministic pipeline once per view (`ChartAgentService`: validation, evidence map, selection
+   policy, dataset, optional bounded LLM presentation reasoning, semantic spec, output validation, Vega-Lite + Plotly
+   renderers) over an in-memory exact-version store holding only those views. No demo artifact, no mock upstream.
 5. Persist one `chart_spec@1` per chart through `artifact_put`, pinned to the dataset and the upstream artifacts it
    shows, with upstream limitations carried; answer with an `AgentReport@1`.
 """
@@ -39,6 +39,7 @@ from vdagent_contracts.vega_lite import validate_vega_lite
 from .contracts import ArtifactRef, ChartTaskInput, Intent, Scope, VisualTarget
 from .errors import ChartError
 from .fixture_store import FixtureArtifactStore
+from .llm import VisualReasoner
 from .policy import load_policy
 from .service import ChartAgentService
 
@@ -46,6 +47,18 @@ AGENT, AGENT_VERSION = "chart", "0.2.0"
 OPERATIONS = ("draw_chart",)
 POLICY_REF = "chart-policy/demo-1.0"  # the only chart ruleset in the repository (chart types and limits)
 PEER_QUESTION_TYPES = ("bar", "bullet")
+GENERIC_TITLES = {"Target vs peer", "Relationship", "Current value"}
+
+FIELD_DISPLAY = {
+    "label": "Căn hộ / benchmark",
+    "dom": "Thời gian trên thị trường (ngày)",
+    "net_asking_price_per_m2": "Giá ròng/m² (VND)",
+}
+
+METRIC_DISPLAY = {
+    "dom": "DOM",
+    "net_asking_price_per_m2": "Giá ròng/m²",
+}
 
 CHART_ERROR_CLASSES: dict[str, ErrorClass] = {
     **INPUT_ERROR_CLASSES,
@@ -175,6 +188,100 @@ def _comparison_views(comparison: dict[str, Any], peer_def: dict[str, Any] | Non
     return views
 
 
+def _field_display(field: str) -> str:
+    return FIELD_DISPLAY.get(field, field.replace("_", " "))
+
+
+def _metric_display(metric: str) -> str:
+    return METRIC_DISPLAY.get(metric, metric.replace("_", " "))
+
+
+def _view_presentation(view: _View) -> dict[str, Any]:
+    target = view.target.visual_question
+    if target == "target_vs_peer":
+        metric = str(view.payload.get("comparison_metric") or "")
+        n = (view.payload.get("peer_definition") or {}).get("peer_count")
+        code = (view.payload.get("display_records") or [{}])[0].get("label") or "Căn mục tiêu"
+        title = f"{_metric_display(metric)} của {code} so với trung vị {n} căn tương đồng" if n else f"{_metric_display(metric)} của {code} so với benchmark"
+        return {
+            "title": title,
+            "subtitle": "So sánh giá trị của căn mục tiêu với benchmark peer đã được Compare xác định.",
+            "axes": {
+                "x": {"title": {"format": "plain", "value": "Căn hộ / benchmark"}},
+                "y": {"title": {"format": "plain", "value": _field_display(metric)}},
+            },
+            "legend": {"title": "Chỉ số", "items": {metric: _metric_display(metric)}},
+        }
+    if target == "relationship":
+        records = view.payload.get("records") or []
+        fields = [k for k in (records[0] if records else {}) if k != "label"]
+        x = fields[0] if fields else "x"
+        y = fields[1] if len(fields) > 1 else "y"
+        return {
+            "title": f"{_metric_display(x)} và {_metric_display(y)} trong nhóm tương đồng",
+            "subtitle": "Mỗi điểm là một căn trong nhóm peer thực tế của Compare.",
+            "axes": {
+                "x": {"title": {"format": "plain", "value": _field_display(x)}},
+                "y": {"title": {"format": "plain", "value": _field_display(y)}},
+            },
+        }
+    return {"title": view.title, "subtitle": "Giá trị được trích từ Insight artifact."}
+
+
+def _needs_business_title(title: str) -> bool:
+    return title in GENERIC_TITLES or "_" in title or not title.strip()
+
+
+def _axis_title(axes: dict[str, Any], axis_name: str) -> str | None:
+    axis = axes.get(axis_name) if isinstance(axes.get(axis_name), dict) else None
+    title_spec = axis.get("title") if isinstance(axis, dict) and isinstance(axis.get("title"), dict) else None
+    value = title_spec.get("value") if isinstance(title_spec, dict) else None
+    return str(value) if value else None
+
+
+def _apply_business_presentation(local: dict[str, Any], view: _View) -> tuple[str, dict[str, Any]]:
+    default = _view_presentation(view)
+    presentation = local.get("presentation") if isinstance(local.get("presentation"), dict) else {}
+    title = str(presentation.get("title") or "")
+    if _needs_business_title(title):
+        title = str(default["title"])
+    axes = default.get("axes") if isinstance(default.get("axes"), dict) else {}
+    render_spec = local.get("render_spec") if isinstance(local.get("render_spec"), dict) else {}
+    layout = render_spec.get("layout") if isinstance(render_spec.get("layout"), dict) else {}
+    if isinstance(layout.get("title"), dict):
+        layout["title"]["text"] = title
+    for axis_name, layout_key in (("x", "xaxis"), ("y", "yaxis")):
+        axis_title = _axis_title(axes, axis_name)
+        axis_layout = layout.get(layout_key) if isinstance(layout.get(layout_key), dict) else None
+        if axis_title and axis_layout and isinstance(axis_layout.get("title"), dict):
+            axis_layout["title"]["text"] = axis_title
+    semantic = local.get("semantic_spec") if isinstance(local.get("semantic_spec"), dict) else {}
+    semantic_presentation = semantic.get("presentation") if isinstance(semantic.get("presentation"), dict) else {}
+    semantic_presentation["title"] = title
+    semantic_presentation["title_spec"] = {"format": "plain", "value": title}
+    for axis_name, semantic_key in (("x", "x_axis"), ("y", "y_axis")):
+        axis = axes.get(axis_name) if isinstance(axes.get(axis_name), dict) else None
+        if axis:
+            semantic_presentation[semantic_key] = axis
+    semantic["presentation"] = semantic_presentation
+    return title, axes
+
+
+def _apply_vega_axis_titles(vega: dict[str, Any], axes: dict[str, Any]) -> dict[str, Any]:
+    encoding = vega.get("encoding")
+    if not isinstance(encoding, dict):
+        return vega
+    for channel, axis_name in (("x", "x"), ("y", "y")):
+        axis_title = _axis_title(axes, axis_name)
+        if not axis_title or not isinstance(encoding.get(channel), dict):
+            continue
+        axis = encoding[channel].get("axis")
+        if not isinstance(axis, dict):
+            axis = {}
+        encoding[channel]["axis"] = {**axis, "title": axis_title}
+    return vega
+
+
 def _insight_views(insight: dict[str, Any], chart_type: str | None, limitations: list[str]) -> list[_View]:
     iid = _ref_label(insight)
     views: list[_View] = []
@@ -219,9 +326,9 @@ def _report(step: StepSpec, state: str, *, error: ReportError | None = None, ref
     })
 
 
-async def run_step(step: StepSpec, tools: Tools) -> AgentReport:
+async def run_step(step: StepSpec, tools: Tools, *, reasoner: VisualReasoner | None = None) -> AgentReport:
     try:
-        return await _run(step, tools)
+        return await _run(step, tools, reasoner=reasoner)
     except InputError as exc:
         return _report(step, exc.state, error=ReportError(code=exc.code, message=exc.message))
     except _Fail as exc:
@@ -237,7 +344,7 @@ def _parse_numbers(vega: dict[str, Any], records: list[dict[str, Any]]) -> dict[
     return vega
 
 
-async def _run(step: StepSpec, tools: Tools) -> AgentReport:
+async def _run(step: StepSpec, tools: Tools, *, reasoner: VisualReasoner | None = None) -> AgentReport:
     if step.operation not in OPERATIONS:
         raise _Fail("rejected", "UNKNOWN_OPERATION", f"chart serves {', '.join(OPERATIONS)}, not {step.operation!r}")
     try:
@@ -274,9 +381,12 @@ async def _run(step: StepSpec, tools: Tools) -> AgentReport:
             policy_ref=POLICY_REF, idempotency_key=step.idempotency_key,
             intent=Intent("report_compilation", step.original_question),
         )
-        service = ChartAgentService(FixtureArtifactStore(store_views))  # in-memory, holds only this projected view
+        service = ChartAgentService(
+            FixtureArtifactStore(store_views),
+            reasoner=reasoner,
+        )  # in-memory, holds only this projected view
         try:
-            result = service.execute(task)
+            result = await service.execute_async(task) if reasoner is not None else service.execute(task)
         except ChartError as exc:
             limitations.append(f"CHART_TARGET_FAILED:{view.target.target_id}:{exc.code}")
             continue
@@ -286,7 +396,12 @@ async def _run(step: StepSpec, tools: Tools) -> AgentReport:
         if target.status != "success" or target.chart_ref is None:
             continue
         local = service.artifacts[target.chart_ref.removesuffix("@1")]
-        vega = {**_parse_numbers(local["semantic_spec"]["vega_render_spec"], local["dataset"]["records"]), "title": view.title}
+        chart_title, axes = _apply_business_presentation(local, view)
+        vega = {
+            **_parse_numbers(local["semantic_spec"]["vega_render_spec"], local["dataset"]["records"]),
+            "title": chart_title,
+        }
+        vega = _apply_vega_axis_titles(vega, axes)
         if problems := validate_vega_lite(vega):  # WS7 F-01: never store a spec the UI cannot render
             limitations.append(f"CHART_TARGET_FAILED:{target.target_id}:INVALID_VEGA_LITE:{problems[0]}")
             continue
@@ -294,7 +409,7 @@ async def _run(step: StepSpec, tools: Tools) -> AgentReport:
         dataset = local["dataset"]
         payload = {
             "chart_id": local["artifact_id"], "target_id": target.target_id, "visual_question": view.target.visual_question,
-            "chart_type": local["chart_type"], "title": view.title,
+            "chart_type": local["chart_type"], "title": chart_title,
             "vega_lite": vega,
             "plotly": local["render_spec"], "semantic_spec": semantic, "dataset": dataset, "bindings": view.bindings,
             "selection": local["selection"], "validation": local["semantic_spec"].get("validation"), "policy_ref": POLICY_REF,

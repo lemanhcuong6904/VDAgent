@@ -1,7 +1,8 @@
-import { useReports } from "../../api/queries";
-import { artifactKind } from "../../ui/artifacts";
+import { useReports, useTask } from "../../api/queries";
+import { artifactIds, artifactKind } from "../../ui/artifacts";
 import { formatDateTime } from "../../ui/format";
 import { useUi } from "../../ui/UiContext";
+import { ArtifactEnvelopeView } from "./ArtifactEnvelopeView";
 import { ChartView } from "./ChartView";
 import { DatasetTable } from "./DatasetTable";
 import { ReportView } from "./ReportView";
@@ -40,18 +41,43 @@ export function Inspector({ taskId }: { taskId: string | null }) {
             <div className="muted small">No tasks yet. Message an agent to start one.</div>
           )
         ) : (
-          <ArtifactPanel />
+          <ArtifactPanel taskId={taskId} />
         )}
       </div>
     </div>
   );
 }
 
-function ArtifactPanel() {
+function ArtifactPanel({ taskId }: { taskId: string | null }) {
   const { artifactId, recentArtifacts, openArtifact } = useUi();
   const reports = useReports();
+  const task = useTask(taskId);
+  const taskArtifacts = [
+    ...new Set(
+      (task.data?.invocations ?? []).flatMap((inv) =>
+        artifactIds([inv.inbound_text, inv.result_text, inv.error].filter((text): text is string => Boolean(text)).join("\n")),
+      ),
+    ),
+  ];
   return (
     <div className="artifact-panel">
+      {taskArtifacts.length > 0 && (
+        <section>
+          <div className="section-label">Task Artifacts</div>
+          <div className="recent-artifacts">
+            {taskArtifacts.map((id) => (
+              <button
+                key={id}
+                type="button"
+                className={`artifact-chip artifact-${artifactKind(id)}${id === artifactId ? " active" : ""}`}
+                onClick={() => openArtifact(id)}
+              >
+                {id}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
       {recentArtifacts.length > 0 && (
         <div className="recent-artifacts">
           {recentArtifacts.map((id) => (
@@ -96,6 +122,8 @@ function ArtifactViewer({ id }: { id: string }) {
       return <DatasetTable key={id} id={id} />;
     case "chart":
       return <ChartView key={id} id={id} />;
+    case "envelope":
+      return <ArtifactEnvelopeView key={id} id={id} version={1} />;
     case "report":
       return <ReportView key={id} id={id} />;
   }

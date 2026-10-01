@@ -25,7 +25,7 @@ function parseArgs(json: string): Record<string, unknown> {
       return value as Record<string, unknown>;
     }
   } catch {
-    // fall through: show the raw text
+    // Fall through: show the raw text.
   }
   return { arguments: json };
 }
@@ -47,11 +47,12 @@ function ToolCallChip({ call, result }: { call: ToolCallDTO; result: MessageDTO 
     <div className={`tool-chip${open ? " open" : ""}`}>
       <div className="tool-chip-head">
         <button type="button" className="tool-chip-toggle" onClick={() => setOpen((v) => !v)}>
-          <span className="caret">{open ? "▾" : "▸"}</span>
+          <span className="caret">{open ? "v" : ">"}</span>
           <span className="mono tool-name">{call.name}</span>
           {isAgentCall ? (
             <span className="tool-target">
-              → <SenderBadge name={String(args.agent ?? "?")} />
+              {" -> "}
+              <SenderBadge name={String(args.agent ?? "?")} />
               <span className="muted"> {truncate(String(args.message ?? ""), 60)}</span>
             </span>
           ) : (
@@ -60,11 +61,12 @@ function ToolCallChip({ call, result }: { call: ToolCallDTO; result: MessageDTO 
         </button>
         <span className="tool-outcome">
           {!result && <span className="spinner small" title="waiting for result" />}
-          {failed && <span className="outcome-error">→ error</span>}
-          {result && !failed && produced.length === 0 && <span className="outcome-ok">✓</span>}
+          {failed && <span className="outcome-error">-&gt; error</span>}
+          {result && !failed && produced.length === 0 && <span className="outcome-ok">ok</span>}
           {produced.map((id) => (
             <span key={id}>
-              → <ArtifactLink id={id} />
+              {" -> "}
+              <ArtifactLink id={id} />
             </span>
           ))}
         </span>
@@ -96,7 +98,7 @@ function ToolResult({ message, call }: { message: MessageDTO; call: ToolCallDTO 
     <div className={`tool-result${failed ? " failed" : ""}`}>
       <div className="tool-result-head" onClick={() => setOpen((v) => !v)}>
         <button type="button" className="caret-btn" aria-expanded={open}>
-          {open ? "▾" : "▸"}
+          {open ? "v" : ">"}
         </button>
         <span className="tool-result-label">
           {agent ? (
@@ -105,7 +107,7 @@ function ToolResult({ message, call }: { message: MessageDTO; call: ToolCallDTO 
             </>
           ) : (
             <>
-              ↳ <span className="mono">{call?.name ?? "tool"}</span> result
+              result from <span className="mono">{call?.name ?? "tool"}</span>
             </>
           )}
         </span>

@@ -83,3 +83,18 @@ def test_llm_presentation_rejects_malformed_axis_shapes_without_crashing() -> No
     assert presentation["title"] == "Inventory mix by bedroom type"
     assert "x_axis" not in presentation
     assert "y_axis" not in presentation
+
+
+def test_llm_presentation_preserves_business_legend_labels() -> None:
+    plan = {
+        "presentation": {
+            "title": "A12-08 versus peer median",
+            "subtitle": "Net asking price per square meter.",
+            "legend": {"title": "Comparison group", "items": {"target": "A12-08", "median": "Peer median"}},
+        }
+    }
+
+    presentation = validate_presentation_plan(plan, "Fallback", "Snapshot")
+
+    assert presentation["legend"]["title"] == "Comparison group"
+    assert presentation["legend"]["items"] == {"target": "A12-08", "median": "Peer median"}
