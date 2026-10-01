@@ -803,6 +803,55 @@ pre {
 .report-title {
   font-weight: 600;
 }
+.report-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(920px, calc(100vw - 32px));
+  max-width: none;
+  max-height: 88vh;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 28%);
+}
+.report-dialog::backdrop {
+  background: rgb(15 23 42 / 48%);
+}
+.report-dialog-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.report-dialog-close {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+}
+.report-dialog-close:hover {
+  background: var(--surface-quiet, var(--bg));
+}
+.report-dialog-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 24px 24px;
+}
+.report-dialog-content .report {
+  margin: 0;
+}
 
 .dataset {
   margin: 6px 0;
