@@ -1,0 +1,374 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:team6:schema:agent-manifest:v1",
+  "title": "AgentManifest",
+  "$defs": {
+    "Json": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number",
+          "minimum": -1.7976931348623157e308,
+          "maximum": 1.7976931348623157e308
+        },
+        {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/Json"
+          }
+        },
+        {
+          "type": "object",
+          "maxProperties": 10000,
+          "propertyNames": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Json"
+          }
+        }
+      ]
+    },
+    "Schema": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "object",
+          "maxProperties": 256,
+          "propertyNames": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Json"
+          }
+        }
+      ]
+    },
+    "Limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400000
+        },
+        "maxInputBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "maxOutputBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "maxEventBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "maxCheckpointBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "maxModelCalls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "maxToolCalls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "maxChildRuns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1024
+        },
+        "maxDepth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "maxCostUsd": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "timeoutMs",
+        "maxInputBytes",
+        "maxOutputBytes",
+        "maxEventBytes",
+        "maxCheckpointBytes",
+        "maxModelCalls",
+        "maxToolCalls",
+        "maxChildRuns",
+        "maxDepth",
+        "maxCostUsd"
+      ]
+    },
+    "Grant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "toolId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[A-Za-z0-9.-]+)?$"
+        },
+        "effect": {
+          "type": "string",
+          "enum": ["read", "write", "external"]
+        }
+      },
+      "required": ["toolId", "version", "effect"]
+    },
+    "WorkflowManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "type": "string",
+          "const": "workflow.v1",
+          "maxLength": 32
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[A-Za-z0-9.-]+)?$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "stateSchema": {
+          "$ref": "#/$defs/Schema"
+        },
+        "outputSchema": {
+          "$ref": "#/$defs/Schema"
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          }
+        },
+        "requiredPorts": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxNodes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024
+            },
+            "maxDepth": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            },
+            "maxFanOut": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024
+            },
+            "maxDurationMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8640000000000000
+            },
+            "maxCostUsd": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "requiresApproval": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "maxNodes",
+            "maxDepth",
+            "maxFanOut",
+            "maxDurationMs",
+            "maxCostUsd",
+            "requiresApproval"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        }
+      },
+      "required": [
+        "apiVersion",
+        "id",
+        "version",
+        "displayName",
+        "description",
+        "stateSchema",
+        "outputSchema",
+        "capabilities",
+        "requiredPorts",
+        "limits"
+      ]
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "agent.v1",
+      "maxLength": 32
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[A-Za-z0-9.-]+)?$"
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "inputSchema": {
+      "$ref": "#/$defs/Schema"
+    },
+    "outputSchema": {
+      "$ref": "#/$defs/Schema"
+    },
+    "capabilities": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+      }
+    },
+    "requiredPorts": {
+      "type": "array",
+      "maxItems": 7,
+      "items": {
+        "type": "string",
+        "enum": ["model", "tools", "warehouse", "artifacts", "memory", "collaboration", "sandbox"]
+      }
+    },
+    "toolGrants": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/Grant"
+      }
+    },
+    "modelProfile": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "limits": {
+      "$ref": "#/$defs/Limits"
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minHostVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[A-Za-z0-9.-]+)?$"
+        },
+        "maxHostVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[A-Za-z0-9.-]+)?$"
+        }
+      },
+      "required": ["minHostVersion"]
+    },
+    "workflow": {
+      "$ref": "#/$defs/WorkflowManifest"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "id",
+    "version",
+    "displayName",
+    "inputSchema",
+    "outputSchema",
+    "capabilities",
+    "requiredPorts",
+    "toolGrants",
+    "limits",
+    "compatibility"
+  ]
+}

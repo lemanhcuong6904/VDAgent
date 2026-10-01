@@ -1,0 +1,38 @@
+# Local test-only override: adds a separate warehouse PostgreSQL loaded from
+# 2509_VinGrandPark/data CSVs, kept apart from the app database as required by
+# src/tools/warehouse.ts in NODE_ENV=production.
+services:
+  api:
+    environment:
+      # Base compose hardcodes production, which forces WEB_AUTH_MODE=session
+      # (real identity provider). Not needed for this local warehouse test.
+      NODE_ENV: development
+    depends_on:
+      warehouse-database:
+        condition: service_healthy
+  worker:
+    environment:
+      NODE_ENV: development
+    depends_on:
+      warehouse-database:
+        condition: service_healthy
+
+  warehouse-database:
+    image: postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: warehouse
+      POSTGRES_PASSWORD: ${WAREHOUSE_POSTGRES_PASSWORD:?set WAREHOUSE_POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: warehouse
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warehouse -d warehouse"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - warehouse-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  warehouse-postgres-data:

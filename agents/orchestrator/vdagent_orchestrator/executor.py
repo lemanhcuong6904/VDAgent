@@ -15,8 +15,8 @@ step as `UPSTREAM_FAILED:<agent>`). Skipped steps are never called. The whole ru
 pending calls are cancelled (TaskGroup), the state is persisted as `timed_out` and `AgentTimeoutError` is raised so
 the engine fails the turn with DEADLINE_EXCEEDED and closes the open tool calls itself.
 
-`run_state` (one artifact, a new version per transition) holds the plan, every step's status, timestamps, input and
-output refs, error, limitations. A repeated invocation of the same plan (same task) reuses completed steps instead
+`run_state` (one artifact, versioned before execution, after each wave and at completion/timeout) holds the plan,
+step statuses, timestamps, refs, errors and limitations. A repeated invocation of the same plan (same task) reuses completed steps instead
 of calling their agents again.
 """
 
@@ -33,6 +33,7 @@ from typing import Any
 from vdagent_contracts.canonical import canonical_json
 from vdagent_contracts.catalog import AgentCatalog
 from vdagent_contracts.catalogs import load_catalog
+from vdagent_contracts.envelope import ArtifactStatus
 from vdagent_contracts.reports import AgentReport, parse_agent_report
 from vdagent_sdk import SEND_TO_AGENT, AgentTimeoutError, InvocationContext, ToolCall
 
@@ -159,8 +160,10 @@ class DagExecutor:
         report = parse_agent_report(reply)
         if not isinstance(report, AgentReport):
             return {"code": "MALFORMED_REPORT", "message": report.reason}
-        if report.step_id != step.step_id or report.idempotency_key != f"{plan.plan_id}:{step.step_id}":
-            return {"code": "MALFORMED_REPORT", "message": "the report answers another step"}
+        if (report.run_id != plan.run_id or report.step_id != step.step_id
+                or report.idempotency_key != f"{plan.plan_id}:{step.step_id}"
+                or report.snapshot_id != plan.snapshot_id or report.semantic_config_version != plan.semantic_config_version):
+            return {"code": "MALFORMED_REPORT", "message": "the report does not match the run, step or snapshot/semantic pins"}
         st.limitations = sorted(set(st.limitations) | set(report.warnings))
         st.partial = report.partial
         if report.state != "completed":
@@ -178,12 +181,18 @@ class DagExecutor:
                 env = await self._tools.call("artifact_get", {"artifact_id": ref.artifact_id, "version": ref.version})
             except Exception:
                 return {"code": "REF_NOT_FOUND", "message": f"{ref.artifact_id}@{ref.version} is not readable"}
+            if env["artifact_type"] != ref.artifact_type.value:
+                return {"code": "REF_TYPE_UNEXPECTED", "message": f"{ref.artifact_id} is a {env['artifact_type']}"}
+            if env["status"] not in (ArtifactStatus.VALID, ArtifactStatus.PARTIAL):
+                return {"code": "REF_STATUS_INVALID", "message": f"{ref.artifact_id} has status {env['status']}"}
             if env["content_hash"] != ref.content_hash:
                 return {"code": "REF_HASH_MISMATCH", "message": f"{ref.artifact_id}@{ref.version}"}
             if env["snapshot_refs"] != [plan.snapshot_id]:
                 return {"code": "REF_SNAPSHOT_MISMATCH", "message": f"{ref.artifact_id} is on {env['snapshot_refs']}"}
             if env["semantic_config_version"] != plan.semantic_config_version:
                 return {"code": "REF_SEMANTIC_MISMATCH", "message": f"{ref.artifact_id} uses {env['semantic_config_version']}"}
+            st.partial = st.partial or env["status"] == ArtifactStatus.PARTIAL
+            st.limitations = sorted(set(st.limitations) | set(env.get("limitations", [])))
             refs.append(ref.model_dump(mode="json"))
         if step.agent in ("data", "insight", "compare"):
             missing = produces - {r["artifact_type"] for r in refs}

@@ -1,0 +1,154 @@
+[
+  {
+    "test_case_id": "vhsc_20260630_01",
+    "testset_id": "ts_vhsc_slowmoving_20260630",
+    "prompt_input": "Vì sao căn SMC-U00057 bán chậm tại snapshot 30/06/2026?",
+    "expected_intent": "DIAGNOSE_SLOW_MOVING_UNIT",
+    "expected_sql_query": "SELECT c.cause_code FROM dw.unit_diagnostic_causes c JOIN dw.dim_unit_master u ON u.unit_key = c.unit_key WHERE u.unit_id = 'SMC-U00057' AND c.snapshot_date_key = 20260630 ORDER BY c.severity_rank;",
+    "ground_truth_causes": [
+      "DEEP_FUNNEL_DROP_OFF"
+    ],
+    "difficulty_level": "MEDIUM",
+    "unit_id": "SMC-U00057",
+    "project_id": "PRJ-VHSC",
+    "snapshot_id": "SNAP-20260630-01"
+  },
+  {
+    "test_case_id": "vhsc_20260630_02",
+    "testset_id": "ts_vhsc_slowmoving_20260630",
+    "prompt_input": "Vì sao căn SMC-U00137 bán chậm tại snapshot 30/06/2026?",
+    "expected_intent": "DIAGNOSE_SLOW_MOVING_UNIT",
+    "expected_sql_query": "SELECT c.cause_code FROM dw.unit_diagnostic_causes c JOIN dw.dim_unit_master u ON u.unit_key = c.unit_key WHERE u.unit_id = 'SMC-U00137' AND c.snapshot_date_key = 20260630 ORDER BY c.severity_rank;",
+    "ground_truth_causes": [
+      "EXTREME_THERMAL_EXPOSURE"
+    ],
+    "difficulty_level": "MEDIUM",
+    "unit_id": "SMC-U00137",
+    "project_id": "PRJ-VHSC",
+    "snapshot_id": "SNAP-20260630-01"
+  },
+  {
+    "test_case_id": "vhsc_20260630_03",
+    "testset_id": "ts_vhsc_slowmoving_20260630",
+    "prompt_input": "Vì sao căn SMC-U02985 bán chậm tại snapshot 30/06/2026?",
+    "expected_intent": "DIAGNOSE_SLOW_MOVING_UNIT",
+    "expected_sql_query": "SELECT c.cause_code FROM dw.unit_diagnostic_causes c JOIN dw.dim_unit_master u ON u.unit_key = c.unit_key WHERE u.unit_id = 'SMC-U02985' AND c.snapshot_date_key = 20260630 ORDER BY c.severity_rank;",
+    "ground_truth_causes": [
+      "LEGAL_PERMIT_BARRIER"
+    ],
+    "difficulty_level": "MEDIUM",
+    "unit_id": "SMC-U02985",
+    "project_id": "PRJ-VHSC",
+    "snapshot_id": "SNAP-20260630-01"
+  },
+  {
+    "test_case_id": "vhsc_20260630_04",
+    "testset_id": "ts_vhsc_slowmoving_20260630",
+    "prompt_input": "Vì sao căn SMC-U00023 bán chậm tại snapshot 30/06/2026?",
+    "expected_intent": "DIAGNOSE_SLOW_MOVING_UNIT",
+    "expected_sql_query": "SELECT c.cause_code FROM dw.unit_diagnostic_causes c JOIN dw.dim_unit_master u ON u.unit_key = c.unit_key WHERE u.unit_id = 'SMC-U00023' AND c.snapshot_date_key = 20260630 ORDER BY c.severity_rank;",
+    "ground_truth_causes": [
+      "LOW_SALES_INCENTIVE"
+    ],
+    "difficulty_level": "MEDIUM",
+    "unit_id": "SMC-U00023",
+    "project_id": "PRJ-VHSC",
+    "snapshot_id": "SNAP-20260630-01"
+  },
+  {
+    "test_case_id": "vhsc_20260630_05",
+    "testset_id": "ts_vhsc_slowmoving_20260630",
+    "prompt_input": "Vì sao căn SMC-U00034 bán chậm tại snapshot 30/06/2026?",
+    "expected_intent": "DIAGNOSE_SLOW_MOVING_UNIT",
+    "expected_sql_query": "SELECT c.cause_code FROM dw.unit_diagnostic_causes c JOIN dw.dim_unit_master u ON u.unit_key = c.unit_key WHERE u.unit_id = 'SMC-U00034' AND c.snapshot_date_key = 20260630 ORDER BY c.severity_rank;",
+    "ground_truth_causes": [
+      "LUMP_SUM_TICKET_BARRIER",
+      "LOW_SALES_INCENTIVE"
+    ],
+    "difficulty_level": "MEDIUM",
+    "unit_id": "SMC-U00034",
+    "project_id": "PRJ-VHSC",
+    "snapshot_id": "SNAP-20260630-01"
+  },
+  {
+    "test_case_id": "vhsc_20260630_06",
+    "testset_id": "ts_vhsc_slowmoving_20260630",
+    "prompt_input": "Vì sao căn SMC-U00017 bán chậm tại snapshot 30/06/2026?",
+    "expected_intent": "DIAGNOSE_SLOW_MOVING_UNIT",
+    "expected_sql_query": "SELECT c.cause_code FROM dw.unit_diagnostic_causes c JOIN dw.dim_unit_master u ON u.unit_key = c.unit_key WHERE u.unit_id = 'SMC-U00017' AND c.snapshot_date_key = 20260630 ORDER BY c.severity_rank;",
+    "ground_truth_causes": [
+      "OVERPRICED_VS_PEER",
+      "SECONDARY_ARBITRAGE"
+    ],
+    "difficulty_level": "MEDIUM",
+    "unit_id": "SMC-U00017",
+    "project_id": "PRJ-VHSC",
+    "snapshot_id": "SNAP-20260630-01"
+  },
+  {
+    "test_case_id": "vhsc_20260630_07",
+    "testset_id": "ts_vhsc_slowmoving_20260630",
+    "prompt_input": "Vì sao căn SMC-U00046 bán chậm tại snapshot 30/06/2026?",
+    "expected_intent": "DIAGNOSE_SLOW_MOVING_UNIT",
+    "expected_sql_query": "SELECT c.cause_code FROM dw.unit_diagnostic_causes c JOIN dw.dim_unit_master u ON u.unit_key = c.unit_key WHERE u.unit_id = 'SMC-U00046' AND c.snapshot_date_key = 20260630 ORDER BY c.severity_rank;",
+    "ground_truth_causes": [
+      "SECONDARY_ARBITRAGE",
+      "LOW_SALES_INCENTIVE",
+      "OVERPRICED_VS_PEER"
+    ],
+    "difficulty_level": "MEDIUM",
+    "unit_id": "SMC-U00046",
+    "project_id": "PRJ-VHSC",
+    "snapshot_id": "SNAP-20260630-01"
+  },
+  {
+    "test_case_id": "vhsc_20260630_08",
+    "testset_id": "ts_vhsc_slowmoving_20260630",
+    "prompt_input": "Vì sao căn SMC-U00001 bán chậm tại snapshot 30/06/2026?",
+    "expected_intent": "DIAGNOSE_SLOW_MOVING_UNIT",
+    "expected_sql_query": "SELECT c.cause_code FROM dw.unit_diagnostic_causes c JOIN dw.dim_unit_master u ON u.unit_key = c.unit_key WHERE u.unit_id = 'SMC-U00001' AND c.snapshot_date_key = 20260630 ORDER BY c.severity_rank;",
+    "ground_truth_causes": [
+      "SEVERE_PHYSICAL_DEFECT"
+    ],
+    "difficulty_level": "MEDIUM",
+    "unit_id": "SMC-U00001",
+    "project_id": "PRJ-VHSC",
+    "snapshot_id": "SNAP-20260630-01"
+  },
+  {
+    "test_case_id": "vhsc_20260630_09",
+    "testset_id": "ts_vhsc_slowmoving_20260630",
+    "prompt_input": "Căn SMC-U00002 có cần chẩn đoán bán chậm tại snapshot 30/06/2026 không?",
+    "expected_intent": "DIAGNOSE_SLOW_MOVING_UNIT",
+    "expected_sql_query": "SELECT c.cause_code FROM dw.unit_diagnostic_causes c JOIN dw.dim_unit_master u ON u.unit_key = c.unit_key WHERE u.unit_id = 'SMC-U00002' AND c.snapshot_date_key = 20260630 ORDER BY c.severity_rank;",
+    "ground_truth_causes": [],
+    "difficulty_level": "EDGE_CASE",
+    "unit_id": "SMC-U00002",
+    "project_id": "PRJ-VHSC",
+    "snapshot_id": "SNAP-20260630-01"
+  },
+  {
+    "test_case_id": "vhsc_20260630_10",
+    "testset_id": "ts_vhsc_slowmoving_20260630",
+    "prompt_input": "Căn SMC-U00004 có cần chẩn đoán bán chậm tại snapshot 30/06/2026 không?",
+    "expected_intent": "DIAGNOSE_SLOW_MOVING_UNIT",
+    "expected_sql_query": "SELECT c.cause_code FROM dw.unit_diagnostic_causes c JOIN dw.dim_unit_master u ON u.unit_key = c.unit_key WHERE u.unit_id = 'SMC-U00004' AND c.snapshot_date_key = 20260630 ORDER BY c.severity_rank;",
+    "ground_truth_causes": [],
+    "difficulty_level": "EDGE_CASE",
+    "unit_id": "SMC-U00004",
+    "project_id": "PRJ-VHSC",
+    "snapshot_id": "SNAP-20260630-01"
+  },
+  {
+    "test_case_id": "vhsc_20260630_11",
+    "testset_id": "ts_vhsc_slowmoving_20260630",
+    "prompt_input": "Căn SMC-U02161 có cần chẩn đoán bán chậm tại snapshot 30/06/2026 không?",
+    "expected_intent": "DIAGNOSE_SLOW_MOVING_UNIT",
+    "expected_sql_query": "SELECT c.cause_code FROM dw.unit_diagnostic_causes c JOIN dw.dim_unit_master u ON u.unit_key = c.unit_key WHERE u.unit_id = 'SMC-U02161' AND c.snapshot_date_key = 20260630 ORDER BY c.severity_rank;",
+    "ground_truth_causes": [],
+    "difficulty_level": "EDGE_CASE",
+    "unit_id": "SMC-U02161",
+    "project_id": "PRJ-VHSC",
+    "snapshot_id": "SNAP-20260630-01"
+  }
+]

@@ -9,9 +9,10 @@ import sqlite3
 from pathlib import Path
 from types import ModuleType
 
+import pytest
 from conftest import ALICE, BOB, NOW
 from vdagent_backend.persistence import create_database, migrate, sqlite_url
-from vdagent_backend.scopes import DEMO_SCOPES, UserScopes, seed_demo_scopes, seed_missing_demo_scopes
+from vdagent_backend.scopes import DEMO_SCOPES, REAL_SCOPES, UserScopes, seed_demo_scopes, seed_missing_demo_scopes
 from vdagent_contracts.scope import UserContext
 
 REPO = Path(__file__).resolve().parents[3]
@@ -61,6 +62,29 @@ def test_first_seed_grants_the_documented_projects(tmp_path: Path) -> None:
     path = _fresh(tmp_path)
     assert seed_missing_demo_scopes(path) == [ALICE, BOB]
     assert _rows(path) == [(ALICE, "PRJ-X", None), (BOB, "PRJ-Y", None)]
+
+
+def test_the_real_profile_grants_the_real_warehouse_projects(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VDAGENT_SCOPE_PROFILE", "real")
+    path = _fresh(tmp_path)
+    assert seed_missing_demo_scopes(path) == [ALICE, BOB]
+    assert _rows(path) == sorted((u, p, z) for u, p, z in REAL_SCOPES)
+    assert {p for _, p, _ in _rows(path)} == {"100", "200", "400"} and "PRJ-X" not in {p for _, p, _ in _rows(path)}
+
+
+def test_the_demo_profile_is_the_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("VDAGENT_SCOPE_PROFILE", raising=False)
+    path = _fresh(tmp_path)
+    seed_missing_demo_scopes(path)
+    assert _rows(path) == [(ALICE, "PRJ-X", None), (BOB, "PRJ-Y", None)]
+
+
+def test_an_unknown_profile_is_refused_and_seeds_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VDAGENT_SCOPE_PROFILE", "prod")
+    path = _fresh(tmp_path)
+    with pytest.raises(ValueError, match="VDAGENT_SCOPE_PROFILE"):
+        seed_missing_demo_scopes(path)
+    assert _rows(path) == []
 
 
 def test_repeated_seed_changes_nothing(tmp_path: Path) -> None:

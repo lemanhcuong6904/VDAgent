@@ -242,7 +242,8 @@ class McpTools:
         query = required_str(args, "sql")
         if "count_hidden" in args:  # WS7 F-08: out-of-scope rows are never counted
             raise ToolError("'count_hidden' is not supported: rows outside your scope are not disclosed")
-        return await self._store_dataset(identity, optional_str(args, "name"), query, await warehouse.query(query, scope))
+        result = await self._store_dataset(identity, optional_str(args, "name"), query, await warehouse.query(query, scope))
+        return {**result, "warehouse": warehouse.source}  # which DW answered: agents label their data from it
 
 
 def _summary(envelope: ArtifactEnvelope) -> dict[str, Any]:

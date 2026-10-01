@@ -143,6 +143,8 @@ def fallback_template(candidate: InsightCandidate, cfg: SemanticConfig) -> str:
         cause = cfg.cause(candidate.cause_code)
         if cause.uses_peer_group and "GROUP_TOO_SMALL" in candidate.dq_flags:
             return cfg.language.peer_hidden_template
+        if "PEER_BY_COMPARE" in candidate.dq_flags and cause.peer_free_template:
+            return cause.peer_free_template  # peer facts are Compare's (validation.hidden_peer_slots)
         return cause.template
     if candidate.insight_type == "DATA_LIMITATION" and NO_OVERDUE in candidate.dq_flags:
         return cfg.insight_templates[NO_OVERDUE]

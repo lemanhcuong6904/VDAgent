@@ -215,7 +215,7 @@ Các dòng dưới đây là **mặc định đang chạy**, không phải mặc
 | D-53/D-52 — replay/task clock | Lưu prompt hash/raw output tối đa 20 KB; `as_of` lưu trong replay, demo ghim theo snapshot. | PO — cần xác nhận |
 | D-10 — giao thức Orchestrator | JSON request được hỗ trợ; free text vẫn parse bằng luật cố định trong bridge đến khi tích hợp JSON hoàn tất. | PLAT — MỞ |
 | D-11/D-12 — consumer artifact | Reply tóm tắt + artifact id + JSON KEY tối đa 6.000 ký tự. Report chưa đọc được SQLite store của Insight. | PLAT — MỞ |
-| D-13 — chart | `chart_hints` có mapping loại chart; chưa có Chart Agent trong repo. | PLAT — MỞ |
+| D-13 — chart | Đã chốt 2026-10-01: Chart đọc khối `evidence` (`insight_evidence@1`, xem docs/integration/CANONICAL_DATA_CONTRACT.md §10) dựng từ candidate tất định; `chart_hints` chỉ còn trong payload cũ, Chart không đọc. | ĐÓNG |
 | D-14 — authorization | Chế độ tương thích prototype dùng `SALES_MANAGER` và mọi project trong data pack; JSON request vẫn qua E04. Chưa có nguồn `role_project_access`. | PLAT — tạm |
 | D-15/D-16 — queue/deadline | Không có queue; attempt/fencing chỉ validate. Deadline 60 giây có thể tạo PARTIAL. | PLAT — prototype |
 | D-17 — tài liệu ngoài plugin | README gốc và `agents/_template/README.md` còn ví dụ Insight/LangChain; prompt Orchestrator cần cập nhật khi D-10 chốt. | PLAT — MỞ |
@@ -231,7 +231,6 @@ Các dòng dưới đây là **mặc định đang chạy**, không phải mặc
 - Luồng Orchestrator gửi request contract ổn định; tích hợp artifact store để Report đọc được payload đầy đủ.
 - Data Agent cung cấp artifact metric/DQ/dataset theo contract production; data pack hiện là adapter demo.
 - Nguồn phân quyền project/zone thực; mặc định mọi project chỉ dành cho demo.
-- Chart Agent và luồng sử dụng `chart_hints`.
 - Duyệt chính thức các ngưỡng PENDING, catalog câu chữ, action text, slot labels và policy còn mở.
 
 
@@ -257,7 +256,7 @@ Output là `ArtifactEnvelope` schema `insight.v2` với refs/hash/limitations v�
 | Orchestrator | Partial: generic peer call tồn tại, nhưng prompt Orchestrator truyền dataset id/free text không tạo ra artifact refs đúng contract Insight; chưa có E2E contract tương thích (`agents/orchestrator/vdagent_orchestrator/agent.py:42-63,182-188`). |
 | Data Agent | Mocked/demo: `FixtureReader` hoặc `ExportArtifactReader`; không gọi Data Agent, DW hay shared artifact service. |
 | Compare | Không tích hợp: Insight không đọc Comparison Artifact và không gọi Compare. |
-| Chart | Chỉ tạo `chart_hints`; không có Chart Agent consumer trong repo. |
+| Chart | Đọc `payload.evidence` (`insight_evidence@1`): mỗi số có `metric_id`, đơn vị và con trỏ vào dataset Data; không đọc câu chữ hay `numeric_bindings`. |
 | Report | Chưa tích hợp: Report không đọc SQLite store cục bộ của Insight. |
 
 Hai rủi ro contract hiện hữu: compat bridge đặt default từ SDK context nhưng JSON caller có thể override `user_context` và identity do thứ tự merge (`bridge.py:324-351`); idempotency key chỉ gồm run/task/ref-hash/prompt-version, không gồm user/authorization, và cache lookup xảy ra trước input/scope validation (`agent.py:139-142,330-352`). Ngoài ra reader kiểm actual type/hash/snapshot/config nhưng không đối chiếu mọi `version/status` khai báo trong ref (`agent.py:148-170`).
@@ -439,7 +438,7 @@ Quy trình thay đổi tối thiểu:
 | Authorization, idempotency isolation, deadline accounting | Partial / technical debt | Tin caller scope; cache trước validation; timeout có thể thiếu usage |
 | Data integration | Mocked/demo | Fixture/CSV reader tự dựng artifacts; không có Data Agent/DW/shared store |
 | Memory/events | Partial | In-process adapter/SDK context, lỗi memory bị suppress; không durable event queue |
-| Orchestrator, Compare, Chart, Report | Planned hoặc contract-only | Chưa có E2E compatible flow; chart chỉ là hint |
+| Orchestrator, Compare, Chart, Report | IMPLEMENTED (StepSpec DAG) | Insight → Chart qua `insight_evidence@1`; E2E kiểm chứng trong agents/orchestrator/vdagent_orchestrator/tests/test_ws5_golden.py |
 | Full data-pack golden và live LLM | Unverified | Export vắng mặt; dependency `google-genai` vắng; live bị cấm trong audit |
 
 Các gap cần ưu tiên:

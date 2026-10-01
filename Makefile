@@ -1,4 +1,4 @@
-# Local development. See README.md ("Makefile usage").
+# Local development. Start the product with `make up` (README.md "Quick Start").
 
 HOST         ?= 127.0.0.1
 BACKEND_DB   ?= var/backend.db
@@ -6,21 +6,49 @@ WAREHOUSE_DB ?= var/warehouse.db
 DOCS_MODULES := vdagent_sdk vdagent_backend.mcp.reference
 
 .DEFAULT_GOAL := help
-.PHONY: help backend reset-db sdk-docs sdk-docs-serve docker-env docker-build docker-up docker-down docker-test docker-offline-up docker-offline-down docker-offline-clean docker-live-up docker-live-check docker-live-logs docker-live-down docker-live-clean
+.PHONY: help up down logs mock-up mock-down backend reset-db sdk-docs sdk-docs-serve docker-test
+
+# Always this project's compose file: a bare `docker compose` would also merge any docker-compose.override.yml.
+COMPOSE := docker compose -f docker-compose.yml
+AGENTS  := orchestrator data compare insight report chart
 
 help:
-	@echo "make backend        start the backend on $(HOST):8000 with the agent plugins listed in backend/config.yaml"
-	@echo "                    (each configured by agents/<name>/.env); HOST=0.0.0.0 serves other machines"
-	@echo "make reset-db       delete and reseed $(BACKEND_DB) and $(WAREHOUSE_DB) (stop the backend first)"
+	@echo "make up       build and start the product against the real warehouse (UI + API on http://localhost:8000;"
+	@echo "              needs .env, see .env.example)"
+	@echo "make down     stop it (app data is kept in the Docker volume vdagent_real_var)"
+	@echo "make logs     follow the backend log"
+	@echo ""
+	@echo "make mock-up / mock-down   synthetic mock warehouse, no keys, on :8001 (tests and offline development only)"
+	@echo "make docker-test           run the offline test suite in a container without network"
+	@echo "make backend        run the backend on the host ($(HOST):8000; plugins configured by agents/<name>/.env)"
+	@echo "make reset-db       delete and reseed $(BACKEND_DB) and $(WAREHOUSE_DB) for make backend (stop it first)"
 	@echo "make sdk-docs       build the agent developer reference (SDK + MCP tools) into docs/sdk/"
 	@echo "make sdk-docs-serve serve the same reference on $(HOST):8080, rebuilt when a docstring changes"
-	@echo "make docker-env     create missing agents/<name>/.env from .env.example (never overwrites)"
-	@echo "make docker-build   build the runtime and test images"
-	@echo "make docker-up      start backend on :8000 with ./var (seeds only missing databases)"
-	@echo "make docker-down    stop the development stack (keeps ./var)"
-	@echo "make docker-test    run the offline test suite in a container without network"
-	@echo "make docker-offline-up / -down / -clean   isolated keyless backend on :8001 (named volume; -clean deletes it)"
-	@echo "make docker-live-up / -check / -logs / -down / -clean   live-AI demo backend on :8022 (ORCH_LLM=on, agent .env keys)"
+
+up:
+	@bash docker/check-env.sh
+	@$(COMPOSE) up -d --build --wait backend || { $(COMPOSE) logs --no-log-prefix warehouse-check; exit 1; }
+	@$(COMPOSE) logs --no-log-prefix warehouse-check
+	@$(COMPOSE) exec -T backend python -c "import json,sys,urllib.request; \
+	r=urllib.request.Request('http://127.0.0.1:8000/api/agents', headers={'X-User-Id': 'u_000000000001'}); \
+	got={a['name'] for a in json.load(urllib.request.urlopen(r))}; missing=set('$(AGENTS)'.split())-got; \
+	print('agents loaded:', ' '.join(sorted(got))); \
+	missing and sys.exit('MISSING agents: ' + ' '.join(sorted(missing)) + ' -> see: make logs | grep failed')"
+	@echo "VDaAgent is up: http://localhost:$$($(COMPOSE) port backend 8000 | sed 's/.*://')  (UI and API)"
+
+down:
+	$(COMPOSE) down
+
+logs:
+	$(COMPOSE) logs -f backend
+
+# The synthetic mock warehouse, explicitly (keyless, deterministic; never the product path).
+mock-up:
+	$(COMPOSE) --profile offline up -d --build --wait backend-offline
+	@echo "MOCK warehouse (synthetic data) on http://localhost:8001"
+
+mock-down:
+	$(COMPOSE) --profile offline rm -sf backend-offline seed-offline
 
 backend:
 	uv run uvicorn vdagent_backend.app:app --host $(HOST) --port 8000
@@ -30,64 +58,8 @@ reset-db:
 	uv run python data/seed_warehouse.py $(WAREHOUSE_DB)
 	uv run python data/seed_users.py $(BACKEND_DB)
 
-AGENTS_WITH_ENV := orchestrator data compare insight report chart
-
-docker-env:
-	@for a in $(AGENTS_WITH_ENV); do \
-		if [ -e agents/$$a/.env ]; then echo "kept    agents/$$a/.env"; \
-		else cp agents/$$a/.env.example agents/$$a/.env && echo "created agents/$$a/.env (fill in the keys)"; fi; \
-	done
-
-docker-build:
-	docker compose build
-	docker compose --profile test build tests
-
-docker-up:
-	docker compose up -d backend
-
-docker-down:
-	docker compose down
-
 docker-test:
-	docker compose --profile test run --rm tests
-
-docker-offline-up:
-	docker compose --profile offline up -d backend-offline
-
-docker-offline-down:
-	docker compose --profile offline stop backend-offline seed-offline
-
-docker-offline-clean:
-	docker compose --profile offline rm -sf backend-offline seed-offline
-	docker volume rm -f vdagent_offline_var
-
-LIVE := docker compose --profile live
-LIVE_URL := http://localhost:8022
-
-docker-live-up: docker-env
-	@sh docker/check-env.sh
-	$(LIVE) up -d --build backend-live
-	@for i in $$(seq 120); do [ "$$(docker inspect -f '{{.State.Health.Status}}' $$($(LIVE) ps -q backend-live))" = healthy ] && break; sleep 1; done
-	@$(MAKE) --no-print-directory docker-live-check
-
-# Non-secret status of the running live container (never prints keys).
-docker-live-check:
-	@echo "backend:   $(LIVE_URL)"
-	@for v in ORCH_LLM ORCH_SNAPSHOT_ID ORCH_SEMANTIC_VERSION ORCH_DAG_TIMEOUT_S; do \
-		printf '%-22s %s\n' "$$v" "$$($(LIVE) exec -T backend-live printenv $$v)"; done
-	@printf '%-22s %s\n' health "$$(docker inspect -f '{{.State.Health.Status}}' $$($(LIVE) ps -q backend-live))"
-	@printf '%-22s %s\n' agents "$$(curl -fsS -H 'X-User-Id: u_000000000001' $(LIVE_URL)/api/agents | python3 -c 'import json,sys; print(" ".join(a["name"] for a in json.load(sys.stdin)))')"
-	@$(LIVE) logs backend-live | grep -E "orchestrator: |insight: data source" | tail -2 | sed -E 's/^.*INFO [^:]+: //'
-
-docker-live-logs:
-	$(LIVE) logs -f backend-live
-
-docker-live-down:
-	$(LIVE) stop backend-live seed-live
-
-docker-live-clean:
-	$(LIVE) rm -sf backend-live seed-live
-	docker volume rm -f vdagent_live_var
+	$(COMPOSE) --profile test run --build --rm tests
 
 sdk-docs:
 	uv run pdoc $(DOCS_MODULES) -o docs/sdk

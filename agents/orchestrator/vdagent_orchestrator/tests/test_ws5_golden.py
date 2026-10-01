@@ -86,7 +86,7 @@ class Barriered:
 
 
 @pytest.fixture
-async def system(tmp_path: Path) -> AsyncIterator[dict[str, Any]]:
+async def system(tmp_path: Path, request: pytest.FixtureRequest) -> AsyncIterator[dict[str, Any]]:
     re_db = str(tmp_path / "re.db")
     build(re_db)
     cfg = Config(backend_db=str(tmp_path / "backend.db"), warehouse_db=str(tmp_path / "w.db"), mcp_public_url="http://mcp.test/mcp",
@@ -110,8 +110,13 @@ async def system(tmp_path: Path) -> AsyncIterator[dict[str, Any]]:
     barrier = asyncio.Barrier(2)
     runtime = build_runtime({"INSIGHT_LLM": "off", "INSIGHT_ARTIFACT_SOURCE": "fixtures",
                              "INSIGHT_STORE_PATH": str(tmp_path / "insight.db")}, logging.getLogger("t"))
+    planner_llm = None
+    if getattr(request, "param", "offline") == "llm":
+        from .test_llm_planner import GOLDEN, ScriptedLLM
+
+        planner_llm = ScriptedLLM(json.dumps(GOLDEN))
     agents = {
-        "orchestrator": OrchestratorAgent(llm=None, mcp_session_factory=sessions, system_prompt="x", compact_prompt="y",
+        "orchestrator": OrchestratorAgent(llm=planner_llm, mcp_session_factory=sessions, system_prompt="x", compact_prompt="y",
                                           snapshot_id="SNAP-2026-09-28", semantic_config_version="sc-1"),
         "data": DataAgent(llm=None, mcp_session_factory=sessions, system_prompt="x", compact_prompt="y"),
         "insight": Barriered(InsightAgent(runtime, mcp_session_factory=sessions), barrier, log, "insight"),
@@ -123,7 +128,7 @@ async def system(tmp_path: Path) -> AsyncIterator[dict[str, Any]]:
     registry = AgentRegistry(RegisteredAgent(n, f"{n} agent", a, "tests", GRANTS[n]) for n, a in agents.items())
     engine = Engine(cfg, db, EventBus(), tokens, registry, on_interrupted=artifacts_service.interrupt_run)
     await engine.recover()
-    yield {"engine": engine, "db": db, "tools": tools, "log": log, "cfg": cfg}
+    yield {"engine": engine, "db": db, "tools": tools, "log": log, "cfg": cfg, "planner_llm": planner_llm}
     await engine.stop()
     await db.dispose()
 
@@ -199,6 +204,7 @@ async def test_unauthorized_user_gets_a_failed_run_not_prj_x_data(system: dict[s
     arts = [a for a in artifacts(system["cfg"].backend_db) if a["user_id"] == BOB]
     assert {a["artifact_type"] for a in arts} == {"run_state"}
 
+@pytest.mark.parametrize("system", ["offline", "llm"], indirect=True)
 async def test_ws6_six_agent_report_through_the_backend_engine(system: dict[str, Any]) -> None:
     task, answer = await finish(system, "orchestrator", REPORT_QUESTION)
     assert task["status"] == "completed"
@@ -208,6 +214,13 @@ async def test_ws6_six_agent_report_through_the_backend_engine(system: dict[str,
     assert system["log"][:2] in (["insight:start", "compare:start"], ["compare:start", "insight:start"])
 
     arts = artifacts(system["cfg"].backend_db)
+    run_state = max((a for a in arts if a["artifact_type"] == "run_state"), key=lambda a: a["version"])
+    plan = json.loads(run_state["payload_json"])["plan"]
+    if system["planner_llm"] is not None:
+        assert len(system["planner_llm"].calls) == 1
+        assert plan["provenance"]["planner"] == "llm"
+    else:
+        assert "provenance" not in plan
     report = next(a for a in arts if a["artifact_type"] == "report")
     payload = json.loads(report["payload_json"])
     assert len(payload["sections"]) == 6
@@ -249,3 +262,86 @@ async def test_ws6_six_agent_report_through_the_backend_engine(system: dict[str,
     assert {s["step_id"]: s["status"] for s in state_payload["steps"]} == {
         "B1": "completed", "B2": "completed", "B3": "completed", "B4": "completed", "B5": "completed",
     }
+
+
+async def test_insight_chart_contract_holds_end_to_end_and_repeats_identically(system: dict[str, Any]) -> None:
+    """Orchestrator → Data → Insight ∥ Compare → Chart → Report (insight_evidence@1): Insight KPIs stand on the typed
+    evidence only, every shown value resolves exactly to its source, the mart's other peer basis is explained, and the
+    same question twice gives the same chart facts."""
+    dom = "fact_unit_inventory_snapshot.unsold_days_dom"
+    tasks = []
+    for _ in range(2):
+        task, _ = await finish(system, "orchestrator", REPORT_QUESTION)
+        assert task["status"] == "completed"
+        tasks.append(task["id"])
+    arts = artifacts(system["cfg"].backend_db)
+    by_ref = {f"{a['artifact_id']}@{a['version']}": json.loads(a["payload_json"]) for a in arts}
+
+    def pointer(source_ref: str) -> Any:
+        ref, path = source_ref.split("#", 1)
+        value: Any = by_ref[ref]
+        for token in path.split("/")[1:]:
+            value = value[int(token)] if isinstance(value, list) else value[token.replace("~1", "/").replace("~0", "~")]
+        return value
+
+    facts = []
+    for task_id in tasks:
+        mine = [a for a in arts if a["task_id"] == task_id]
+        dataset = next(a for a in mine if a["artifact_type"] == "dataset")
+        charts = [(json.loads(a["payload_json"]), json.loads(a["limitations_json"])) for a in mine if a["artifact_type"] == "chart_spec"]
+        kpis = [c for c, _ in charts if c["visual_question"] == "current_value"]
+        assert {b["metric_id"]: b["value_exact"] for c in kpis for b in c["bindings"]} == {dom: "138"}
+        for c in kpis:
+            assert all(b["source_ref"].startswith(f"{dataset['artifact_id']}@") and b["finding_ids"] for b in c["bindings"])
+        for c, limits in charts:
+            for b in c["bindings"]:
+                assert str(pointer(b["source_ref"])) == b["value_exact"]
+                assert all(str(pointer(ref)) == b["value_exact"] for ref in b.get("evidence_refs") or [])
+            assert not any(code.startswith("PEER_BASIS_DIFFERS") for code in limits)  # one peer truth: Compare's
+        report = json.loads(next(a for a in mine if a["artifact_type"] == "report")["payload_json"])
+        assert report["validation"]["result"] == "pass" and report["validation"]["chart_bindings_checked"] > 0
+        for c, _ in charts:  # per-run artifact ids are lineage, not chart facts
+            (c["dataset"].get("peer_definition") or {}).pop("peer_definition_ref", None)
+        facts.append(sorted(json.dumps({**{k: c[k] for k in ("visual_question", "chart_type", "title", "dataset", "vega_lite")},
+                                        "bindings": [(b["metric_id"], b["value_exact"]) for b in c["bindings"]]},
+                                       sort_keys=True) for c, _ in charts))
+    assert facts[0] == facts[1]
+
+
+
+async def test_one_comparison_value_reaches_insight_chart_report_and_answer(system: dict[str, Any]) -> None:
+    """C1: Compare's row is the only peer truth — the answer's Insight line, the chart and the report all cite it."""
+    from vdagent_contracts.insight_evidence import comparison_facts, parse_evidence  # noqa: PLC0415
+
+    task, answer = await finish(system, "orchestrator", REPORT_QUESTION)
+    assert task["status"] == "completed"
+    mine = [a for a in artifacts(system["cfg"].backend_db) if a["task_id"] == task["id"]]
+    env = {a["artifact_type"]: a for a in mine}
+    cmp = {"artifact_id": env["comparison"]["artifact_id"], "version": env["comparison"]["version"],
+           "input_artifact_refs": json.loads(env["comparison"]["input_refs_json"]),
+           "snapshot_refs": json.loads(env["comparison"]["snapshot_refs_json"]),
+           "semantic_config_version": env["comparison"]["semantic_config_version"],
+           "payload": json.loads(env["comparison"]["payload_json"])}
+    price = comparison_facts(cmp)["fact_unit_inventory_snapshot.net_price_per_m2"]
+    row = price.refs["delta_pct"].rsplit("/", 1)[0]  # "<cmp>@<v>#/metrics/<i>"
+
+    insight = json.loads(env["insight"]["payload_json"])
+    [overpriced] = [f for f in parse_evidence(insight).findings if f.cause_code == "OVERPRICED_VS_PEER"]
+    assert all("price_spread" not in m.metric_id for m in overpriced.metrics)  # Insight publishes no peer figure
+
+    charts = [json.loads(a["payload_json"]) for a in mine if a["artifact_type"] == "chart_spec"]
+    [chart] = [c for c in charts if c["lineage"]["metric_ids"] == [price.metric_id] and c["visual_question"] == "target_vs_peer"]
+    assert {b["source_ref"] for b in chart["bindings"]} == {f"{row}/subjectValue", f"{row}/benchmark/value"}
+    assert [b["value_exact"] for b in chart["bindings"]] == [price.subject_value, price.peer_value]
+    assert overpriced.finding_id in chart["lineage"]["finding_ids"]
+
+    report = json.loads(next(a for a in mine if a["artifact_type"] == "report")["payload_json"])
+    cited = {s["source_ref"]: s["value_exact"] for s in report["statements"] if s["section"] == "analysis"}
+    assert cited.get(price.refs["delta_pct"]) == price.delta_pct and cited.get(price.refs["peer_count"]) == str(price.peer_count)
+    assert price.peer_definition and price.peer_definition in report["markdown"]
+
+    line = next(x for x in answer.splitlines() if "OVERPRICED_VS_PEER" in x)
+    from vdagent_orchestrator.answer import vn_number  # noqa: PLC0415
+    assert f"chênh {vn_number(price.delta_pct, 2)}%" in line and f"({price.peer_count} căn)" in line
+    assert price.comparison_id.split("@")[0] in line
+    assert "PEER_BASIS_DIFFERS" not in answer and "PEER_BASIS_DIFFERS" not in report["markdown"]

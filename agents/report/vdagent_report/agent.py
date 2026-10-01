@@ -1,8 +1,8 @@
-"""This agent's brain: a hand-built LangGraph graph with a Jev quality gate (see graph.py).
+"""Report agent entry point.
 
-Per turn: open an MCP session, offer its tools plus `send_to_agent`, and run the graph. Tool-call
-steps are reported through `ctx` as they happen; the final answer only after Jev accepted it (or
-the one revision was spent).
+StepSpec requests use the deterministic offline report path. Direct chat uses a restricted MCP
+tool set and a LangGraph turn with a Jev quality gate; the final answer is returned as
+`AgentReport@1`.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from vdagent_contracts.messages import ContractMessage, StepSpec, parse_incoming
 from vdagent_contracts.reports import AgentReport, ReportError, render_agent_report
 from vdagent_sdk import SEND_TO_AGENT, Agent, AgentTimeoutError, InvocationContext, Message, Peer
 
-from .graph import STEP_LIMIT_TEXT, ReportTurn
+from .graph import ALLOWED_DIRECT_CHAT_TOOLS, STEP_LIMIT_TEXT, ReportTurn
 from .judge import JevJudge, Judge
 from .mcp_client import McpSessionFactory, open_mcp_session, openai_tool_schema
 from .settings import DEFAULT_LLM_TIMEOUT_S, load_settings
@@ -102,6 +102,7 @@ class LangGraphAgent:
         system_prompt: str,
         compact_prompt: str,
         timeout_s: float = DEFAULT_LLM_TIMEOUT_S,
+        direct_chat: bool = False,
     ) -> None:
         self._model = model
         self._judge = judge
@@ -109,13 +110,20 @@ class LangGraphAgent:
         self._system_prompt = system_prompt
         self._compact_prompt = compact_prompt
         self._timeout_s = timeout_s
+        self._direct_chat = direct_chat
 
-    async def invoke(self, ctx: InvocationContext) -> None:
+    async def invoke(self, ctx: InvocationContext, direct_chat: bool | None = None) -> None:
+        is_direct = self._direct_chat if direct_chat is None else direct_chat
         async with self._mcp_session_factory(ctx.mcp.url, ctx.mcp.token) as mcp:
-            mcp_tools = [t for t in await mcp.list_tools() if t.name != SEND_TO_AGENT]
-            tools = [openai_tool_schema(t) for t in mcp_tools]
-            if ctx.peers:
-                tools.append(send_to_agent_tool(ctx.peers))
+            all_tools = await mcp.list_tools()
+            if is_direct:
+                mcp_tools = [t for t in all_tools if t.name in ALLOWED_DIRECT_CHAT_TOOLS]
+                tools = [openai_tool_schema(t) for t in mcp_tools]
+            else:
+                mcp_tools = [t for t in all_tools if t.name != SEND_TO_AGENT]
+                tools = [openai_tool_schema(t) for t in mcp_tools]
+                if ctx.peers:
+                    tools.append(send_to_agent_tool(ctx.peers))
             turn = ReportTurn(
                 ctx=ctx,
                 mcp=mcp,
@@ -125,6 +133,7 @@ class LangGraphAgent:
                 judge=self._judge,
                 system_prompt=build_system_prompt(self._system_prompt, ctx.summary),
                 timeout_s=self._timeout_s,
+                direct_chat=is_direct,
             )
             state = {"messages": convert_to_messages(ctx.history)}
             await turn.graph().ainvoke(state, {"recursion_limit": 3 * ctx.max_steps + 10})
@@ -143,8 +152,8 @@ class LangGraphAgent:
 
 
 NO_LLM_TEXT = (
-    "Report đang chạy không có LLM (REPORT_LLM=off): chỉ nhận yêu cầu StepSpec@1 draft_report với các artifact"
-    " insight / comparison / chart_spec đã ghim hash. Yêu cầu tự do cần cấu hình LLM trong agents/report/.env."
+    "Report đang chạy không có LLM (REPORT_LLM=off): chỉ nhận StepSpec@1 draft_report với ít nhất một artifact"
+    " insight hoặc comparison đã ghim hash; chart_spec là tùy chọn. Chat tự do cần cấu hình LLM trong agents/report/.env."
 )
 
 
@@ -156,7 +165,7 @@ class ReportAgent(LangGraphAgent):
                  mcp_session_factory: McpSessionFactory = open_mcp_session, system_prompt: str, compact_prompt: str,
                  timeout_s: float = DEFAULT_LLM_TIMEOUT_S) -> None:
         super().__init__(model=model, judge=judge, mcp_session_factory=mcp_session_factory,  # pyright: ignore[reportArgumentType]
-                         system_prompt=system_prompt, compact_prompt=compact_prompt, timeout_s=timeout_s)
+                         system_prompt=system_prompt, compact_prompt=compact_prompt, timeout_s=timeout_s, direct_chat=True)
         self._has_llm = model is not None and judge is not None
 
     @property
@@ -167,32 +176,45 @@ class ReportAgent(LangGraphAgent):
         text = str(ctx.history[-1].get("content") or "") if ctx.history else ""
         try:
             incoming = parse_incoming(text)
-        except ValueError:
-            incoming = None
+        except ValueError as exc:
+            text_err = str(exc)
+            summary = "Yêu cầu có cấu trúc không hợp lệ; cần gửi một contract được hỗ trợ."
+            report = AgentReport(
+                state="rejected",
+                summary=summary,
+                error=ReportError(code="INVALID_CONTRACT", message=text_err),
+            )
+            await ctx.emit_assistant(render_agent_report(report.summary, report))
+            return
         if isinstance(incoming, ContractMessage):
             await ctx.emit_assistant(await self._contract(ctx, incoming))
             return
         if not self._has_llm:
-            await ctx.emit_assistant(NO_LLM_TEXT)
+            report = AgentReport(
+                state="rejected",
+                summary=NO_LLM_TEXT,
+                error=ReportError(code="LLM_REQUIRED", message=NO_LLM_TEXT),
+            )
+            await ctx.emit_assistant(render_agent_report(report.summary, report))
             return
-        await super().invoke(ctx)
+        await super().invoke(ctx, direct_chat=True)
 
     async def _contract(self, ctx: InvocationContext, message: ContractMessage) -> str:
         from .stepspec import run_step
 
         if message.contract != "StepSpec@1":
-            text = f"report accepts StepSpec@1, not {message.contract}"
+            text = f"Report chỉ nhận StepSpec@1; nhận được {message.contract}."
             report = AgentReport(state="rejected", summary=text, error=ReportError(code="UNSUPPORTED_CONTRACT", message=text))
         else:
             try:
                 step = StepSpec.model_validate(message.data)
             except ValidationError as exc:
-                report = AgentReport(state="rejected", summary="invalid StepSpec@1",
+                report = AgentReport(state="rejected", summary="StepSpec@1 không hợp lệ.",
                                      error=ReportError(code="INVALID_STEPSPEC", message=f"{exc.error_count()} error(s)"))
             else:
                 async with self._mcp_session_factory(ctx.mcp.url, ctx.mcp.token) as mcp:
                     report = await run_step(step, JsonTools(mcp))
-        head = f"Report: {report.state}" + (f" ({report.error.code})" if report.error else "")
+        head = report.summary or ("Đã hoàn tất xử lý yêu cầu." if report.state == "completed" else "Không thể hoàn tất yêu cầu.")
         return render_agent_report(head, report)
 
     async def compact(self, previous_summary: str, messages: list[Message]) -> str:

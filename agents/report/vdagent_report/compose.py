@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from vdagent_contracts.insight_evidence import peer_bindings, peer_claims
 from vdagent_contracts.step_inputs import AnalysisInputs
 from vdagent_contracts.vega_lite import validate_vega_lite
 
@@ -37,6 +38,15 @@ LIMITATION_VI = {
     "FIELD_UNAVAILABLE": "trường dữ liệu không có trong DW",
     "NOT_CHARTED_NULL": "giá trị null nên không được vẽ",
     "INVALID_BINDING": "binding không phải số nên bị loại",
+    "PEER_BASIS_DIFFERS": "artifact Insight (cũ hoặc sai hợp đồng) tự nêu số liệu nhóm tương đồng khác nhóm của Compare;"
+                          " câu đó không được hiển thị — số liệu so với nhóm tương đồng chỉ lấy từ Compare",
+    "VISUAL_NEEDS_COMPARISON": "phát hiện của Insight cần biểu đồ so với nhóm tương đồng nhưng lần chạy không có Compare",
+    "INSIGHT_EVIDENCE_MISSING": "artifact Insight không có khối bằng chứng có kiểu; không vẽ biểu đồ từ câu chữ",
+    "INSIGHT_EVIDENCE_INVALID": "khối bằng chứng của Insight sai hợp đồng insight_evidence@1 nên bị bỏ qua",
+    "EVIDENCE_UNRESOLVED": "con số của Insight không trỏ được tới dataset Data nên không được vẽ",
+    "EVIDENCE_VALUE_MISMATCH": "con số của Insight khác giá trị trong dataset Data nên không được vẽ",
+    "VALUE_MISMATCH_WITH_DATASET": "giá trị của Compare khác dataset Data nên biểu đồ tương ứng không được vẽ",
+    "CONFLICTING_VALUES": "hai giá trị khác nhau cho cùng một chỉ số; không vẽ giá trị nào",
 }
 Lookup = Callable[[str], Any]
 
@@ -145,13 +155,35 @@ def compose_report(inputs: AnalysisInputs, question: str, snapshot_id: str, sema
     if ins is not None:
         iid = _label(ins)
         items = ins["payload"]["insight"].get("insights") or []
+        # peer facts are Compare's: a narrated peer number (stale/malformed artifact) is never shown, only reported
+        stale = {}
+        for insight_id, slot, value in peer_claims(ins["payload"]):
+            stale.setdefault(insight_id, []).append(f"PEER_BASIS_DIFFERS:{insight_id}:{slot}={value}")
+        limitations = sorted(set(limitations) | {c for codes in stale.values() for c in codes})
+        doc.limitations = limitations
+        bindings = peer_bindings(ins, cmp)
         for ii, item in enumerate(items):
             claim = item.get("claim") or {}
+            cause = f"**{item['cause_code']}** — " if item.get("cause_code") else ""
+            if item.get("insight_id") in stale:
+                body["analysis"].append(f"- {cause}câu diễn giải của Insight nêu số liệu nhóm tương đồng không phải của Compare"
+                                        f" nên không được hiển thị (xem hạn chế `PEER_BASIS_DIFFERS`). `[{iid}]`")
+                continue
             values = [w.num("analysis", b["value"], f"{iid}#/insight/insights/{ii}/claim/numeric_bindings/{bi}/value", text=b.get("slot", ""))
                       for bi, b in enumerate(claim.get("numeric_bindings") or []) if _is_number(b.get("value"))]
-            cause = f"**{item['cause_code']}** — " if item.get("cause_code") else ""
             evidence = f" (số liệu: {', '.join(values)})" if values else ""
-            body["analysis"].append(f"- {cause}{claim.get('rendered_text', '')}{evidence} `[{iid}]`")
+            peer = ""
+            for binding in bindings.get(item.get("insight_id") or "", []):
+                fact = binding.fact
+                if fact is None or "delta_pct" not in fact.refs:
+                    peer += " Mức chênh so với nhóm tương đồng cần bước so sánh (Compare); lần chạy này không có kết quả đó."
+                    continue
+                name = METRIC_VI.get(fact.metric, (fact.metric, ""))[0]
+                pct = w.num("analysis", fact.delta_pct, fact.refs["delta_pct"], places=2, text=f"chênh {name} so với nhóm (Compare)")
+                n = w.num("analysis", fact.peer_count, fact.refs["peer_count"], text="số căn tương đồng") if "peer_count" in fact.refs else "?"
+                peer += (f" So với nhóm tương đồng của Compare (`{fact.comparison_id}`, nhóm `{fact.peer_definition}`, {n} căn):"
+                         f" {name} chênh {pct}%.")
+            body["analysis"].append(f"- {cause}{claim.get('rendered_text', '')}{evidence}{peer} `[{iid}]`")
             rec = item.get("recommendation")
             if rec and rec.get("text"):
                 actions.append({"action_code": rec.get("action_code"), "text": rec["text"],
@@ -166,7 +198,7 @@ def compose_report(inputs: AnalysisInputs, question: str, snapshot_id: str, sema
         peers = pd["payload"].get("peers") or []
         body["analysis"].append(f"- Nhóm tương đồng theo luật hiện hành của Compare `[{_label(pd)}]`: "
                                 + ", ".join(p.get("entityCode", "?") for p in peers)
-                                + ". Tập 7 căn golden chưa có luật được duyệt (B-11), nên nhóm này chỉ mang tính mô tả.")
+                                + ". Luật chọn nhóm tương đồng chưa được nghiệp vụ duyệt (B-11), nên nhóm này chỉ mang tính mô tả.")
     body["analysis"].append("\n**Đề xuất hành động (từ Insight, cần phê duyệt):**")
     for a in actions:
         body["analysis"].append(f"- {a['text']} (`{a['action_code']}`, nguồn `{a['source_ref']}`)")
@@ -203,7 +235,7 @@ def compose_report(inputs: AnalysisInputs, question: str, snapshot_id: str, sema
         body["limitations"].append(f"- `{code}` — {LIMITATION_VI.get(code.split(':', 1)[0], 'xem tài liệu tích hợp')}")
     blockers = []
     if cmp is not None or pd is not None:
-        blockers += ["B-11: luật chọn 7 căn tương đồng golden chưa được duyệt; báo cáo dùng nhóm do Compare chọn.",
+        blockers += ["B-11: luật chọn nhóm tương đồng chưa được nghiệp vụ duyệt; báo cáo dùng nhóm do Compare chọn.",
                      "B-2: `min_peer_count` chưa có giá trị được duyệt (Compare dùng mặc định của engine)."]
     if any(c.startswith("BLOCKED:D2b") for c in limitations):
         blockers.append("D2b: chưa có ánh xạ segment; giữ nguyên giá trị DW.")
@@ -254,4 +286,7 @@ def validate_chart(chart: dict[str, Any], lookup: Lookup) -> tuple[int, list[str
     if not bindings:
         errors.append(f"{label}: no bindings")
     statements = [Statement("chart", "", str(b.get("value_exact")), b.get("source_ref"), f"{label}/binding{i}") for i, b in enumerate(bindings)]
+    # lineage to the Insight finding (insight_evidence@1): the evidence must state the very number the chart shows
+    statements += [Statement("chart", "", str(b.get("value_exact")), ref, f"{label}/binding{i}/evidence{j}")
+                   for i, b in enumerate(bindings) for j, ref in enumerate(b.get("evidence_refs") or [])]
     return len(bindings), errors + validate_statements(statements, lookup)

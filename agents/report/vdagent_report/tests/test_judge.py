@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 import pytest
 
-from ..judge import PASS_THRESHOLD, REVIEW, JevJudge, Verdict
+from ..judge import DIRECT_CHAT_REVIEW, PASS_THRESHOLD, REVIEW, JevJudge, Verdict
 
 URL = "http://jev.test/api/alpha/decisions"
 
@@ -50,6 +50,18 @@ async def test_asks_jev_for_an_acceptability_probability_and_the_main_problem() 
     assert set(body["questions"]["problem"]["criteria"]) == set(REVIEW)
 
 
+async def test_direct_chat_uses_grounded_qa_criteria_not_report_generation_criteria() -> None:
+    judge, seen = judge_with(lambda r: httpx.Response(200, json=jev_answers(0.8)))
+    await judge.assess_direct("Giải thích chỉ số", "Nguồn không có chỉ số này.", [])
+
+    (request,) = seen
+    body = json.loads(request.content)
+    criteria = body["questions"]["acceptable"]["criteria"]
+    assert "supplied conversation/tool results" in criteria["true"]
+    assert "chart/report ids" not in criteria["true"]
+    assert set(body["questions"]["problem"]["criteria"]) == set(DIRECT_CHAT_REVIEW)
+
+
 @pytest.mark.parametrize(("noul", "passed"), [(PASS_THRESHOLD, True), (PASS_THRESHOLD - 0.01, False), (0.97, True)])
 async def test_the_draft_passes_at_or_above_the_threshold(noul: float, passed: bool) -> None:
     judge, _ = judge_with(lambda r: httpx.Response(200, json=jev_answers(noul, "missing_part")))
@@ -80,3 +92,4 @@ def test_each_problem_has_its_own_review_and_unknown_problems_get_the_generic_on
     assert Verdict(0.1, "no_numbers").review != REVIEW["missing_part"]
     assert Verdict(0.1, None).review == REVIEW["none"]
     assert Verdict(0.1, "something_new").review == REVIEW["none"]
+    assert "do not create a chart or report" in Verdict(0.1, "missing_part").direct_chat_review

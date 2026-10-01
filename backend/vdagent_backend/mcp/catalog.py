@@ -276,5 +276,9 @@ RESULT_FIELDS.update({
         "columns": "`[{name, type}]`.",
         "sample_rows": "Up to `sample_rows` rows inside your scope.",
     },
-    "re_run_query": _DATASET_FIELDS,
+    "re_run_query": {
+        **_DATASET_FIELDS,
+        "warehouse": "Which DW answered, without credentials: `{backend: postgresql, host, port, database}` for the real"
+        " warehouse or `{backend: sqlite, file}` for the synthetic mock. Label your data from it.",
+    },
 })

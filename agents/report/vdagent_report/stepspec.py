@@ -60,7 +60,8 @@ def _report(step: StepSpec, state: str, *, error: ReportError | None = None, ref
         "run_id": step.run_id, "step_id": step.step_id, "idempotency_key": step.idempotency_key, "state": state,
         "partial": partial, "artifact_refs": [r.model_dump(mode="json") for r in refs or []],
         "snapshot_id": step.snapshot_id, "semantic_config_version": step.semantic_config_version,
-        "summary": summary or (error.message if error else ""), "warnings": sorted(set(warnings or [])), "error": error,
+        "summary": summary or (f"Không thể hoàn tất yêu cầu tạo báo cáo ({error.code})." if error else ""),
+        "warnings": sorted(set(warnings or [])), "error": error,
     })
 
 
@@ -99,6 +100,8 @@ async def _run(step: StepSpec, tools: Tools) -> AgentReport:
             cache[f"{env['artifact_id']}@{env['version']}"] = env["payload"]
     wanted = {st.source_ref.split("#", 1)[0] for st in doc.statements if st.source_ref}
     wanted |= {b["source_ref"].split("#", 1)[0] for c in inputs.charts for b in (c["payload"].get("bindings") or []) if b.get("source_ref")}
+    wanted |= {ref.split("#", 1)[0] for c in inputs.charts for b in (c["payload"].get("bindings") or [])
+               for ref in b.get("evidence_refs") or []}
     for ref in sorted(wanted - set(cache)):
         artifact_id, _, version = ref.partition("@")
         try:

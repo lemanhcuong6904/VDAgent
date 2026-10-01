@@ -71,6 +71,17 @@ async def test_compare_plugin_serves_stepspec(alice: McpPort, mcp_tools: McpTool
     assert [r.artifact_type.value for r in report.artifact_refs] == ["peer_definition", "comparison"]
 
 
+async def test_compare_plugin_passes_its_model_to_the_stepspec_path(alice: McpPort, mcp_tools: McpTools) -> None:
+    from vdagent_compare.tests.test_agent import FakeLLM
+
+    refs = await data_refs(alice)
+    llm = FakeLLM({"comparison_answer": [{"text": "A12-08 có DOM là 138 ngày."}]})
+    agent = CompareAgent(llm=llm, mcp_session_factory=factory(mcp_tools, "compare"))
+    ctx = Ctx(compare_step(refs).model_dump_json())
+    await agent.invoke(ctx)
+    assert report_of(ctx).state == "completed" and "A12-08 có DOM là 138 ngày." in report_of(ctx).summary
+
+
 async def test_plugins_reject_other_contracts(mcp_tools: McpTools, tmp_path: Path) -> None:
     runtime = build_runtime({"INSIGHT_LLM": "off", "INSIGHT_ARTIFACT_SOURCE": "fixtures",
                              "INSIGHT_STORE_PATH": str(tmp_path / "i.db")}, logging.getLogger("t"))

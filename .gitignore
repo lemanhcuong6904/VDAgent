@@ -2,8 +2,36 @@
 var/
 .venv/
 __pycache__/
-*.pyc
+*.py[cod]
 .pytest_cache/
 node_modules/
 frontend/dist/
 docs/sdk/
+docs/Task Tracker*.xlsx
+
+# dbt build artifacts (project 300)
+data/VGP/dbt_vgp/target/
+data/VGP/dbt_vgp/logs/
+data/VGP/dbt_vgp/*.duckdb
+data/VGP/dbt_vgp/profiles/.user.yml
+
+# Environment variants: keep committed templates, ignore local secrets.
+.env.*
+!.env.example
+
+# Test/build/runtime outputs.
+.coverage
+coverage/
+htmlcov/
+*.log
+logs/
+tmp/
+temp/
+output/
+outputs/
+.cache/
+*.sqlite
+*.sqlite3
+
+# dbt local user profile (the canonical profiles.yml remains tracked).
+data/VGP/dbt_vgp/profiles/*.user.yml

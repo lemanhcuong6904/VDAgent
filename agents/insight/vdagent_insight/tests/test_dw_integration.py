@@ -85,7 +85,10 @@ async def test_golden_insight_from_the_canonical_dataset(alice: McpPort, env: St
     insights = art["payload"]["insight"]["insights"]
     root = [i for i in insights if i["cause_code"] == "OVERPRICED_VS_PEER"]
     assert root and root[0]["subject"]["id"] == HERO
-    assert "138" in _values(art) and "12.40" in _values(art)  # DOM and price spread from the DW mart
+    assert "138" in _values(art)  # DOM from the DW mart
+    assert "12.40" not in _values(art)  # the mart's peer spread: Compare owns peer facts (insight_evidence@2)
+    from vdagent_contracts.insight_evidence import parse_evidence  # noqa: PLC0415
+    assert any(i.requires == "comparison" for f in parse_evidence(art["payload"]).findings for i in f.visual_intents)
     assert art["payload"]["insight"]["summary"]["narrative_mode"] == "TEMPLATE"
 
 

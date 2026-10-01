@@ -25,13 +25,40 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from vdagent_contracts.reports import AgentReport, ReportError, render_agent_report
 from vdagent_sdk import SEND_TO_AGENT, AgentTimeoutError, InvocationContext, ToolCall
 
 from .judge import Judge, Verdict
 from .mcp_client import McpSession, run_mcp_tool
 
 STEP_LIMIT_TEXT = "[step limit reached before I could finish; no further tool calls were made]"
-ARTIFACT_ID = re.compile(r"\b(?:ds|ch|rp)_\w+")
+ARTIFACT_ID = re.compile(r"\b(?:ds|ch|rp|art)_\w+")
+CONTEXT_ID_RE = re.compile(r"\b(?:ds|ch|rp|art)[_-][A-Za-z0-9_-]+|\bART-[A-Za-z0-9_-]+", re.IGNORECASE)
+ALLOWED_DIRECT_CHAT_TOOLS = frozenset({"describe_dataset", "get_dataset_rows", "artifact_get"})
+
+
+def extract_context_ids(
+    history: Sequence[Any],
+    summary: str = "",
+    extra_ids: Sequence[str] = (),
+) -> set[str]:
+    sources: list[str] = [summary]
+    for msg in history:
+        if isinstance(msg, BaseMessage):
+            if msg.type in {"human", "tool"} and msg.content:
+                sources.append(str(msg.content))
+        elif isinstance(msg, dict):
+            if msg.get("role") in {"user", "tool"} and msg.get("content"):
+                sources.append(str(msg["content"]))
+    combined = " ".join(sources)
+    found = set(CONTEXT_ID_RE.findall(combined))
+    for pat in (
+        r'["\'](?:dataset_id|artifact_id)["\']\s*:\s*["\']([^"\']+)["\']',
+        r'\b(?:dataset|artifact)\s+["\']?([a-zA-Z0-9_-]+)["\']?',
+    ):
+        found.update(re.findall(pat, combined, re.IGNORECASE))
+    found.update(extra_ids)
+    return {i.strip() for i in found if i.strip()}
 
 
 class TurnState(TypedDict, total=False):
@@ -70,6 +97,7 @@ class ReportTurn:
         judge: Judge,
         system_prompt: str,
         timeout_s: float,
+        direct_chat: bool = False,
     ) -> None:
         self._ctx = ctx
         self._mcp = mcp
@@ -79,6 +107,7 @@ class ReportTurn:
         self._judge = judge
         self._system_prompt = system_prompt
         self._timeout_s = timeout_s
+        self._direct_chat = direct_chat
 
     def graph(self) -> CompiledStateGraph:
         g = StateGraph(TurnState)
@@ -122,7 +151,7 @@ class ReportTurn:
     async def tools(self, state: TurnState) -> dict[str, Any]:
         calls = self._pending_calls(state)
         async with asyncio.TaskGroup() as tg:
-            tasks = [tg.create_task(self._run_tool_call(tc)) for tc in calls]
+            tasks = [tg.create_task(self._run_tool_call(tc, state)) for tc in calls]
         contents = [t.result() for t in tasks]
         found = [i for c in contents for i in ARTIFACT_ID.findall(c) if i not in state.get("artifacts", [])]
         return {
@@ -132,6 +161,11 @@ class ReportTurn:
 
     async def assess(self, state: TurnState) -> dict[str, Any]:
         request = str(self._ctx.history[-1]["content"])
+        if self._direct_chat:
+            assess_direct = getattr(self._judge, "assess_direct", None)
+            if callable(assess_direct):
+                verdict = await assess_direct(request, state.get("draft", ""), state.get("artifacts", []))
+                return {"verdict": verdict}
         return {"verdict": await self._judge.assess(request, state.get("draft", ""), state.get("artifacts", []))}
 
     def after_assess(self, state: TurnState) -> str:
@@ -142,12 +176,68 @@ class ReportTurn:
         return "finalize"
 
     async def revise(self, state: TurnState) -> dict[str, Any]:
-        review = HumanMessage(f"[reviewer] {_verdict(state).review}")
+        verdict = _verdict(state)
+        review_text = verdict.direct_chat_review if self._direct_chat else verdict.review
+        review = HumanMessage(f"[reviewer] {review_text}")
         draft = AIMessage(content=state.get("draft", ""))
         return {"messages": [draft, review], "revisions": state.get("revisions", 0) + 1, "draft": ""}
 
     async def finalize(self, state: TurnState) -> dict[str, Any]:
-        await self._ctx.emit_assistant(state.get("draft", ""))
+        draft = state.get("draft", "")
+        if self._direct_chat:
+            verdict = state.get("verdict")
+            rejected = verdict is not None and not verdict.passed
+            gate_unavailable = verdict is not None and verdict.acceptable is None
+            partial = STEP_LIMIT_TEXT in draft or rejected or gate_unavailable
+            warnings: list[str] = []
+            if STEP_LIMIT_TEXT in draft:
+                warnings.append("STEP_LIMIT_REACHED")
+            if verdict is not None and not verdict.passed:
+                warnings.append(f"QUALITY_GATE_REJECTED:{verdict.problem or 'unspecified'}")
+            elif gate_unavailable:
+                warnings.append("QUALITY_GATE_UNAVAILABLE")
+
+            summary = draft.strip()
+            if STEP_LIMIT_TEXT in summary:
+                summary = "Chưa thể hoàn tất giải đáp trong giới hạn số bước của lượt này."
+            elif not summary:
+                summary = "Report chưa tạo được nội dung trả lời trong lượt này."
+
+            output_summary = (
+                "Chưa thể gửi câu trả lời vì nội dung chưa vượt qua kiểm tra chất lượng."
+                if rejected
+                else summary
+            )
+            summary_lines = [
+                line.strip() for line in output_summary.splitlines() if line.strip() and not line.strip().startswith("#")
+            ]
+            head = "\n".join(summary_lines[:2]) if summary_lines else "Giải đáp từ Report Agent:"
+            # `parse_agent_report` expects exactly one JSON fence. A draft may contain a fenced
+            # example in its first lines, so keep the human-readable preface from opening a
+            # second envelope (the full draft remains intact in the JSON summary field).
+            head = head.replace("```", "'''")
+            if len(head) > 200:
+                head = head[:197] + "..."
+
+            report = AgentReport(
+                state="rejected" if rejected else "completed",
+                summary=output_summary,
+                artifact_refs=[],
+                partial=partial,
+                warnings=warnings,
+                error=(
+                    ReportError(
+                        code="QUALITY_GATE_REJECTED",
+                        message="The final direct-chat draft did not pass the quality gate after its allowed revision.",
+                    )
+                    if rejected
+                    else None
+                ),
+            )
+            output = render_agent_report(head, report)
+            await self._ctx.emit_assistant(output)
+        else:
+            await self._ctx.emit_assistant(draft)
         return {}
 
     # ---------------------------------------------------------------- tools
@@ -158,13 +248,46 @@ class ReportTurn:
         last = messages[-1] if messages else None
         return [dict(tc) for tc in last.tool_calls] if isinstance(last, AIMessage) else []
 
-    async def _run_tool_call(self, tc: dict[str, Any]) -> str:
-        content = await self._tool_content(tc["id"], tc["name"], tc["args"])
+    async def _run_tool_call(self, tc: dict[str, Any], state: TurnState | None = None) -> str:
+        content = await self._tool_content(tc["id"], tc["name"], tc["args"], state)
         await self._ctx.emit_tool_result(tc["id"], content)
         return content
 
-    async def _tool_content(self, tool_call_id: str, name: str, arguments: dict[str, Any]) -> str:
+    async def _tool_content(
+        self,
+        tool_call_id: str,
+        name: str,
+        arguments: dict[str, Any],
+        state: TurnState | None = None,
+    ) -> str:
+        if self._direct_chat:
+            if name not in ALLOWED_DIRECT_CHAT_TOOLS:
+                return f"error: tool '{name}' is not permitted in direct chat mode"
+
+            allowed_ids = extract_context_ids(
+                self._ctx.history,
+                self._ctx.summary,
+                extra_ids=state.get("artifacts", []) if state else [],
+            )
+
+            if name == "artifact_get":
+                art_id = arguments.get("artifact_id")
+                if not art_id or str(art_id) not in allowed_ids:
+                    return (
+                        f"error: artifact_get is restricted to artifact ids present in context"
+                        f" ('{art_id}' not found in context)"
+                    )
+            elif name in ("describe_dataset", "get_dataset_rows"):
+                ds_id = arguments.get("dataset_id")
+                if not ds_id or str(ds_id) not in allowed_ids:
+                    return (
+                        f"error: {name} is restricted to dataset ids present in context"
+                        f" ('{ds_id}' not found in context)"
+                    )
+
         if name == SEND_TO_AGENT and self._ctx.peers:
+            if self._direct_chat:
+                return "error: send_to_agent is not permitted in direct chat mode"
             target, message = arguments.get("agent"), arguments.get("message")
             if not isinstance(target, str) or not target.strip():
                 return "error: send_to_agent requires 'agent' (the name of the agent to call)"

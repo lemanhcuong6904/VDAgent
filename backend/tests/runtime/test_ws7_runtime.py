@@ -62,6 +62,15 @@ async def test_a_child_outcome_does_not_touch_the_task(harness: Harness) -> None
     assert (row["status"], row["outcome"]) == ("completed", None)
 
 
+async def test_a_root_turn_that_raises_fails_the_task_with_a_failed_outcome(harness: Harness) -> None:
+    async def handler(s: Session) -> None:
+        raise RuntimeError("boom")  # e.g. the Orchestrator's run deadline (DEADLINE_EXCEEDED)
+
+    harness.on("orchestrator", handler)
+    row = await harness.wait_task(await harness.post("orchestrator", "go"))
+    assert (row["status"], row["outcome"]) == ("failed", "failed")
+
+
 # ---- F-04 -------------------------------------------------------------------------------------------------------------
 
 

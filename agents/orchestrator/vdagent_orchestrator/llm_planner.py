@@ -5,9 +5,9 @@ The LLM gets the question and the frozen agent catalogs, no tools, and must answ
 Nothing it returns is executed as is:
 - strict schema (unknown fields rejected — the LLM cannot write specs, snapshots or ids);
 - `validate_plan` against the catalogs: known agent/operation, existing dependencies, no cycle, one snapshot/semantic;
-- role rules: exactly one Data step without dependencies; Insight/Compare depend on it; Chart depends only on
-  analyses; Report on analyses and/or the Chart, with at least one analysis;
-- every requested output (`wants`) has its step, and the unit code occurs in the user's question;
+- role rules: exactly one Data step without dependencies; Insight/Compare depend on it; Chart consumes all
+  selected analyses; Report consumes those analyses and Chart;
+- steps match the requested outputs (`wants`), and the question names exactly the proposed unit;
 - code fills the StepSpec specs, input bindings, dependency modes and the snapshot / semantic pins.
 Any violation raises `PlanError` (the Orchestrator fails the run safely; there is no silent fallback to the
 deterministic planner). The accepted LLM output is kept in `Plan.provenance` (recorded in run_state).
@@ -15,31 +15,30 @@ deterministic planner). The accepted LLM output is kept in `Plan.provenance` (re
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import re
 import time
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 from vdagent_contracts.catalog import AgentCatalog
 from vdagent_contracts.catalogs import load_catalog
 
-from .dag import TARGET_AGENTS, InputBinding, Plan, PlanError, PlanStep, validate_plan
+from .dag import TARGET_AGENTS, Plan, PlanError, PlanStep, validate_plan
 from .llm import LLMClient
-from .planner import STEP_OUTPUTS, UNIT_CODE, WANTS, normalize_wants, step_spec
+from .planner import STEP_OPERATIONS, UNIT_CODE, WANTS, AnalysisRequest, build_plan, capability_policy, normalize_wants
 
 log = logging.getLogger(__name__)
-PROMPT_VERSION = "orch-llm-plan-1.1.0"
+PROMPT_VERSION = "orch-llm-plan-1.2.0"
 _FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
 _ANALYSES = ("insight", "compare")
-_WANT_AGENT = {"explain": "insight", "compare": "compare", "chart": "chart", "report": "report"}
 
 
 class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
 class LlmIntent(_Strict):
@@ -66,7 +65,7 @@ def _catalogs() -> dict[str, AgentCatalog]:
 
 def system_prompt(catalogs: Mapping[str, AgentCatalog]) -> str:
     lines = [f'- "agent": "{agent}", "operation": "{o.operation}" — {o.description}'
-             for agent, c in catalogs.items() for o in c.operations]
+             for agent, c in catalogs.items() for o in c.operations if o.operation == STEP_OPERATIONS.get(agent)]
     return "\n".join([
         "You are the planner of the VDAgent Orchestrator (real-estate sales analytics). You never call tools or"
         " agents: you only return ONE JSON object, no prose, describing the user's intent and a plan.",
@@ -103,6 +102,7 @@ def _parse(content: str) -> LlmPlan:
 def _check_roles(steps: list[LlmStep]) -> None:
     agent_of = {s.step_id: s.agent for s in steps}
     data = [s.step_id for s in steps if s.agent == "data"]
+    analyses = set(agent_of.values()) & set(_ANALYSES)
     if len(data) != 1:
         raise PlanError("LLM_PLAN_MISSING_STEP", f"a plan needs exactly one data step, got {len(data)}")
     for step in steps:
@@ -112,8 +112,8 @@ def _check_roles(steps: list[LlmStep]) -> None:
         ok = {
             "data": not step.depends_on,
             "insight": step.depends_on == data, "compare": step.depends_on == data,
-            "chart": bool(deps) and deps <= set(_ANALYSES),
-            "report": bool(deps & set(_ANALYSES)) and deps <= {*_ANALYSES, "chart"},
+            "chart": bool(analyses) and deps == analyses,
+            "report": bool(analyses) and deps == analyses | {"chart"},
         }[step.agent]
         if not ok:
             raise PlanError("LLM_PLAN_INVALID_DEPENDENCY", f"{step.step_id} ({step.agent}) cannot depend on {step.depends_on}")
@@ -146,41 +146,42 @@ def _compile(llm: LLMClient, question: str, content: str, run_id: str, snapshot_
     if not proposed.intent.in_scope:
         raise PlanError("OUT_OF_SCOPE", "the question is not an analysis of one unit")
     code = proposed.intent.subject_unit_code or ""
-    if not UNIT_CODE.fullmatch(code) or code not in UNIT_CODE.findall(question):
-        raise PlanError("LLM_PLAN_UNGROUNDED", f"unit code {code!r} does not occur in the question")
+    if not UNIT_CODE.fullmatch(code) or set(UNIT_CODE.findall(question)) != {code}:
+        raise PlanError("LLM_PLAN_UNGROUNDED", "the question must name exactly the proposed unit code")
+    if not proposed.intent.wants:
+        raise PlanError("LLM_PLAN_MALFORMED", "an in-scope analysis needs at least one requested output")
 
     for step in proposed.steps:  # the catalog first, so an unknown name is reported as such
         if step.agent not in TARGET_AGENTS or step.agent not in catalogs:
             raise PlanError("UNSUPPORTED_AGENT", f"{step.agent!r} is not a DAG target")
         if step.operation not in {o.operation for o in catalogs[step.agent].operations}:
             raise PlanError("UNSUPPORTED_OPERATION", f"{step.agent} has no operation {step.operation!r}")
+        if step.operation != STEP_OPERATIONS[step.agent]:
+            raise PlanError("UNSUPPORTED_OPERATION", f"the unit workflow cannot compile {step.agent}.{step.operation}")
     if not any(s.agent == "data" for s in proposed.steps):
         raise PlanError("LLM_PLAN_MISSING_STEP", "a plan needs a data step")
     # structure first (agents, operations, dependencies, cycles) on a skeleton, then roles, then code-owned specs
     agent_of = {s.step_id: s.agent for s in proposed.steps}
     skeleton = tuple(PlanStep(s.step_id, s.agent, s.operation, {}, tuple(s.depends_on)) for s in proposed.steps)
     validate_plan(Plan("pl_check", run_id, snapshot_id, semantic_config_version, question, skeleton), catalogs)
-    _check_roles(list(proposed.steps))
-    needed = normalize_wants(frozenset(proposed.intent.wants))  # same rule as the deterministic planner
-    missing = sorted(w for w in needed if _WANT_AGENT[w] not in agent_of.values())
+    # capability policy (same rule as the deterministic planner): required ⊆ proposed ⊆ required ∪ optional
+    policy = capability_policy(frozenset(proposed.intent.wants))
+    proposed_agents = set(agent_of.values())
+    missing = sorted(a for a, rule in policy.items() if rule == "required" and a not in proposed_agents)
     if missing:
-        raise PlanError("LLM_PLAN_MISSING_STEP", f"requested {missing} but the plan has no step for it")
+        raise PlanError("LLM_PLAN_MISSING_STEP", f"the requested outputs need {missing} but the plan has no step for it")
+    forbidden = sorted(a for a in proposed_agents if policy.get(a, "forbidden") == "forbidden")
+    if forbidden:
+        raise PlanError("LLM_PLAN_UNEXPECTED_STEP", f"no requested output needs or can use {forbidden}")
+    _check_roles(list(proposed.steps))
 
-    data_step = next(s.step_id for s in proposed.steps if s.agent == "data")
-    population = "peer_candidates" if "compare" in agent_of.values() else "subject"
-    steps = tuple(
-        PlanStep(s.step_id, s.agent, s.operation, step_spec(s.agent, code, population, data_step), tuple(s.depends_on),
-                 "any" if s.agent in ("chart", "report") else "all",
-                 tuple(InputBinding(d, STEP_OUTPUTS[agent_of[d]]) for d in s.depends_on))
-        for s in proposed.steps
-    )
+    # the DAG that runs is code's: compiled from the required capabilities, optional proposals normalized away
+    dropped = sorted(a for a in proposed_agents if policy[a] == "optional")
+    request = AnalysisRequest(question, code, normalize_wants(frozenset(proposed.intent.wants)), snapshot_id, semantic_config_version)
     raw = proposed.model_dump(mode="json")
-    identity = json.dumps({"run": run_id, "code": code, "plan": raw, "snapshot": snapshot_id,
-                           "semantic": semantic_config_version}, sort_keys=True)
     provenance = {"planner": "llm", "model": str(getattr(llm, "model", "unknown")), "prompt_version": PROMPT_VERSION,
-                  "llm_calls": 1, "latency_ms": latency_ms, "llm_plan": raw}
-    plan = Plan("pl_" + hashlib.sha256(identity.encode()).hexdigest()[:12], run_id, snapshot_id,
-                semantic_config_version, question, steps, provenance)
+                  "llm_calls": 1, "latency_ms": latency_ms, "llm_plan": raw, "normalized": {"dropped_optional": dropped}}
+    plan = replace(build_plan(request, run_id), provenance=provenance)
     waves = validate_plan(plan, catalogs)
     log.info("orchestrator llm plan accepted: %s", json.dumps({**provenance, "plan_id": plan.plan_id, "waves": waves}))
     return plan, waves

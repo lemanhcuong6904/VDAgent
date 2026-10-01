@@ -1,11 +1,11 @@
 {
   "agent": "insight",
   "contract_version": "1.0.0",
-  "catalog_version": "2.1.0",
+  "catalog_version": "2.3.0",
   "operations": [
     {
       "operation": "explain_unit",
-      "description": "Giải thích căn/tòa/dự án từ dataset/metric/dq của Data (pipeline TEMPLATE/LLM) → insight (insight.v2).",
+      "description": "Giải thích căn từ dataset/metric/dq của Data → insight (insight.v2) với bằng chứng insight_evidence@2; số liệu nhóm tương đồng thuộc Compare.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -38,6 +38,8 @@
         "E02": "WRONG_RESULT",
         "E03": "SPEC_ISSUE",
         "E04": "NO_ACCESS",
+        "EVIDENCE_INVALID": "FATAL",
+        "EVIDENCE_UNAVAILABLE": "FATAL",
         "INPUT_HASH_MISMATCH": "WRONG_RESULT",
         "INPUT_HASH_REQUIRED": "SPEC_ISSUE",
         "INPUT_INVALID": "DATA_QUALITY",

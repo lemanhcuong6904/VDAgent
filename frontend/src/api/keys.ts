@@ -14,6 +14,7 @@ export const queryKeys = {
   dataset: (id: string, offset: number, limit: number) => ["dataset", id, offset, limit] as const,
   chart: (id: string) => ["chart", id] as const,
   chartSpec: (id: string, version: number) => ["chart-spec", id, version] as const,
+  artifact: (id: string, version: number) => ["artifact", id, version] as const,
   reports: ["reports"] as const,
   report: (id: string) => ["report", id] as const,
 };

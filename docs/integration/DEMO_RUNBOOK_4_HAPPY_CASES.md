@@ -1,13 +1,18 @@
 # Demo runbook: 4 Happy Cases with `ORCH_LLM=on`
 
+> **Lịch sử (2026-09-30), trên kho giả.** Các case dưới đây dùng căn `A12-08` của kho giả SQLite. Từ 2026-10-01,
+> `make up` chạy trên **kho thật** (PostgreSQL, `SNAP-20260630-01`), nơi không có căn `A12-08`; câu hỏi thử trên kho thật
+> nằm trong README gốc ("Câu hỏi thử trên kho thật"). Kho giả chỉ còn chạy bằng `make mock-up` (cổng 8001, planner
+> deterministic, không LLM), nên các lệnh `make up`/cổng 8000 bên dưới không còn tái hiện đúng các case này.
+
 ### Start live demo
 ```bash
-make docker-live-up
+make up
 ```
-Sau đó mở **http://localhost:8022**, chọn User **Alice**, click agent **orchestrator** và dán prompt.
+Sau đó mở **http://localhost:8000**, chọn User **Alice**, click agent **orchestrator** và dán prompt.
 
-- Giao diện và API chạy chung một cổng 8022.
-- Lệnh trên tự build image, seed dữ liệu vào volume riêng `vdagent_live_var`, đợi container `healthy`, rồi in trạng thái (không in key).
+- Giao diện và API chạy chung một cổng 8000.
+- Lệnh trên tự build image, seed dữ liệu vào volume riêng `vdagent_var`, đợi container `healthy`, rồi in trạng thái (không in key).
 
 Kiểm chứng ngày 2026-09-30 trên branch `agent_a/debug`:
 - Cả 4 HC chạy live với Orchestrator LLM planner (OpenAI `gpt-4o-mini`).
@@ -19,51 +24,44 @@ Kiểm chứng ngày 2026-09-30 trên branch `agent_a/debug`:
 
 ## 1. Trước khi chạy: env
 
-| File | Bắt buộc | Tùy chọn | Ghi chú |
-|---|---|---|---|
-| `agents/orchestrator/.env` | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `LLM_MODEL` | `LLM_TIMEOUT_S` | Planner, đã kiểm chứng với `gpt-4o-mini` |
-| `agents/insight/.env` | `OPENAI_API_KEY` hoặc `GEMINI_API_KEY` | cả hai | Gemini đang trống nên Insight dùng OpenAI `gpt-6-luna` |
-| `agents/{data,compare,chart,report}/.env` | file phải **tồn tại** (được mount chỉ đọc) | key | Trên đường DAG các agent này **không gọi LLM** |
+Một file `.env` ở thư mục gốc (`cp .env.example .env`):
 
-Những biến sau **không đặt trong `.env`**. Service `backend-live` trong `docker-compose.yml` tự đặt:
+| Biến | Bắt buộc | Ghi chú |
+|---|---|---|
+| `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `LLM_MODEL` | có | Planner, đã kiểm chứng với `gpt-4o-mini`; Orchestrator, Data, Report không load nếu thiếu |
+| `GEMINI_API_KEY` | không | Insight dùng Gemini trước nếu có; không có thì dùng OpenAI `gpt-6-luna` |
+
+Những biến sau **không đặt trong `.env`**. Service `backend` trong `docker-compose.yml` tự đặt:
 - `ORCH_LLM=on`
 - `ORCH_SNAPSHOT_ID=SNAP-2026-09-28`
 - `ORCH_SEMANTIC_VERSION=sc-1`
 - `ORCH_DAG_TIMEOUT_S=300`
 
 ```bash
-for a in orchestrator data insight compare chart report; do test -f agents/$a/.env && echo "$a ok" || echo "$a MISSING → make docker-env, rồi điền key"; done
+bash docker/check-env.sh   # chỉ in tên biến thiếu, không in giá trị; make up cũng chạy bước này
 ```
 
 ## 2. Các lệnh live (đều là target thật trong `Makefile`)
 
 | Việc | Lệnh |
 |---|---|
-| Start (build, seed, đợi healthy, in trạng thái) | `make docker-live-up` |
-| Kiểm tra trạng thái (không in secret) | `make docker-live-check` |
-| Xem log | `make docker-live-logs` |
-| Chỉ xem bằng chứng LLM | `docker compose --profile live logs backend-live \| grep -E "llm plan\|INSIGHT_LLM_CALLED"` |
-| Dừng (giữ dữ liệu) | `make docker-live-down` |
-| Xoá sạch (container và volume `vdagent_live_var`) | `make docker-live-clean` |
+| Start (build, seed, đợi healthy, in trạng thái) | `make up` |
+| Xem log | `make logs` |
+| Chỉ xem bằng chứng LLM | `docker compose -f docker-compose.yml logs backend \| grep -E "llm plan\|INSIGHT_LLM_CALLED"` |
+| Dừng (giữ dữ liệu) | `make down` |
+| Xoá sạch (container và volume `vdagent_var`) | `make down && docker volume rm vdagent_var` |
 
-`make docker-live-check` phải in ra đúng như sau (đã kiểm chứng):
+`make up` kết thúc bằng (đã kiểm chứng 2026-10-01):
 ```
-backend:   http://localhost:8022
-ORCH_LLM               on
-ORCH_SNAPSHOT_ID       SNAP-2026-09-28
-ORCH_SEMANTIC_VERSION  sc-1
-ORCH_DAG_TIMEOUT_S     300
-health                 healthy
-agents                 orchestrator data compare insight report chart
-orchestrator: LLM planner on (model gpt-4o-mini), snapshot SNAP-2026-09-28, semantic sc-1
-insight: data source fixtures, LLM on
+agents loaded: chart compare data insight orchestrator report
+VDaAgent is up: http://localhost:8000  (UI and API)
 ```
+Log khởi động (`make logs`) có dòng `orchestrator: LLM planner on (model gpt-4o-mini), snapshot SNAP-2026-09-28, semantic sc-1`.
 
 > **Vì sao trước đây gặp `SNAPSHOT_REQUIRED`:**
 > - `docker compose -f docker-compose.yml -f docker/compose.demo-live.yml up -d` không có `--profile offline` và không ghi tên service. Compose vì vậy khởi động service mặc định `backend`: stack dev, cổng 8000, không có biến `ORCH_*`, container `team_6_cai-backend-1`.
 > - Override khi đó chỉ sửa `backend-offline`, nên không được áp dụng.
-> - Đã sửa như sau: file override đã bị xoá. Stack live giờ là service `backend-live` riêng (profile `live`, cổng 8022) nằm trong `docker-compose.yml`, chỉ khởi động qua `make docker-live-up`.
-> - **Không dùng `make docker-up` hay cổng 8000 để demo live.**
+> - Đã sửa (2026-10-01): service mặc định `backend` giờ chính là stack live (`ORCH_LLM=on` + pin snapshot/semantic), khởi động bằng `make up` trên cổng 8000; profile `live` và cổng 8022 đã bỏ.
 
 ---
 
@@ -122,9 +120,9 @@ Vì sao căn A12-08 bán chậm?
 
 **Nếu lỗi thì kiểm tra gì**
 ```bash
-make docker-live-check
-docker compose --profile live logs backend-live | grep -E "llm plan (accepted|rejected)" | tail -3
-curl -s -H 'X-User-Id: u_000000000001' http://localhost:8022/api/tasks | head -c 500
+make up                                      # in lại 6 agent đã load
+docker compose -f docker-compose.yml logs backend | grep -E "llm plan (accepted|rejected)" | tail -3
+curl -s -H 'X-User-Id: u_000000000001' http://localhost:8000/api/tasks | head -c 500
 ```
 
 ### HC-2: Compare
@@ -152,8 +150,8 @@ So sánh căn A12-08 với các căn tương đồng và chỉ ra những khác 
 
 **Nếu lỗi thì kiểm tra gì**
 ```bash
-docker compose --profile live logs backend-live | grep -E "llm plan|ERROR" | tail -5
-curl -s -H 'X-User-Id: u_000000000001' http://localhost:8022/api/agents/orchestrator/messages | tail -c 1500
+docker compose -f docker-compose.yml logs backend | grep -E "llm plan|ERROR" | tail -5
+curl -s -H 'X-User-Id: u_000000000001' http://localhost:8000/api/agents/orchestrator/messages | tail -c 1500
 ```
 
 ### HC-3: Visualization
@@ -172,7 +170,7 @@ Phân tích căn A12-08 và cho tôi các biểu đồ quan trọng.
 - Biểu đồ **chỉ render khi được nhúng trong báo cáo**, nên phần 5/5 biểu đồ trên trình duyệt được trình diễn ở HC4.
 - Ở HC3, chứng minh "biểu đồ lấy số thật" bằng API:
 ```bash
-curl -s -H 'X-User-Id: u_000000000001' http://localhost:8022/api/chart-specs/<art_id>/1 | python3 -m json.tool | grep -E '"\$schema"|"type"|"value_exact"|"source_ref"' | head -12
+curl -s -H 'X-User-Id: u_000000000001' http://localhost:8000/api/chart-specs/<art_id>/1 | python3 -m json.tool | grep -E '"\$schema"|"type"|"value_exact"|"source_ref"' | head -12
 ```
 Kết quả mong đợi:
 - `vega-lite/v6.json`;
@@ -193,8 +191,8 @@ Kết quả mong đợi:
 
 **Nếu lỗi thì kiểm tra gì**
 ```bash
-docker compose --profile live logs backend-live | grep -E "llm plan (accepted|rejected)" | tail -2   # rejected → code của lỗi + reply LLM
-docker compose --profile live logs backend-live | grep -iE "INVALID_VEGA_LITE|chart" | tail -5
+docker compose -f docker-compose.yml logs backend | grep -E "llm plan (accepted|rejected)" | tail -2   # rejected → code của lỗi + reply LLM
+docker compose -f docker-compose.yml logs backend | grep -iE "INVALID_VEGA_LITE|chart" | tail -5
 ```
 Nếu plan bị từ chối với `LLM_PLAN_MISSING_STEP`, đó là hành vi an toàn: gửi lại prompt, hoặc dùng bản dự phòng (§5).
 
@@ -219,7 +217,7 @@ Vì sao căn A12-08 bán chậm? So sánh với các căn tương đồng, vẽ 
    5. Bằng chứng & Trực quan hóa
    6. Hạn chế & Chất lượng dữ liệu
 4. **5 biểu đồ render**. Số liệu có trích dẫn `[S1]`, `[S2]`…; không có chuỗi `{{chart_spec:…}}`.
-5. Terminal: `docker compose --profile live logs backend-live | grep "llm plan accepted" | tail -1` in ra plan do LLM tạo (`model`, `latency_ms`, `llm_plan`).
+5. Terminal: `docker compose -f docker-compose.yml logs backend | grep "llm plan accepted" | tail -1` in ra plan do LLM tạo (`model`, `latency_ms`, `llm_plan`).
 
 **Tôi cần nói gì (~30 s)**
 > "Đây là câu hỏi đầy đủ. AI của Orchestrator hiểu 4 yêu cầu (giải thích, so sánh, biểu đồ, báo cáo) và lập kế hoạch 5 bước. Code kiểm tra kế hoạch đó, nên AI không thể gọi bừa agent hay tự chọn dữ liệu. Insight và Compare chạy song song, Chart vẽ từ kết quả của cả hai, Report gom tất cả thành báo cáo 6 phần. Mọi con số đều có trích dẫn về dữ liệu gốc và giống hệt bản chạy không dùng AI: AI chỉ lập kế hoạch và diễn đạt, không đổi số."
@@ -232,9 +230,9 @@ Vì sao căn A12-08 bán chậm? So sánh với các căn tương đồng, vẽ 
 
 **Nếu lỗi thì kiểm tra gì**
 ```bash
-docker compose --profile live logs backend-live | grep -E "llm plan (accepted|rejected)" | tail -1
-curl -s -H 'X-User-Id: u_000000000001' http://localhost:8022/api/reports
-curl -s -H 'X-User-Id: u_000000000001' http://localhost:8022/api/tasks | head -c 400
+docker compose -f docker-compose.yml logs backend | grep -E "llm plan (accepted|rejected)" | tail -1
+curl -s -H 'X-User-Id: u_000000000001' http://localhost:8000/api/reports
+curl -s -H 'X-User-Id: u_000000000001' http://localhost:8000/api/tasks | head -c 400
 ```
 
 ---
@@ -242,11 +240,11 @@ curl -s -H 'X-User-Id: u_000000000001' http://localhost:8022/api/tasks | head -c
 ## 4. Checklist 5 phút trước demo
 
 ```bash
-make docker-live-check                         # ORCH_LLM=on, snapshot, semantic, healthy, 6 agents, "LLM planner on"
-docker ps --format '{{.Names}} {{.Ports}}' | grep team_6_cai   # đúng backend-live :8022 (không nhầm backend :8000)
+make up                                        # healthy + "agents loaded: chart compare data insight orchestrator report"
+make logs | grep "LLM planner on"              # ORCH_LLM=on, snapshot SNAP-2026-09-28, semantic sc-1
 ```
-- [ ] Muốn danh sách Tasks trống: `make docker-live-clean && make docker-live-up`.
-- [ ] Mở `http://localhost:8022` bằng cửa sổ ẩn danh (tránh bundle JS cũ), thấy 6 agent, User = Alice.
+- [ ] Muốn danh sách Tasks trống: `make down && docker volume rm vdagent_var && make up`.
+- [ ] Mở `http://localhost:8000` bằng cửa sổ ẩn danh (tránh bundle JS cũ), thấy 6 agent, User = Alice.
 - [ ] Chạy thử HC1 một lần. Log phải có `llm plan accepted`.
 - [ ] Mạng ra ngoài tới `api.openai.com` hoạt động (LLM là phụ thuộc runtime).
 - [ ] (Tuỳ chọn, ~2 phút) Baseline offline: `WS7_BROWSER_PYTHON=<python có playwright> acceptance/ws7/run.sh`, phải in `WS7 acceptance: PASS`. Lệnh này dùng cổng 8021 riêng.
@@ -255,9 +253,9 @@ docker ps --format '{{.Names}} {{.Ports}}' | grep team_6_cai   # đúng backend-
 
 Chỉ dùng cho **fallback, regression, hoặc demo khẩn cấp** (khi mất mạng hoặc LLM lỗi). Cùng plan và cùng số liệu, nhưng plan do code lập, không có LLM.
 ```bash
-make docker-offline-up                          # http://localhost:8001 (ORCH_LLM=off, không cần key)
+make mock-up                                # http://localhost:8001 (ORCH_LLM=off, không cần key)
 curl -s -H 'X-User-Id: u_000000000001' http://localhost:8001/api/agents
-make docker-offline-down                        # hoặc make docker-offline-clean (xoá volume)
+make mock-down                                  # rồi docker volume rm vdagent_offline_var nếu muốn xoá dữ liệu
 ```
 
 ## 6. Timeline demo 5 phút
@@ -273,13 +271,13 @@ make docker-offline-down                        # hoặc make docker-offline-cle
 
 | Triệu chứng | Nguyên nhân / xử lý |
 |---|---|
-| `SNAPSHOT_REQUIRED — no snapshot configured` | Đang dùng nhầm stack dev `backend` (cổng 8000). Chạy `make docker-live-up` rồi dùng cổng **8022**. `make docker-live-check` phải cho `ORCH_SNAPSHOT_ID SNAP-2026-09-28`. |
-| `port is already allocated` (8022) | `docker ps --format '{{.Names}} {{.Ports}}' \| grep 8022` để tìm stack cũ. `make docker-live-clean`. |
-| `Không hoàn thành: LLM_PLAN_*` | Plan của LLM bị code từ chối (an toàn, không agent nào chạy). Xem `… logs backend-live \| grep "llm plan rejected"` để biết mã lỗi và câu trả lời của LLM. Gửi lại, hoặc dùng §5. |
+| `SNAPSHOT_REQUIRED — no snapshot configured` | Container đang chạy được tạo từ cấu hình cũ. Chạy `make up` để tạo lại. |
+| `port is already allocated` (8000) | Cổng đang bận. Đặt `VDAGENT_PORT=8010` trong `.env` rồi `make up`, hoặc tìm stack cũ bằng `docker ps --format '{{.Names}} {{.Ports}}'`. |
+| `Không hoàn thành: LLM_PLAN_*` | Plan của LLM bị code từ chối (an toàn, không agent nào chạy). Xem `make logs \| grep "llm plan rejected"` để biết mã lỗi và câu trả lời của LLM. Gửi lại, hoặc dùng §5. |
 | `Không hoàn thành: LLM_PLAN_UNAVAILABLE` | LLM timeout hoặc mất mạng. Kiểm tra mạng và key; nếu cần thì dùng §5. |
-| Plugin failed khi start | `make docker-live-logs \| grep failed`. Thường do thiếu biến trong `agents/<name>/.env`. |
+| Plugin failed khi start | `make logs \| grep failed`. Thường do thiếu biến bắt buộc trong `.env` gốc. |
 | UI không có Tasks sau khi gửi | Chưa chọn User. Chọn Alice. |
-| Biểu đồ không hiện trong báo cáo | `… logs backend-live \| grep INVALID_VEGA_LITE`; mở console của trình duyệt. |
+| Biểu đồ không hiện trong báo cáo | `make logs \| grep INVALID_VEGA_LITE`; mở console của trình duyệt. |
 
 ## 8. Những điều KHÔNG được nói
 
@@ -295,8 +293,8 @@ make docker-offline-down                        # hoặc make docker-offline-cle
 ## 9. Cleanup
 
 ```bash
-make docker-live-down        # dừng stack live, giữ dữ liệu
-make docker-live-clean       # xoá container live và volume vdagent_live_var
-make docker-offline-clean    # nếu đã dùng bản dự phòng
+make down                                   # dừng, giữ dữ liệu
+make down && docker volume rm vdagent_var   # xoá container và volume vdagent_var
+make mock-down && docker volume rm vdagent_offline_var   # nếu đã dùng kho giả
 ```
-Các lệnh này chỉ đụng tới stack `backend-live` / `backend-offline`. Stack dev `backend` (cổng 8000) và các project khác không bị ảnh hưởng.
+Các lệnh này chỉ đụng tới stack `backend` / `backend-offline` của project này.

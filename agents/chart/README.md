@@ -1,4 +1,12 @@
-# Chart Agent demo
+# Chart Agent
+
+**Product path (StepSpec `draw_chart`, used by the Orchestrator):** Chart draws only typed upstream evidence — the
+insight's `payload.evidence` (`insight_evidence@1`) and Compare's `comparison` — after checking every displayed value
+against the pinned Data dataset. It never reads Insight's narrative and uses no LLM on this path: visual question, chart
+type and titles come from the typed intent and the metric catalog, so identical inputs give identical chart specs.
+Contract: [docs/integration/CANONICAL_DATA_CONTRACT.md §10](../../docs/integration/CANONICAL_DATA_CONTRACT.md).
+
+## Demo mode (`chart demo` / `chart ask`, only with `CHART_DEMO=on`)
 
 This plugin converts exact, version-pinned VHop demo artifacts into validated chart
 specifications. It never queries the warehouse at runtime and never calls upstream
