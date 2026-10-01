@@ -14,7 +14,17 @@ from typing import Any
 import pytest
 
 from vdagent_data.llm import AssistantMessage, LLMTimeoutError
-from vdagent_data.narrate import Beat, LlmNarrator, Task, TemplateNarrator, group_beats, numbers_supported, sources_of, tool_calls_of
+from vdagent_data.narrate import (
+    Beat,
+    LlmNarrator,
+    Task,
+    TemplateNarrator,
+    group_beats,
+    numbers_supported,
+    sources_of,
+    tool_calls_of,
+    unsupported_figures,
+)
 from vdagent_data.steps import run_step
 from vdagent_data.tests.conftest import McpPort
 from vdagent_data.tests.test_steps import step
@@ -216,3 +226,10 @@ async def test_the_llm_sees_the_task_and_the_facts_and_no_tools(alice: McpPort) 
     assert {e["facts"]["table"] for e in prompt["su_kien"] if "table" in e["facts"]} == {"dim_unit_master"}
     blob = json.dumps(prompt, ensure_ascii=False)
     assert "63.02" not in blob and "72500000" not in blob  # row values never reach the LLM
+
+
+def test_the_unsupported_figures_are_named() -> None:
+    sources = ["Căn A12-08 có 5 dòng", "art_aaaa@1"]
+    assert unsupported_figures("Có 5 dòng, art_aaaa@1", sources) == []
+    assert unsupported_figures("Có 98765 dòng và 5 dòng, xem art_deadbeef01", sources) == ["98765", "art_deadbeef01"]
+    assert numbers_supported("Có 5 dòng", sources) is True and numbers_supported("Có 6 dòng", sources) is False

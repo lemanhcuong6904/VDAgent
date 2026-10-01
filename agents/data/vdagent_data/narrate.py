@@ -103,21 +103,23 @@ def _plain_numbers(text: str) -> list[str]:
     return _NUMBER.findall(_IDENTIFIER.sub(" ", _HASH.sub(" ", text)))
 
 
-def numbers_supported(text: str, sources: Iterable[str]) -> bool:
-    """True when every number and every identifier (a token with `_`, `@` or `#`) in `text` occurs in `sources`.
+def unsupported_figures(text: str, sources: Iterable[str]) -> list[str]:
+    """The numbers and identifiers (a token with `_`, `@` or `#`) of `text` that occur nowhere in `sources`, each once.
 
     Numbers compare without thousand or decimal separators (3.260 = 3260), so a sentence may format a fact but never add one.
     The digits inside identifiers and hashes never count as figures, in the text or in the sources.
     """
     blob = "\n".join(sources)
     allowed = {_digits(t) for t in _plain_numbers(blob)}
-    if any(_digits(t) not in allowed for t in _plain_numbers(text)):
-        return False
+    missing = [t for t in _plain_numbers(text) if _digits(t) not in allowed]
     for identifier in _IDENTIFIER.findall(text):
-        for part in re.split(r"[@#]", identifier.strip(".,;:-")):
-            if part and part not in blob:
-                return False
-    return True
+        missing += [part for part in re.split(r"[@#]", identifier.strip(".,;:-")) if part and part not in blob]
+    return list(dict.fromkeys(missing))
+
+
+def numbers_supported(text: str, sources: Iterable[str]) -> bool:
+    """True when every number and identifier in `text` occurs in `sources` (see `unsupported_figures`)."""
+    return not unsupported_figures(text, sources)
 
 
 def sources_of(beat: Beat, task: Task, extra: str = "") -> list[str]:

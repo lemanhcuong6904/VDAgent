@@ -3,7 +3,12 @@
 A `StepSpec@1` message (WS2, D4) runs the deterministic real-estate path in `steps.py`: no LLM, one
 `AgentReport@1` answer. While it runs, the agent narrates its real work to the person watching, one assistant step per
 pipeline phase with the tool calls of that phase (`narrate.py`, `DATA_NARRATE=off` to disable; `DATA_NARRATE_LLM=off`
-for template sentences only). The answer, the last step, is unchanged: a closing line and the JSON report. Any other message keeps the legacy behaviour, a thin tool-calling loop over LiteLLM
+for template sentences only). The answer, the last step, is unchanged: a closing line and the JSON report.
+
+Free text that the user writes directly (`[from: user]`) is the explanation chat (`chat/`): questions about the package Data
+has just fetched, answered from its stored artifacts. It is a branch apart from the pipeline above and never changes it.
+
+Any other message keeps the legacy behaviour, a thin tool-calling loop over LiteLLM
 with the Backend's MCP tools: open an MCP session, offer its tools plus `send_to_agent`, and step the model up
 to `ctx.max_steps` times (`tool_choice="none"` on the last step). Every assistant step and tool result is
 reported through `ctx`; tool calls of one step run concurrently. With `DATA_LLM=off` the plugin loads without
@@ -15,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -24,6 +30,7 @@ from vdagent_contracts.messages import ContractMessage, StepSpec, parse_incoming
 from vdagent_contracts.reports import AgentReport, render_agent_report
 from vdagent_sdk import SEND_TO_AGENT, Agent, AgentTimeoutError, InvocationContext, Message, Peer, ToolCall
 
+from .chat.loop import ChatLoop
 from .llm import AssistantMessage, LiteLLMClient, LLMClient, LLMTimeoutError, ToolChoice
 from .mcp_client import (
     MCP_TOOL_TIMEOUT_S,
@@ -44,6 +51,7 @@ DESCRIPTION = (
     " real-estate DW deterministically and returns dataset/metric/dq artifacts in an AgentReport@1."
 )
 STEPSPEC = "StepSpec@1"
+_SENDER = re.compile(r"^\[from: ([^\]]+)\]")
 NO_LLM_TEXT = (
     "Data đang chạy ở chế độ không có LLM (DATA_LLM=off): chỉ nhận yêu cầu có cấu trúc StepSpec@1"
     " (fetch_units, aggregate_metrics). Câu hỏi tự do cần cấu hình LLM trong agents/data/.env."
@@ -235,6 +243,12 @@ def _inbound(ctx: InvocationContext) -> str:
     return str(ctx.history[-1].get("content") or "") if ctx.history else ""
 
 
+def _sender(text: str) -> str:
+    """Who wrote the inbound message: the `[from: <sender>]` the Backend puts in front of it ("user" for a person)."""
+    match = _SENDER.match(text)
+    return match.group(1) if match else "user"
+
+
 def _summary_vi(report: AgentReport) -> str:
     if report.state == "completed":
         return f"Data đã tạo {len(report.artifact_refs)} artifact cho {report.snapshot_id}." + (" Có hạn chế." if report.partial else "")
@@ -271,6 +285,7 @@ class DataAgent(LiteLLMAgent):
         narrate: bool = True,
         narrate_llm: bool = True,
         narrator_prompt: str | None = None,
+        chat_prompt: str | None = None,
         profile: str = "mock",
     ) -> None:
         super().__init__(llm=llm, mcp_session_factory=mcp_session_factory,  # pyright: ignore[reportArgumentType]
@@ -279,12 +294,17 @@ class DataAgent(LiteLLMAgent):
         self._narrate = narrate
         self._narrate_llm = narrate_llm
         self._narrator_prompt = narrator_prompt
+        self._chat_prompt = chat_prompt or load_prompt("chat")
         self._profile = profile
         self._door = Door(profile=profile)  # the steps of contract v1.0 seen so far (idempotency, open questions, pins)
 
     @property
     def has_llm(self) -> bool:
         return self._has_llm
+
+    @property
+    def chat_prompt(self) -> str:
+        return self._chat_prompt
 
     @property
     def profile(self) -> str:
@@ -306,7 +326,17 @@ class DataAgent(LiteLLMAgent):
         if not self._has_llm:
             await ctx.emit_assistant(NO_LLM_TEXT)
             return
+        if _sender(_inbound(ctx)) == "user":
+            await self._chat(ctx)
+            return
         await super().invoke(ctx)
+
+    async def _chat(self, ctx: InvocationContext) -> None:
+        """A question the user wrote about the package Data has just fetched: answered from its stored artifacts."""
+        loop = ChatLoop(self._llm, system_prompt=self._chat_prompt)
+        async with self._mcp_session_factory(ctx.mcp.url, ctx.mcp.token) as mcp:
+            answer = await loop.reply(ctx.history, SessionTools(mcp), _CtxSink(ctx))
+        await ctx.emit_assistant(answer)
 
     def _narrator(self) -> Narrator:
         template = TemplateNarrator()
