@@ -15,6 +15,7 @@ Blocking psycopg code: callers run it in a worker thread.
 from __future__ import annotations
 
 import datetime as dt
+import time
 from collections.abc import Iterable
 from contextlib import closing
 from decimal import Decimal
@@ -51,7 +52,11 @@ _BY_UNIT = ("fact_unit_price_history", "fact_sales_funnel_daily", "dm_unit_frict
 _OPEN = ("snapshot_manifest", "semantic_config", "dim_sales_channel", "fact_market_macro_monthly")
 TABLES = tuple(sorted((*_BY_PROJECT, *_BY_UNIT, *_OPEN)))
 
-_DENIED_STATEMENTS = (exp.Insert, exp.Update, exp.Delete, exp.Merge, exp.Into, exp.Create, exp.Drop, exp.Alter, exp.Command)
+CONNECT_ATTEMPTS = 3
+CONNECT_TIMEOUT_S = 5
+_RETRY_DELAY_S = 0.5  # × attempt number
+
+_DENIED_STATEMENTS =(exp.Insert, exp.Update, exp.Delete, exp.Merge, exp.Into, exp.Create, exp.Drop, exp.Alter, exp.Command)
 _DENIED_FUNCTION_PREFIXES = ("pg_", "lo_", "dblink", "set_config", "query_to_xml", "cursor_to_xml", "table_to_xml",
                              "schema_to_xml", "database_to_xml")
 
@@ -104,19 +109,34 @@ def _predicate(table: str, scope: AuthorizedScope) -> pgsql.Composable:
         pc=pgsql.Identifier(project_col), p=projects, z=zones)
 
 
+def _open(dsn: str) -> psycopg.Connection[Any]:
+    """A new connection; a remote warehouse (AWS RDS) drops some attempts, so a failed attempt is retried."""
+    for attempt in range(1, CONNECT_ATTEMPTS + 1):
+        try:
+            return psycopg.connect(dsn, autocommit=True, connect_timeout=CONNECT_TIMEOUT_S)
+        except psycopg.OperationalError as exc:
+            if attempt == CONNECT_ATTEMPTS:
+                raise SqlError(f"warehouse unavailable: {type(exc).__name__}") from None
+            time.sleep(_RETRY_DELAY_S * attempt)
+        except psycopg.Error as exc:
+            raise SqlError(f"warehouse unavailable: {type(exc).__name__}") from None
+    raise AssertionError("unreachable")
+
+
 def _connect(dsn: str, scope: AuthorizedScope, timeout_s: float) -> psycopg.Connection[Any]:
-    """A connection on which every scoped table only shows rows inside `scope`, then locked read-only."""
+    """A connection on which every scoped table only shows rows inside `scope`, then locked read-only.
+    The whole setup goes in one round trip: over a WAN every statement costs a network round trip."""
+    conn = _open(dsn)
+    setup = [
+        pgsql.SQL("SET TRANSACTION READ WRITE"),  # TEMP views are DDL; the batch is one implicit transaction, begun read-only
+        *(pgsql.SQL("CREATE TEMP VIEW {t} AS SELECT * FROM re.{t} WHERE {pred}").format(
+            t=pgsql.Identifier(table), pred=_predicate(table, scope)) for table in (*_BY_PROJECT, *_BY_UNIT)),
+        pgsql.SQL("SET default_transaction_read_only = on"),
+        pgsql.SQL("SET statement_timeout = {ms}").format(ms=pgsql.Literal(max(1, int(timeout_s * 1000)))),
+    ]
     try:
-        conn = psycopg.connect(dsn, autocommit=True, connect_timeout=5)
-    except psycopg.Error as exc:
-        raise SqlError(f"warehouse unavailable: {type(exc).__name__}") from None
-    try:
-        conn.execute("SET default_transaction_read_only = off")  # TEMP views are DDL; switched back on right below
-        for table in (*_BY_PROJECT, *_BY_UNIT):
-            conn.execute(pgsql.SQL("CREATE TEMP VIEW {t} AS SELECT * FROM re.{t} WHERE {pred}").format(
-                t=pgsql.Identifier(table), pred=_predicate(table, scope)))
-        conn.execute("SET default_transaction_read_only = on")
-        conn.execute(pgsql.SQL("SET statement_timeout = {ms}").format(ms=pgsql.Literal(max(1, int(timeout_s * 1000)))))
+        # no parameters, so psycopg sends the statements as one simple query
+        conn.execute(";\n".join(s.as_string(None) for s in setup))  # pyright: ignore[reportArgumentType]
     except psycopg.Error as exc:
         conn.close()
         raise SqlError(f"warehouse unavailable: {type(exc).__name__}") from None
