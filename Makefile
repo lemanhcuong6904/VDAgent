@@ -6,7 +6,7 @@ WAREHOUSE_DB ?= var/warehouse.db
 DOCS_MODULES := vdagent_sdk vdagent_backend.mcp.reference
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs mock-up mock-down backend reset-db sdk-docs sdk-docs-serve docker-test
+.PHONY: help up down restart logs status build warehouse-check mock-up mock-down backend reset-db sdk-docs sdk-docs-serve docker-test
 
 # Always this project's compose file: a bare `docker compose` would also merge any docker-compose.override.yml.
 COMPOSE := docker compose -f docker-compose.yml
@@ -17,6 +17,10 @@ help:
 	@echo "              needs .env, see .env.example)"
 	@echo "make down     stop it (app data is kept in the Docker volume vdagent_real_var)"
 	@echo "make logs     follow the backend log"
+	@echo "make status   show product container status and health"
+	@echo "make restart  stop and start the product"
+	@echo "make build    build the product image without starting it"
+	@echo "make warehouse-check  validate the real warehouse from inside Docker"
 	@echo ""
 	@echo "make mock-up / mock-down   synthetic mock warehouse, no keys, on :8001 (tests and offline development only)"
 	@echo "make docker-test           run the offline test suite in a container without network"
@@ -38,6 +42,20 @@ up:
 
 down:
 	$(COMPOSE) down
+
+restart:
+	$(MAKE) down
+	$(MAKE) up
+
+status:
+	$(COMPOSE) ps
+
+build:
+	$(COMPOSE) build
+
+warehouse-check:
+	@bash docker/check-env.sh
+	$(COMPOSE) run --rm warehouse-check
 
 logs:
 	$(COMPOSE) logs -f backend

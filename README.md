@@ -35,8 +35,9 @@ flowchart LR
 
 ## Quick Start
 
-**Cần có:** Docker với Compose v2, GNU make, một API key tương thích OpenAI và **kho dữ liệu PostgreSQL** (xem bên dưới).
-Không cần Python hay Node trên máy.
+**Cần có:** Docker với Compose v2, một API key tương thích OpenAI và **kho dữ liệu PostgreSQL** (xem bên dưới).
+Không cần Python hay Node trên máy. Linux dùng GNU make; Windows dùng Docker Desktop và Windows PowerShell
+(WSL2 không bắt buộc).
 
 ### 1. Clone
 
@@ -64,6 +65,115 @@ cp .env.example .env
 | `GEMINI_API_KEY` | tuỳ chọn | Insight dùng Gemini trước nếu có key này |
 | `VDAGENT_PORT` | tuỳ chọn | cổng của UI và API, mặc định `8000` |
 
+### Cách xác định `VDAGENT_RE_WAREHOUSE_DB`
+
+DSN có dạng:
+
+```text
+postgresql://<user>:<password>@<host>:<port>/<database>
+```
+
+Với warehouse local được repo hướng dẫn dựng, DSN trong `.env` thường là:
+
+```text
+postgresql://vdagent_reader:<YOUR_PASSWORD>@host.docker.internal:5433/cdw
+```
+
+Không ghi password thật vào README, Git hoặc log.
+
+**User và password.** Backend dùng role đọc riêng `vdagent_reader`, không dùng tài khoản admin `postgres`.
+Role này được tạo/cập nhật bởi [`docker/warehouse/apply-views.sh`](docker/warehouse/apply-views.sh), với password truyền
+qua biến `VDAGENT_READER_PASSWORD`. Khi dựng warehouse theo [hướng dẫn Data agent](agents/data/README.md), password là
+giá trị `READER_PW` bạn tự tạo/cấp lúc chạy bước tạo role; nếu warehouse do team khác quản lý, lấy password của role
+`vdagent_reader` từ người quản trị warehouse. Password không được lưu trong repo. Nếu quên password, đặt password mới
+bằng script `apply-views.sh` rồi cập nhật `.env`.
+
+**Database và port.** Container local mặc định là `cdw-pg`, database là `cdw`, PostgreSQL trong container lắng nghe
+`5432`, còn host publish ra `5433`. Kiểm tra container và port mapping:
+
+Linux:
+
+```bash
+docker ps
+docker port cdw-pg
+```
+
+Windows PowerShell:
+
+```powershell
+docker ps
+docker port cdw-pg
+```
+
+Nếu thấy:
+
+```text
+5432/tcp -> 127.0.0.1:5433
+```
+
+thì `host port = 5433`, `PostgreSQL container port = 5432`. Để xác nhận database name:
+
+```bash
+docker exec cdw-pg printenv POSTGRES_DB
+```
+
+Lệnh trên cũng chạy nguyên dạng trong Windows PowerShell. Với setup local hiện tại, kết quả là `cdw`. Nếu biến này
+không có, xem danh sách database bằng:
+
+```bash
+docker exec -it cdw-pg psql -U postgres -l
+```
+
+`localhost` và `127.0.0.1` trong container là chính container backend, không phải máy host. Vì vậy PostgreSQL trên
+host có địa chỉ `127.0.0.1:5433` phải được viết trong DSN của backend Docker là `host.docker.internal:5433`.
+Không dùng `localhost:5433` trong `VDAGENT_RE_WAREHOUSE_DB`.
+
+**Kiểm tra kết nối từ host.** Nếu máy host có `psql`, kiểm tra bằng loopback của host:
+
+```bash
+psql "postgresql://vdagent_reader:<PASSWORD>@127.0.0.1:5433/cdw"
+```
+
+Trên Windows PowerShell dùng cùng lệnh nếu `psql` đã có trong `PATH`. Đây chỉ là kiểm tra từ host; kiểm tra đúng
+theo góc nhìn Docker bằng:
+
+Linux:
+
+```bash
+make warehouse-check
+```
+
+Windows PowerShell:
+
+```powershell
+.\dev.ps1 warehouse-check
+```
+
+Raw Compose equivalent:
+
+```powershell
+docker compose -f docker-compose.yml run --rm warehouse-check
+```
+
+Kết quả thành công sẽ in warehouse backend/source, snapshot, semantic version và số units; số units có thể thay đổi
+theo dataset. Ví dụ:
+
+```text
+Warehouse backend: PostgreSQL
+Warehouse source: host.docker.internal:5433/cdw
+Snapshot: SNAP-20260630-01 (APPROVED)
+Semantic version: 3.1.0
+Units visible in schema re: 47713
+```
+
+| Lỗi | Nguyên nhân thường gặp | Cách xử lý |
+|---|---|---|
+| `connection refused` | Sai host/port hoặc PostgreSQL chưa chạy | Chạy `docker ps`, `docker port cdw-pg`; kiểm tra port mapping |
+| Dùng `localhost` trong Docker | Container đang tự gọi chính nó | Đổi host thành `host.docker.internal` |
+| `password authentication failed` | Sai user/password | Kiểm tra credentials của role đọc `vdagent_reader` |
+| `database does not exist` | Sai database name | Kiểm tra `POSTGRES_DB` hoặc `psql -l` |
+| `warehouse-check` fail snapshot | Warehouse không đúng dataset/version | Kiểm tra `ORCH_SNAPSHOT_ID` và `ORCH_SEMANTIC_VERSION` |
+
 **Host trong DSN:** PostgreSQL ở máy khác thì dùng tên/IP của máy đó. PostgreSQL trên chính máy bạn thì dùng
 `host.docker.internal`, và cổng của nó phải mở cho Docker (vd `-p 172.17.0.1:5433:5432`); `127.0.0.1`/`localhost` bị
 từ chối vì trong container đó là chính container.
@@ -73,6 +183,8 @@ từ chối vì trong container đó là chính container.
 `VDAGENT_RE_WAREHOUSE_DB=postgresql://vdagent_reader:<mật khẩu>@host.docker.internal:5433/cdw`.
 
 ### 3. Run
+
+#### Linux
 
 ```bash
 make up
@@ -100,20 +212,94 @@ Thử: chọn user **Alice** (thấy dự án 100 và 400), click agent **orches
 `Vì sao căn MAS-U03832 bán chậm? So sánh với các căn tương đồng, vẽ biểu đồ và xuất báo cáo.`
 Sau khoảng 1 phút: bảng B1…B5 "hoàn tất"; báo cáo nằm ở **Artifacts → Reports**.
 
+#### Windows PowerShell
+
+PowerShell chạy cùng Compose file và cùng các bước kiểm tra `.env`, warehouse, seed và health như Linux; không cần
+GNU make hoặc WSL2. Windows cần Docker Desktop với Docker Compose v2 và Windows PowerShell (kể cả PowerShell 5.1):
+
+```powershell
+Copy-Item .env.example .env
+.\dev.ps1 up
+```
+
+Mở `http://localhost:8000`. Nếu đặt `VDAGENT_PORT` trong `.env`, dùng cổng đó.
+
+Raw Docker equivalent (orchestration only):
+
+```powershell
+docker compose -f docker-compose.yml up -d --build --wait backend
+```
+
+Lệnh raw này tự chạy `seed` và `warehouse-check` nhờ `depends_on`, rồi chờ backend healthy. Nó **không** chạy
+`docker/check-env.sh` và không kiểm tra format DSN/giá trị rỗng; dùng `.\dev.ps1 up` làm quick start được khuyến nghị
+để giữ preflight đó.
+
 ### Stop
 
 ```bash
 make down
 ```
 
-Dữ liệu ứng dụng (người dùng, hội thoại, artifact) giữ trong Docker volume `vdagent_real_var`. Làm lại từ đầu:
-`make down && docker volume rm vdagent_real_var`.
+Windows PowerShell:
+
+```powershell
+.\dev.ps1 down
+```
+
+Raw equivalent:
+
+```powershell
+docker compose -f docker-compose.yml down
+```
+
+Dữ liệu ứng dụng (người dùng, hội thoại, artifact) giữ trong Docker volume có tên cố định `vdagent_real_var`.
 
 ### Logs
 
 ```bash
 make logs
 ```
+
+Trạng thái, restart và build nhanh:
+
+```bash
+make status
+make restart
+make build
+```
+
+Windows PowerShell tương đương:
+
+```powershell
+.\dev.ps1 status
+.\dev.ps1 restart
+.\dev.ps1 build
+.\dev.ps1 logs
+```
+
+Raw commands:
+
+```powershell
+docker compose -f docker-compose.yml logs -f backend
+docker compose -f docker-compose.yml ps
+```
+
+Reset toàn bộ dữ liệu trên Windows PowerShell 5.1 (chạy từng lệnh; không dùng `&&`):
+
+```powershell
+.\dev.ps1 down
+docker volume rm vdagent_real_var
+```
+
+Linux reset:
+
+```bash
+make down
+docker volume rm vdagent_real_var
+```
+
+`make status` / `.\dev.ps1 status` hiển thị health của backend. Healthcheck thật là `GET /api/users` (không có
+route `/health`).
 
 ## Câu hỏi thử trên kho thật
 
