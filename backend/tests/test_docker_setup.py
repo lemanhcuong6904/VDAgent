@@ -54,6 +54,18 @@ def test_the_backend_starts_only_after_the_real_warehouse_was_checked_from_insid
         assert service["extra_hosts"] == ["host.docker.internal:host-gateway"]
 
 
+def test_targeting_backend_preserves_the_seed_and_warehouse_dependency_chain() -> None:
+    backend = _compose()["services"]["backend"]
+    assert backend["depends_on"] == {
+        "seed": {"condition": "service_completed_successfully"},
+        "warehouse-check": {"condition": "service_completed_successfully"},
+    }
+
+
+def test_the_app_volume_has_an_explicit_cross_platform_name() -> None:
+    assert _compose()["volumes"]["app-var"]["name"] == "vdagent_real_var"
+
+
 def test_the_seed_gives_real_scopes_and_never_builds_the_mock_warehouse() -> None:
     env = _compose()["services"]["seed"]["environment"]
     assert env["VDAGENT_SCOPE_PROFILE"] == "real" and env["SEED_RE_MOCK"] == "off"
@@ -68,7 +80,7 @@ def _make_dry_run(target: str) -> str:
     return subprocess.run(["make", "-n", "-C", str(REPO), target], capture_output=True, text=True, check=True).stdout
 
 
-@pytest.mark.parametrize("target", ["up", "down", "logs", "mock-up", "mock-down"])
+@pytest.mark.parametrize("target", ["up", "down", "logs", "status", "restart", "build", "warehouse-check", "mock-up", "mock-down"])
 def test_make_targets_use_only_the_project_compose_file(target: str) -> None:
     lines = [line for line in _make_dry_run(target).splitlines() if "docker compose" in line]
     assert lines and all("-f docker-compose.yml" in line for line in lines)  # never auto-merges an override
@@ -78,6 +90,53 @@ def test_make_up_checks_the_env_then_builds_and_waits_for_health() -> None:
     out = _make_dry_run("up")
     assert out.index("check-env.sh") < out.index("up -d --build --wait backend")
     assert "logs --no-log-prefix warehouse-check" in out  # a failed warehouse check is shown, not hidden
+
+
+def test_make_has_the_short_lifecycle_commands() -> None:
+    restart = _make_dry_run("restart")
+    assert "make down" in restart and "make up" in restart
+    assert "docker compose -f docker-compose.yml build" in _make_dry_run("build")
+    assert "docker compose -f docker-compose.yml ps" in _make_dry_run("status")
+    assert "check-env.sh" in _make_dry_run("warehouse-check")
+
+
+def test_windows_wrapper_has_the_same_lifecycle_commands_and_preflight() -> None:
+    script = (REPO / "dev.ps1").read_text()
+    assert "docker-compose.yml" in script
+    for command in ("up", "down", "logs", "status", "restart", "build", "warehouse-check"):
+        assert command in script
+    for key in REQUIRED:
+        assert key in script
+    assert "host.docker.internal" in script
+    assert "localhost" in script
+    assert "& make" not in script.lower() and "make.exe" not in script.lower()
+
+
+def test_readme_documents_the_raw_windows_compose_command_and_power_shell_reset() -> None:
+    readme = (REPO / "README.md").read_text()
+    raw = "docker compose -f docker-compose.yml up -d --build --wait backend"
+    assert raw in readme
+    assert "PowerShell 5.1" in readme
+    assert "docker volume rm vdagent_real_var" in readme
+
+
+def test_readme_explains_how_to_build_the_real_warehouse_dsn_without_a_secret() -> None:
+    readme = (REPO / "README.md").read_text()
+    required = (
+        "Cách xác định `VDAGENT_RE_WAREHOUSE_DB`",
+        "postgresql://<user>:<password>@<host>:<port>/<database>",
+        "host.docker.internal:5433",
+        "docker ps",
+        "docker port cdw-pg",
+        "docker exec cdw-pg printenv POSTGRES_DB",
+        "vdagent_reader",
+        "docker/warehouse/apply-views.sh",
+        "make warehouse-check",
+        ".\\dev.ps1 warehouse-check",
+        "password authentication failed",
+    )
+    assert all(item in readme for item in required)
+    assert "vdagent_reader:cdw@" not in readme
 
 
 def test_the_mock_only_starts_explicitly() -> None:
