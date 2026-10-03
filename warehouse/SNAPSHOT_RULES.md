@@ -43,7 +43,7 @@ Mọi phép tính DOM căn cứ đúng mốc `snapshot_date`.
 
 ### 3.1. Khóa sự kiện và comparable khi hợp nhất pack
 
-DDL dùng `funnel_event_id`, `price_event_id` và `comp_id` làm PK toàn bảng. Khi tạo pack canonical bằng `organize_pack.py`, giữ lại giá trị ID nguồn qua phép ánh xạ ổn định sau:
+DDL dùng `funnel_event_id`, `price_event_id` và `comp_id` làm PK toàn bảng. Khi tạo pack canonical bằng `organize_pack.py` (pipeline đã retire 2026-10-04), giữ lại giá trị ID nguồn qua phép ánh xạ ổn định sau:
 
 | Pack | Cột | ID canonical | ID nguồn có thể khôi phục |
 |---|---|---|---|
@@ -51,7 +51,7 @@ DDL dùng `funnel_event_id`, `price_event_id` và `comp_id` làm PK toàn bảng
 | 200 — Smart City | `funnel_event_id` | `20_000_000_000 + ID nguồn` | Trừ `20_000_000_000` |
 | 100 — Ocean Park | `comp_id` | `OCP-` + ID nguồn | Bỏ tiền tố `OCP-` |
 
-Các pack 300/400/500 giữ ID hiện có; riêng ID funnel của pack 300 còn được dùng trong attribution nguồn. Quality gate `verify_warehouse.py` kiểm PK/UK của cả 13 bảng project trên hợp của 5 pack trước bước assemble.
+Các pack 300/400/500 giữ ID hiện có; riêng ID funnel của pack 300 còn được dùng trong attribution nguồn. Quality gate `verify_warehouse.py` từng kiểm PK/UK của cả 13 bảng project trên hợp của 5 pack trước bước assemble; pipeline đó đã retire (2026-10-04), các ánh xạ ID ở trên vẫn là quy tắc của dữ liệu trong kho chuẩn.
 
 ## 4. Bảng re-key Ocean Park (hiện -> đích) — cho N7
 

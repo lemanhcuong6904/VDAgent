@@ -1,4 +1,4 @@
-"""Peer-group area rules shared by Data and Compare (docs/integration/CANONICAL_DATA_CONTRACT.md §2).
+"""Peer-group area rules shared by Data and Compare (docs/contracts/data-contract.md §2).
 
 D9 (approved): the peer area is `dim_unit_master.net_area_m2`; `area_m2` is never used in its place. The area
 tolerance is a decimal ratio (0.10 = 10 %), as stored in `semantic_config.peer_area_tolerance_pct` of `sc-1`.

@@ -105,7 +105,7 @@ async def test_content_hash_computed_server_side_matches_contracts(db: Any) -> N
         await _put(db, _draft(payload={"ratio": 0.68}))  # floats never enter the store
 
 
-# ---- WS1: strict input references (docs/integration/CANONICAL_DATA_CONTRACT.md §3, §6) ----
+# ---- WS1: strict input references (docs/contracts/data-contract.md §3, §6) ----
 
 
 def _ref(stored: ArtifactEnvelope, **overrides: Any) -> dict[str, Any]:

@@ -2,33 +2,36 @@
 
 Bản dump PostgreSQL của **Central Master Dataset** (schema `gold`, 16 bảng) tại snapshot
 đóng băng **2026-06-30**, dataset_version **3.1.0**. Dùng bản này thay cho CSV: team khác
-`pg_restore`/`psql` là có ngay warehouse để query, không cần tự dựng.
+`pg_restore` là có ngay warehouse để query, không cần tự dựng.
+
+> **Trạng thái (2026-10-04, Phase 2):** production đọc **AWS RDS `cdw`** (schema `gold`, view `re` từ
+> `docker/warehouse/canonical_views.sql`), khớp dump này ở các điểm đã kiểm read-only (snapshot `SNAP-20260630-01`
+> APPROVED, semantic `3.1.0`, 47.713 căn trong `re.dim_unit_master`). `cdw_gold_snapshot_20260630.dump` là **artifact DR chuẩn** duy nhất: dùng để dựng lại kho
+> khi mất AWS hoặc để chạy kho thật trên máy (README gốc, mục "Chưa có endpoint kho thật?").
+> Pipeline CSV dựng ra dump (`warehouse/project_*`, `warehouse/dataset`, `organize_pack.py`, `assemble_dataset.py`,
+> `verify_warehouse.py`, `build_backup.py`) và bản plain SQL trùng lặp đã được **retire**; dump không tái tạo lại
+> từ CSV trong repo nữa (lịch sử Git vẫn giữ các file đó, commit `6857ea4`).
 
 ## Artifact
 
 | File | Định dạng | Dùng với | Kích thước |
 |---|---|---|---|
-| `cdw_gold_snapshot_20260630.dump` | pg_dump custom (`-Fc`) | `pg_restore` | ~3.9 MB |
-| `cdw_gold_snapshot_20260630.sql`  | plain SQL | `psql` | ~18 MB |
+| `cdw_gold_snapshot_20260630.dump` | pg_dump custom (`-Fc`) — **artifact DR chuẩn** | `pg_restore` | ~3.9 MB |
 | `schema_backup.sql` | DDL 16 bảng (đã nới, xem §Sai lệch) | tham chiếu | — |
-| `load_pg.sql` | thứ tự nạp FK | tham chiếu | — |
-| `build_backup.py` | script tái tạo toàn bộ từ `../dataset/` | reproducibility | — |
+| `load_pg.sql` | thứ tự nạp FK (nạp từ thư mục CSV stage của pipeline đã retire; chỉ còn để tham chiếu) | tham chiếu | — |
 
 Nội dung schema `gold` (16 bảng): shared (snapshot_manifest, semantic_config, dim_date) +
 6 dimension + 5 fact + Mart `dm_unit_friction_diagnostics` (5.051) + Bridge
 `unit_diagnostic_causes` (10.797). `dim_unit_master`=47.713, `fact_unit_inventory_snapshot`=47.522.
 
-## Khôi phục (chọn 1 trong 2)
+## Khôi phục
 
 ```bash
-# A) Bản custom (khuyến nghị) — vào DB rỗng đã tạo sẵn
+# Vào DB rỗng đã tạo sẵn
 createdb cdw
 pg_restore -U <user> -d cdw --no-owner cdw_gold_snapshot_20260630.dump
 #   xong: các bảng nằm trong schema "gold" (SET search_path TO gold;)
-
-# B) Bản plain SQL
-createdb cdw
-psql -U <user> -d cdw -f cdw_gold_snapshot_20260630.sql
+# rồi tạo lớp đọc `re` + role read-only cho Backend: docker/warehouse/apply-views.sh
 ```
 
 Kiểm nhanh sau restore:
@@ -80,11 +83,6 @@ canonical DDL — cần chuyển M5 (DQ Gates) xử lý tại nguồn:
 
 ## Tái tạo
 
-```bash
-python warehouse/backup/build_backup.py          # sinh warehouse/backup/_stage/
-docker compose -f <repo vdagent-xdg>/docker-compose.yml up -d pg
-docker cp warehouse/backup/_stage <container>:/stage
-docker exec <container> psql -U vdagent -d vdagent -f /stage/schema_backup.sql
-docker exec -w /stage <container> psql -U vdagent -d vdagent -f /stage/load_pg.sql
-docker exec <container> pg_dump -U vdagent -d vdagent -n gold -Fc -f /stage/cdw_gold_snapshot_20260630.dump
-```
+Không còn tái tạo từ CSV trong repo: pipeline `build_backup.py` ← `warehouse/dataset` đã retire ở Phase 2
+(2026-10-04). Nếu cần dump mới, lấy từ kho chuẩn (AWS `cdw`, schema `gold`) bằng `pg_dump -n gold -Fc` với tài khoản
+có quyền đọc `gold`, rồi thay file này trong một PR riêng có kiểm số dòng như trên.

@@ -1,4 +1,4 @@
-"""WS2: deterministic StepSpec operations over the real-estate DW (docs/integration/AGENT_CONTRACT_MATRIX.md §3.1).
+"""WS2: deterministic StepSpec operations over the real-estate DW (docs/contracts/agent-contract.md §3.1).
 
 Every test runs against a freshly built `re_warehouse` and the Backend's real MCP tools; no LLM is involved.
 """
@@ -62,7 +62,7 @@ async def listed(port: McpPort) -> list[dict[str, Any]]:
     return (await port.call("artifact_list", {}))["artifacts"]
 
 
-# ---- golden A12-08 (E2E_TEST_PLAN.md §3, boundary E-02/E-03) -------------------------------------------------------
+# ---- golden A12-08 (docs/testing/e2e-golden.md §3, boundary E-02/E-03) ---------------------------------------------
 
 
 async def test_golden_a12_08_fetch_units(alice: McpPort) -> None:

@@ -4,7 +4,7 @@ Tài liệu này dành cho Codex, Claude, Gemini và người phát triển Insi
 
 ## 1. Overview
 
-Repo chứa **prototype Python có thể chạy demo end-to-end**, dựa trên data pack và SQLite. Đây chưa phải kiến trúc production của VDAgent. Contract nghiệp vụ hiện hành là `insight.v2` theo spec v2.1; một số lựa chọn kỹ thuật trong prototype vẫn là mặc định tạm, chờ các nhóm ghi trong bảng [Cần chốt sau prototype](#cần-chốt-sau-prototype).
+Repo chứa **prototype Python có thể chạy demo end-to-end**, dựa trên data pack và SQLite. Đây chưa phải kiến trúc production của VDAgent. Contract nghiệp vụ hiện hành là `insight.v2` theo spec v2.1; một số lựa chọn kỹ thuật trong prototype vẫn là mặc định tạm, chờ các nhóm ghi trong bảng [Cần chốt sau prototype](#các-quy-tắc-và-mặc-định-còn-cần-chốt).
 
 Phân biệt ba nguồn thông tin:
 
@@ -215,7 +215,7 @@ Các dòng dưới đây là **mặc định đang chạy**, không phải mặc
 | D-53/D-52 — replay/task clock | Lưu prompt hash/raw output tối đa 20 KB; `as_of` lưu trong replay, demo ghim theo snapshot. | PO — cần xác nhận |
 | D-10 — giao thức Orchestrator | JSON request được hỗ trợ; free text vẫn parse bằng luật cố định trong bridge đến khi tích hợp JSON hoàn tất. | PLAT — MỞ |
 | D-11/D-12 — consumer artifact | Reply tóm tắt + artifact id + JSON KEY tối đa 6.000 ký tự. Report chưa đọc được SQLite store của Insight. | PLAT — MỞ |
-| D-13 — chart | Đã chốt 2026-10-01: Chart đọc khối `evidence` (`insight_evidence@1`, xem docs/integration/CANONICAL_DATA_CONTRACT.md §10) dựng từ candidate tất định; `chart_hints` chỉ còn trong payload cũ, Chart không đọc. | ĐÓNG |
+| D-13 — chart | Đã chốt 2026-10-01: Chart đọc khối `evidence` (`insight_evidence@1`, xem docs/contracts/data-contract.md §10) dựng từ candidate tất định; `chart_hints` chỉ còn trong payload cũ, Chart không đọc. | ĐÓNG |
 | D-14 — authorization | Chế độ tương thích prototype dùng `SALES_MANAGER` và mọi project trong data pack; JSON request vẫn qua E04. Chưa có nguồn `role_project_access`. | PLAT — tạm |
 | D-15/D-16 — queue/deadline | Không có queue; attempt/fencing chỉ validate. Deadline 60 giây có thể tạo PARTIAL. | PLAT — prototype |
 | D-17 — tài liệu ngoài plugin | README gốc và `agents/_template/README.md` còn ví dụ Insight/LangChain; prompt Orchestrator cần cập nhật khi D-10 chốt. | PLAT — MỞ |
@@ -252,7 +252,7 @@ Output là `ArtifactEnvelope` schema `insight.v2` với refs/hash/limitations v�
 
 | Integration | Trạng thái thực tế |
 | --- | --- |
-| Backend | Implemented: plugin đăng ký `insight`; POST async trả HTTP 202. Header `X-User-Id` phải là user DB hợp lệ (`backend/vdagent_backend/api/deps.py:30-40`). |
+| Backend | Implemented: plugin đăng ký `insight`; POST async trả HTTP 202. Header `X-User-Id` phải là user DB hợp lệ (`backend/vdagent_backend/http/deps.py`, `current_user`). |
 | Orchestrator | Partial: generic peer call tồn tại, nhưng prompt Orchestrator truyền dataset id/free text không tạo ra artifact refs đúng contract Insight; chưa có E2E contract tương thích (`agents/orchestrator/vdagent_orchestrator/agent.py:42-63,182-188`). |
 | Data Agent | Mocked/demo: `FixtureReader` hoặc `ExportArtifactReader`; không gọi Data Agent, DW hay shared artifact service. |
 | Compare | Không tích hợp: Insight không đọc Comparison Artifact và không gọi Compare. |

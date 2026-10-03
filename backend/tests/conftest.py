@@ -272,6 +272,7 @@ def make_config(tmp_path: Path, **overrides: Any) -> Config:
         frontend_dist=str(tmp_path / "no-dist"),
         max_depth=4,
         max_steps=12,
+        re_warehouse_db=str(tmp_path / "re_warehouse.db"),  # the mock, named explicitly (never an implicit default)
     )
     return replace(cfg, **overrides)
 

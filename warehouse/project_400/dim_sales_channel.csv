@@ -1,7 +1,0 @@
-channel_key,channel_id,channel_name,channel_tier,active_brokers_count
-4001,CH-MAS-U-01,Masterise Homes - Phòng kinh doanh trực tiếp (MOCK),INHOUSE,120
-4002,CH-MAS-U-02,Sàn phân phối độc quyền Alpha (MOCK),TIER_1_EXCLUSIVE,350
-4003,CH-MAS-U-03,Sàn phân phối độc quyền Beta (MOCK),TIER_1_EXCLUSIVE,280
-4004,CH-MAS-U-04,Đại lý Gamma (MOCK),TIER_2_GENERAL,150
-4005,CH-MAS-U-05,Đại lý Delta (MOCK),TIER_2_GENERAL,90
-4006,CH-MAS-U-06,Đại lý Epsilon (MOCK),TIER_2_GENERAL,60
