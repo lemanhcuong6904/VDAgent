@@ -3,7 +3,8 @@
 `classify` recognises a question about one unit (a unit code such as `A12-08`) and what is asked:
 explain (vì sao / tại sao / nguyên nhân / bán chậm), compare (so sánh / tương đồng / peer), chart (biểu đồ /
 đồ thị / chart). No unit code → None: the question is not forced into the DAG (legacy LLM loop, or an explanation).
-A chart without an analysis asks for both analyses (Chart only draws Insight/Compare outputs).
+A chart without an analysis asks for both analyses. Chart also receives the pinned Data dataset ref so every displayed
+value is checked against Data evidence, while Insight/Compare still define what should be visualized.
 `parse_request` reads the structured `AnalysisRequest@1` contract. Neither ever picks a snapshot: the snapshot and
 semantic version come from the request or from the Orchestrator's explicit configuration.
 
@@ -53,8 +54,8 @@ class AnalysisRequest:
 
 def normalize_wants(wants: set[str] | frozenset[str]) -> frozenset[str]:
     """What a request really needs (shared by the deterministic and the LLM planner):
-    charts or a report without a named analysis need both analyses (Chart only draws Insight and Compare outputs:
-    KPI cards from Insight, target-vs-peer and scatter charts from Compare); a report embeds the charts."""
+    charts or a report without a named analysis need both analyses (Chart gets exact Data evidence, then draws KPI
+    cards from Insight and target-vs-peer / scatter charts from Compare); a report embeds the charts."""
     wants = set(wants)
     if wants & {"chart", "report"} and not wants & {"explain", "compare"}:
         wants |= {"explain", "compare"}
@@ -146,8 +147,10 @@ def build_plan(request: AnalysisRequest, run_id: str) -> Plan:
     chart_step = None
     if "chart" in wants:
         chart_step = f"B{n}"
-        steps.append(PlanStep(chart_step, "chart", STEP_OPERATIONS["chart"], {}, tuple(s for s, _ in analyses), "any",
-                              tuple(InputBinding(s, types) for s, types in analyses)))
+        steps.append(PlanStep(chart_step, "chart", STEP_OPERATIONS["chart"], {},
+                              (steps[0].step_id, *(s for s, _ in analyses)), "any",
+                              (InputBinding(steps[0].step_id, ("dataset",)),
+                               *(InputBinding(s, types) for s, types in analyses))))
         n += 1
     if "report" in wants:
         sources = list(analyses)

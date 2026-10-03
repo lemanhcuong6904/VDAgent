@@ -16,12 +16,14 @@
         }
       },
       "input_fields": {
+        "dataset": "input_refs",
         "insight": "input_refs",
         "comparison": "input_refs",
         "peer_definition": "input_refs"
       },
       "requires": [],
       "uses_if_present": [
+        "dataset",
         "insight",
         "comparison",
         "peer_definition"

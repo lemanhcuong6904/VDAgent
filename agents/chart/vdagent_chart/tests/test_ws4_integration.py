@@ -137,7 +137,7 @@ async def test_demo_commands_are_refused_in_production(no_synthetic: None) -> No
 
 async def test_golden_charts_from_real_ws3_artifacts(alice: McpPort, tmp_path: Path, no_synthetic: None) -> None:
     up = await upstream(alice, tmp_path)
-    report = await run_step(chart_step([up["insight"], up["comparison"], up["peer_definition"]]), alice.as_agent("chart"))
+    report = await run_step(chart_step([up["dataset"], up["insight"], up["comparison"], up["peer_definition"]]), alice.as_agent("chart"))
     specs = await charts(alice, report)
 
     for spec in specs:
@@ -268,6 +268,7 @@ async def test_inputs_from_different_datasets_are_rejected(alice: McpPort, tmp_p
     first = await upstream(alice, tmp_path)
     second = await upstream(alice, tmp_path / "again")
     await _rejected(alice, chart_step([first["insight"], second["comparison"], second["peer_definition"]]), "LINEAGE_MISMATCH")
+    await _rejected(alice, chart_step([first["dataset"], second["comparison"], second["peer_definition"]]), "LINEAGE_MISMATCH")
 
 
 async def test_an_invalid_evidence_value_is_rejected_never_zeroed(alice: McpPort, tmp_path: Path) -> None:

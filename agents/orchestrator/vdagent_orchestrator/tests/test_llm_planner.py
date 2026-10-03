@@ -84,7 +84,7 @@ async def test_valid_llm_plan_is_compiled_with_code_owned_specs_and_pins() -> No
     assert waves == [["B1"], ["B2", "B3"], ["B4"], ["B5"]]
     assert [(s.step_id, s.agent, s.operation, s.depends_on) for s in plan.steps] == [
         ("B1", "data", "fetch_units", ()), ("B2", "insight", "explain_unit", ("B1",)),
-        ("B3", "compare", "compare_to_peers", ("B1",)), ("B4", "chart", "draw_chart", ("B2", "B3")),
+        ("B3", "compare", "compare_to_peers", ("B1",)), ("B4", "chart", "draw_chart", ("B1", "B2", "B3")),
         ("B5", "report", "draft_report", ("B2", "B3", "B4"))]
     assert (plan.snapshot_id, plan.semantic_config_version) == (SNAP, SEM)  # pinned by code, never by the LLM
     assert plan.steps[0].spec == {"subject_unit_code": "A12-08", "population": "peer_candidates"}

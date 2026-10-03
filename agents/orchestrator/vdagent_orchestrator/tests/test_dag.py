@@ -54,7 +54,7 @@ def test_catalogs_declare_the_implemented_operations() -> None:
     assert CATALOGS["data"].operation("fetch_units").produces == ["dataset", "metric", "dq"]
     assert CATALOGS["insight"].operation("explain_unit").requires == ["dataset", "metric", "dq"]
     assert CATALOGS["compare"].operation("compare_to_peers").produces == ["peer_definition", "comparison"]
-    assert CATALOGS["chart"].operation("draw_chart").uses_if_present == ["insight", "comparison", "peer_definition"]
+    assert CATALOGS["chart"].operation("draw_chart").uses_if_present == ["dataset", "insight", "comparison", "peer_definition"]
 
 
 # ---- planning + validation ------------------------------------------------------------------------------------------
@@ -66,7 +66,7 @@ def test_classify_and_golden_plan() -> None:
     plan = golden_plan()
     assert [(s.step_id, s.agent, s.operation, s.depends_on) for s in plan.steps] == [
         ("B1", "data", "fetch_units", ()), ("B2", "insight", "explain_unit", ("B1",)),
-        ("B3", "compare", "compare_to_peers", ("B1",)), ("B4", "chart", "draw_chart", ("B2", "B3")),
+        ("B3", "compare", "compare_to_peers", ("B1",)), ("B4", "chart", "draw_chart", ("B1", "B2", "B3")),
     ]
     assert plan.steps[3].dependency_mode == "any"
     assert validate_plan(plan, CATALOGS) == [["B1"], ["B2", "B3"], ["B4"]]
@@ -145,7 +145,10 @@ async def test_golden_dag_order_parallelism_and_identical_refs() -> None:
     assert sent["B2"]["input_refs"] == sent["B3"]["input_refs"] == outcome.steps["B1"].output_refs
     assert all(r["content_hash"] for r in sent["B2"]["input_refs"])
     assert sent["B2"]["spec"]["analysis_scope"] == {"level": "UNIT", "project_ids": ["PRJ-X"], "unit_ids": ["U-PRJ-X-A12-08"]}
-    assert {r["artifact_type"] for r in sent["B4"]["input_refs"]} == {"insight", "peer_definition", "comparison"}
+    assert {r["artifact_type"] for r in sent["B4"]["input_refs"]} == {"dataset", "insight", "peer_definition", "comparison"}
+    assert [r for r in sent["B4"]["input_refs"] if r["artifact_type"] == "dataset"] == [
+        r for r in outcome.steps["B1"].output_refs if r["artifact_type"] == "dataset"
+    ]
     for step in ctx.sent:
         assert step[1]["snapshot_id"] == SNAP and step[1]["semantic_config_version"] == SEM
         assert step[1]["contract"] == "StepSpec@1" and step[1]["idempotency_key"] == f"{outcome.plan_id}:{step[1]['step_id']}"

@@ -9,10 +9,10 @@ import pytest
 
 from vdagent_contracts.errors import ErrorClass
 from vdagent_contracts.messages import StepSpec
-from vdagent_contracts.step_inputs import INPUT_ERROR_CLASSES, InputError, resolve_data_inputs
+from vdagent_contracts.step_inputs import INPUT_ERROR_CLASSES, InputError, resolve_analysis_inputs, resolve_data_inputs
 
 ALICE = "u_000000000001"
-H = {"dataset": "a" * 64, "metric": "b" * 64, "dq": "c" * 64}
+H = {"dataset": "a" * 64, "metric": "b" * 64, "dq": "c" * 64, "comparison": "d" * 64}
 
 
 def _env(kind: str, **over: Any) -> dict[str, Any]:
@@ -54,6 +54,12 @@ def _step(refs: list[dict[str, Any]] | None = None, **over: Any) -> StepSpec:
         "input_refs": refs if refs is not None else [
             {"artifact_id": f"art_{k}", "version": 1, "artifact_type": k, "content_hash": H[k]} for k in ("dataset", "metric", "dq")],
     }
+    fields.update(over)
+    return StepSpec.model_validate(fields)
+
+
+def _analysis_step(refs: list[dict[str, Any]], **over: Any) -> StepSpec:
+    fields = _step(refs, step_id="B4", idempotency_key="pl:B4", operation="draw_chart").model_dump(mode="json")
     fields.update(over)
     return StepSpec.model_validate(fields)
 
@@ -118,3 +124,39 @@ async def test_dataset_rows_outside_the_callers_scope_are_rejected() -> None:
     with pytest.raises(InputError) as exc:
         await resolve_data_inputs(_step(), FakeTools(envs))
     assert _code(exc) == "SCOPE_VIOLATION" and INPUT_ERROR_CLASSES["SCOPE_VIOLATION"] is ErrorClass.NO_ACCESS
+
+
+async def test_analysis_inputs_accept_an_explicit_dataset_ref() -> None:
+    dataset = _env("dataset")
+    dataset_ref = {"artifact_id": "art_dataset", "version": 1, "artifact_type": "dataset", "content_hash": H["dataset"]}
+    comparison = {
+        "artifact_id": "art_comparison", "version": 1, "artifact_type": "comparison", "schema_version": "comparison@1",
+        "status": "VALID", "content_hash": H["comparison"], "snapshot_refs": ["SNAP-2026-09-28"],
+        "semantic_config_version": "sc-1", "input_artifact_refs": [dataset_ref], "limitations": [], "payload": {},
+    }
+    refs = [dataset_ref, {"artifact_id": "art_comparison", "version": 1, "artifact_type": "comparison", "content_hash": H["comparison"]}]
+
+    inputs = await resolve_analysis_inputs(_analysis_step(refs), FakeTools({"art_dataset": dataset, "art_comparison": comparison}))
+
+    assert inputs.dataset_ref.artifact_id == "art_dataset"
+    assert {k.value for k in inputs.refs} >= {"dataset", "comparison"}
+
+
+async def test_analysis_inputs_reject_dataset_ref_that_disagrees_with_upstream_lineage() -> None:
+    dataset = _env("dataset")
+    other_hash = "e" * 64
+    other_dataset = _env("dataset", artifact_id="art_other_dataset", content_hash=other_hash)
+    dataset_ref = {"artifact_id": "art_dataset", "version": 1, "artifact_type": "dataset", "content_hash": H["dataset"]}
+    other_ref = {"artifact_id": "art_other_dataset", "version": 1, "artifact_type": "dataset", "content_hash": other_hash}
+    comparison = {
+        "artifact_id": "art_comparison", "version": 1, "artifact_type": "comparison", "schema_version": "comparison@1",
+        "status": "VALID", "content_hash": H["comparison"], "snapshot_refs": ["SNAP-2026-09-28"],
+        "semantic_config_version": "sc-1", "input_artifact_refs": [other_ref], "limitations": [], "payload": {},
+    }
+    refs = [dataset_ref, {"artifact_id": "art_comparison", "version": 1, "artifact_type": "comparison", "content_hash": H["comparison"]}]
+
+    with pytest.raises(InputError) as exc:
+        await resolve_analysis_inputs(_analysis_step(refs), FakeTools({
+            "art_dataset": dataset, "art_other_dataset": other_dataset, "art_comparison": comparison,
+        }))
+    assert _code(exc) == "LINEAGE_MISMATCH"

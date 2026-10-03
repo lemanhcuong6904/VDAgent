@@ -83,7 +83,7 @@ async def test_p3_compare_is_data_and_compare() -> None:
 async def test_p4_explain_compare_chart_runs_both_analyses_in_parallel() -> None:
     p, waves = await plan(proposal(["explain", "compare", "chart"], ["data", "insight", "compare", "chart"]),
                           "Vì sao căn A12-08 bán chậm? So sánh với các căn tương đồng và vẽ biểu đồ.")
-    assert waves == [["B1"], ["B2", "B3"], ["B4"]] and p.steps[3].depends_on == ("B2", "B3")
+    assert waves == [["B1"], ["B2", "B3"], ["B4"]] and p.steps[3].depends_on == ("B1", "B2", "B3")
 
 
 async def test_p5_report_comes_after_the_analyses_and_the_chart() -> None:
@@ -123,4 +123,4 @@ def test_p7_equivalent_phrasings_give_the_same_capabilities_and_dag(question: st
     request = classify(question, snapshot_id=SNAP, semantic_config_version=SEM)
     assert request is not None and request.wants == frozenset({"explain", "chart"})
     assert [(s.agent, s.depends_on) for s in build_plan(request, "t_1").steps] == [
-        ("data", ()), ("insight", ("B1",)), ("chart", ("B2",))]
+        ("data", ()), ("insight", ("B1",)), ("chart", ("B1", "B2"))]

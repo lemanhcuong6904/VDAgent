@@ -180,11 +180,15 @@ async def resolve_analysis_inputs(step: StepSpec, tools: Tools, *, chart_specs: 
     kinds = [r.artifact_type for r in step.input_refs]
     if ArtifactType.INSIGHT not in kinds and ArtifactType.COMPARISON not in kinds:
         raise InputError("MISSING_INPUT", "an insight or a comparison input is required")
-    allowed = set(ANALYSIS) | ({ArtifactType.CHART_SPEC} if chart_specs else set())
+    allowed = {ArtifactType.DATASET, *ANALYSIS} | ({ArtifactType.CHART_SPEC} if chart_specs else set())
     extra = sorted({k.value for k in kinds if k not in allowed})
     if extra:
         raise InputError("INPUT_TYPE_UNSUPPORTED", f"unsupported input types: {', '.join(extra)}")
     envs: dict[ArtifactType, dict[str, Any]] = {}
+    dataset_refs = [r for r in step.input_refs if r.artifact_type is ArtifactType.DATASET]
+    if len(dataset_refs) > 1:
+        raise InputError("MISSING_INPUT", f"at most one dataset input is allowed, got {len(dataset_refs)}")
+    dataset_env = await _fetch_pinned(step, tools, dataset_refs[0], ArtifactType.DATASET, "re_dataset@1") if dataset_refs else None
     for kind, schema in ANALYSIS.items():
         refs = [r for r in step.input_refs if r.artifact_type is kind]
         if len(refs) > 1:
@@ -195,6 +199,8 @@ async def resolve_analysis_inputs(step: StepSpec, tools: Tools, *, chart_specs: 
     charts = [await _fetch_pinned(step, tools, r, ArtifactType.CHART_SPEC, "chart_spec@1")
               for r in step.input_refs if r.artifact_type is ArtifactType.CHART_SPEC]
     datasets = set()
+    if dataset_env is not None:
+        datasets.add(json.dumps(_ref(dataset_env).model_dump(mode="json"), sort_keys=True))
     for env in [*envs.values(), *charts]:
         found = [r for r in env.get("input_artifact_refs", []) if r.get("artifact_type") == ArtifactType.DATASET.value]
         if len(found) != 1:
@@ -208,7 +214,9 @@ async def resolve_analysis_inputs(step: StepSpec, tools: Tools, *, chart_specs: 
     scope = caller.get("authorized_scope") or {}
     return AnalysisInputs(
         insight=envs.get(ArtifactType.INSIGHT), comparison=comparison, peer_definition=peer_def,
-        refs={k: _ref(v) for k, v in envs.items()}, dataset_ref=ArtifactRef.model_validate(json.loads(next(iter(datasets)))),
+        refs={**({ArtifactType.DATASET: _ref(dataset_env)} if dataset_env is not None else {}),
+              **{k: _ref(v) for k, v in envs.items()}},
+        dataset_ref=ArtifactRef.model_validate(json.loads(next(iter(datasets)))),
         authorized_project_ids=list(scope.get("project_ids") or []), authorized_zone_ids=list(scope.get("zone_ids") or []),
         charts=charts, chart_refs=[_ref(c) for c in charts],
     )

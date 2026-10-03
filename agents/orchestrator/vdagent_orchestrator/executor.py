@@ -125,6 +125,10 @@ class DagExecutor:
             st.limitations = [f"UPSTREAM_FAILED:{d.agent}" for d in deps if d.status != "completed"]
             st.input_refs = [r for b in step.inputs if states[b.from_step].status == "completed"
                              for r in states[b.from_step].output_refs if r["artifact_type"] in b.artifact_types]
+            if step.agent == "chart" and not any(r["artifact_type"] in ("insight", "comparison") for r in st.input_refs):
+                st.status, st.finished_at = "skipped", self._clock()
+                st.error = {"code": "DEPENDENCY_FAILED", "message": "chart needs at least one completed analysis input"}
+                continue
             try:
                 spec = await self._resolve_spec(step, states)
             except LookupError as exc:
