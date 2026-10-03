@@ -109,6 +109,61 @@ def test_a_file_path_still_selects_the_sqlite_mock(tmp_path) -> None:  # noqa: A
     assert result.rows[0][0] > 0
 
 
+# ---- pure: connecting over a flaky network (a remote warehouse, e.g. AWS RDS) ---------------------------------------
+
+
+class _FakeConn:
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+        self.closed = False
+
+    def execute(self, statement: object) -> None:
+        self.statements.append(statement if isinstance(statement, str) else repr(statement))
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _flaky_connect(monkeypatch: pytest.MonkeyPatch, failures: int) -> list[_FakeConn]:
+    """`psycopg.connect` fails `failures` times with a connection timeout, then succeeds."""
+    made: list[_FakeConn] = []
+    calls = {"n": 0}
+
+    def fake(dsn: str, **kwargs: object) -> _FakeConn:
+        calls["n"] += 1
+        if calls["n"] <= failures:
+            raise psycopg.errors.ConnectionTimeout("connection timeout expired")
+        made.append(_FakeConn())
+        return made[-1]
+
+    monkeypatch.setattr(re_pg.psycopg, "connect", fake)
+    monkeypatch.setattr(re_pg, "_RETRY_DELAY_S", 0.0)
+    return made
+
+
+def test_a_dropped_connection_attempt_is_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    made = _flaky_connect(monkeypatch, failures=re_pg.CONNECT_ATTEMPTS - 1)
+    assert re_pg._connect("postgresql://u:p@h/db", P100, 10.0) is made[0]  # pyright: ignore[reportPrivateUsage]
+
+
+def test_the_warehouse_is_unavailable_after_every_attempt_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    made = _flaky_connect(monkeypatch, failures=re_pg.CONNECT_ATTEMPTS)
+    with pytest.raises(SqlError, match="warehouse unavailable: ConnectionTimeout"):
+        re_pg._connect("postgresql://u:p@h/db", P100, 10.0)  # pyright: ignore[reportPrivateUsage]
+    assert made == []
+
+
+def test_the_scope_is_set_up_in_one_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
+    made = _flaky_connect(monkeypatch, failures=0)
+    re_pg._connect("postgresql://u:p@h/db", P100, 10.0)  # pyright: ignore[reportPrivateUsage]
+    (sent,) = made[0].statements
+    for table in ("dim_unit_master", "fact_unit_price_history"):
+        assert f"CREATE TEMP VIEW {table}" in sent or f'CREATE TEMP VIEW "{table}"' in sent
+    assert sent.index("SET TRANSACTION READ WRITE") < sent.index("CREATE TEMP VIEW") < sent.rindex(
+        "default_transaction_read_only = on")
+    assert "statement_timeout" in sent
+
+
 # ---- live: the scope barrier and the canonical shape ----------------------------------------------------------------
 
 
