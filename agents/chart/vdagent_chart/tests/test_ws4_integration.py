@@ -54,6 +54,8 @@ async def upstream(port: McpPort, tmp_path: Path) -> dict[str, dict[str, Any]]:
     assert ins.state == cmp.state == "completed"
     out = {r.artifact_type.value: r.model_dump(mode="json") for r in [*ins.artifact_refs, *cmp.artifact_refs]}
     out["dataset"] = refs[0]
+    out["metric"] = refs[1]
+    out["dq"] = refs[2]
     return out
 
 
@@ -137,16 +139,21 @@ async def test_demo_commands_are_refused_in_production(no_synthetic: None) -> No
 
 async def test_golden_charts_from_real_ws3_artifacts(alice: McpPort, tmp_path: Path, no_synthetic: None) -> None:
     up = await upstream(alice, tmp_path)
-    report = await run_step(chart_step([up["dataset"], up["insight"], up["comparison"], up["peer_definition"]]), alice.as_agent("chart"))
+    report = await run_step(chart_step([up["dataset"], up["metric"], up["dq"], up["insight"], up["comparison"], up["peer_definition"]]),
+                            alice.as_agent("chart"))
     specs = await charts(alice, report)
 
     for spec in specs:
         assert spec["schema_version"] == "chart_spec@1" and spec["producer"]["agent"] == "chart"
         assert spec["snapshot_refs"] == ["SNAP-2026-09-28"] and spec["semantic_config_version"] == "sc-1"
         assert spec["input_artifact_refs"][0] == up["dataset"]  # the one Data dataset, pinned by hash
+        assert up["metric"] in spec["input_artifact_refs"] and up["dq"] in spec["input_artifact_refs"]
         assert spec["payload"]["vega_lite"]["$schema"].startswith("https://vega.github.io/schema/vega-lite/")
         assert validate_vega_lite(spec["payload"]["vega_lite"]) == []  # WS7 F-01: renderable, not just $schema
         assert spec["payload"]["vega_lite"]["title"] == spec["payload"]["title"] and "VHop" not in json.dumps(spec)  # F-09
+        assert spec["payload"]["lineage"]["metric_artifact_refs"] == [f"{up['metric']['artifact_id']}@{up['metric']['version']}"]
+        assert all(b.get("metric_artifact_ref") == spec["payload"]["lineage"]["metric_artifact_refs"][0]
+                   for b in spec["payload"]["bindings"])
         await assert_bindings_resolve(alice, spec)
 
     peer = {s["payload"]["dataset"]["comparison_metric"]: s for s in by_question(specs, "target_vs_peer")}

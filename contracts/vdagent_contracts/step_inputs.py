@@ -140,6 +140,7 @@ async def resolve_data_inputs(step: StepSpec, tools: Tools) -> DataInputs:
 
 ANALYSIS = {ArtifactType.INSIGHT: "insight.v2", ArtifactType.COMPARISON: "comparison@1",
             ArtifactType.PEER_DEFINITION: "peer_definition@1"}
+CHART_DATA = {ArtifactType.METRIC: "re_metric@1", ArtifactType.DQ: "re_dq@1", ArtifactType.EVIDENCE: "evidence@1"}
 
 
 @dataclass(frozen=True)
@@ -151,6 +152,12 @@ class AnalysisInputs:
     dataset_ref: ArtifactRef  # the one Data dataset every input was derived from
     authorized_project_ids: list[str]
     authorized_zone_ids: list[str]
+    metrics: list[dict[str, Any]] = field(default_factory=list)
+    metric_refs: list[ArtifactRef] = field(default_factory=list)
+    dq: dict[str, Any] | None = None
+    dq_ref: ArtifactRef | None = None
+    evidences: list[dict[str, Any]] = field(default_factory=list)
+    evidence_refs: list[ArtifactRef] = field(default_factory=list)
     charts: list[dict[str, Any]] = field(default_factory=list)  # chart_spec envelopes (WS6, when allowed)
     chart_refs: list[ArtifactRef] = field(default_factory=list)
 
@@ -160,7 +167,8 @@ class AnalysisInputs:
 
     @property
     def limitations(self) -> list[str]:
-        envs = [e for e in (self.insight, self.comparison, self.peer_definition, *self.charts) if e is not None]
+        envs = [e for e in (self.insight, self.comparison, self.peer_definition, self.dq,
+                            *self.metrics, *self.evidences, *self.charts) if e is not None]
         return sorted({code for env in envs for code in env.get("limitations", [])})
 
 
@@ -180,7 +188,7 @@ async def resolve_analysis_inputs(step: StepSpec, tools: Tools, *, chart_specs: 
     kinds = [r.artifact_type for r in step.input_refs]
     if ArtifactType.INSIGHT not in kinds and ArtifactType.COMPARISON not in kinds:
         raise InputError("MISSING_INPUT", "an insight or a comparison input is required")
-    allowed = {ArtifactType.DATASET, *ANALYSIS} | ({ArtifactType.CHART_SPEC} if chart_specs else set())
+    allowed = {ArtifactType.DATASET, *ANALYSIS, *CHART_DATA} | ({ArtifactType.CHART_SPEC} if chart_specs else set())
     extra = sorted({k.value for k in kinds if k not in allowed})
     if extra:
         raise InputError("INPUT_TYPE_UNSUPPORTED", f"unsupported input types: {', '.join(extra)}")
@@ -195,13 +203,21 @@ async def resolve_analysis_inputs(step: StepSpec, tools: Tools, *, chart_specs: 
             raise InputError("MISSING_INPUT", f"at most one {kind.value} input is allowed, got {len(refs)}")
         if refs:
             envs[kind] = await _fetch_pinned(step, tools, refs[0], kind, schema)
+    metric_envs = [await _fetch_pinned(step, tools, r, ArtifactType.METRIC, CHART_DATA[ArtifactType.METRIC])
+                   for r in step.input_refs if r.artifact_type is ArtifactType.METRIC]
+    dq_refs = [r for r in step.input_refs if r.artifact_type is ArtifactType.DQ]
+    if len(dq_refs) > 1:
+        raise InputError("MISSING_INPUT", f"at most one dq input is allowed, got {len(dq_refs)}")
+    dq_env = await _fetch_pinned(step, tools, dq_refs[0], ArtifactType.DQ, CHART_DATA[ArtifactType.DQ]) if dq_refs else None
+    evidence_envs = [await _fetch_pinned(step, tools, r, ArtifactType.EVIDENCE, CHART_DATA[ArtifactType.EVIDENCE])
+                     for r in step.input_refs if r.artifact_type is ArtifactType.EVIDENCE]
 
     charts = [await _fetch_pinned(step, tools, r, ArtifactType.CHART_SPEC, "chart_spec@1")
               for r in step.input_refs if r.artifact_type is ArtifactType.CHART_SPEC]
     datasets = set()
     if dataset_env is not None:
         datasets.add(json.dumps(_ref(dataset_env).model_dump(mode="json"), sort_keys=True))
-    for env in [*envs.values(), *charts]:
+    for env in [*envs.values(), *metric_envs, *([dq_env] if dq_env is not None else []), *evidence_envs, *charts]:
         found = [r for r in env.get("input_artifact_refs", []) if r.get("artifact_type") == ArtifactType.DATASET.value]
         if len(found) != 1:
             raise InputError("LINEAGE_MISMATCH", f"{env['artifact_id']} does not pin exactly one dataset")
@@ -215,8 +231,14 @@ async def resolve_analysis_inputs(step: StepSpec, tools: Tools, *, chart_specs: 
     return AnalysisInputs(
         insight=envs.get(ArtifactType.INSIGHT), comparison=comparison, peer_definition=peer_def,
         refs={**({ArtifactType.DATASET: _ref(dataset_env)} if dataset_env is not None else {}),
-              **{k: _ref(v) for k, v in envs.items()}},
+              **{k: _ref(v) for k, v in envs.items()},
+              **({ArtifactType.METRIC: _ref(metric_envs[0])} if len(metric_envs) == 1 else {}),
+              **({ArtifactType.DQ: _ref(dq_env)} if dq_env is not None else {}),
+              **({ArtifactType.EVIDENCE: _ref(evidence_envs[0])} if len(evidence_envs) == 1 else {})},
         dataset_ref=ArtifactRef.model_validate(json.loads(next(iter(datasets)))),
         authorized_project_ids=list(scope.get("project_ids") or []), authorized_zone_ids=list(scope.get("zone_ids") or []),
+        metrics=metric_envs, metric_refs=[_ref(m) for m in metric_envs],
+        dq=dq_env, dq_ref=_ref(dq_env) if dq_env is not None else None,
+        evidences=evidence_envs, evidence_refs=[_ref(e) for e in evidence_envs],
         charts=charts, chart_refs=[_ref(c) for c in charts],
     )

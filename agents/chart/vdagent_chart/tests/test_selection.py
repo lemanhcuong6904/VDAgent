@@ -53,9 +53,22 @@ class SelectionTests(unittest.TestCase):
     def test_supports_the_complete_visual_question_catalog(self) -> None:
         policy = load_policy("chart-policy/demo-1.0")
         cases = {
-            "current_value": "kpi_card", "comparison": "bar", "distribution_comparison": "box_plot",
-            "geospatial": "map", "additive_change": "waterfall", "hierarchy": "treemap", "actual_vs_target": "bullet",
+            "current_value": "kpi_card", "trend_over_time": "line", "cumulative_over_time": "area",
+            "compare_categories": "bar", "compare_multiple_series": "grouped_bar", "target_vs_peer": "bar",
+            "composition_snapshot": "pie", "composition_across_groups": "stacked_bar",
+            "distribution": "histogram", "distribution_comparison": "box_plot", "relationship": "scatter",
+            "matrix_intensity": "heatmap", "geospatial": "map", "funnel_conversion": "funnel",
+            "contribution_bridge": "waterfall", "hierarchical_composition": "treemap",
+            "actual_vs_target": "bullet",
         }
+        for question, expected in cases.items():
+            with self.subTest(question=question):
+                self.assertEqual(select_chart(VisualTarget(question, question), policy)["chart_type"], expected)
+
+    def test_legacy_visual_question_names_still_map_to_the_master_taxonomy(self) -> None:
+        policy = load_policy("chart-policy/demo-1.0")
+        cases = {"trend": "line", "comparison": "bar", "composition": "pie", "matrix": "heatmap",
+                 "funnel": "funnel", "additive_change": "waterfall", "hierarchy": "treemap"}
         for question, expected in cases.items():
             with self.subTest(question=question):
                 self.assertEqual(select_chart(VisualTarget(question, question), policy)["chart_type"], expected)

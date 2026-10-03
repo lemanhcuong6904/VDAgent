@@ -83,9 +83,11 @@ class OpenAIVisualReasoner:
             (
                 "You are the mock LLM Orchestrator for a Chart Agent demo. Return only JSON. "
                 "Classify the user's question into a visual_question and preferred_chart_type. "
-                "Use visual_question values such as current_value, trend, comparison, target_vs_peer, "
-                "composition, distribution, distribution_comparison, relationship, matrix, geospatial, "
-                "funnel, additive_change, hierarchy, actual_vs_target. "
+                "Use visual_question values from the Chart master taxonomy: current_value, trend_over_time, "
+                "cumulative_over_time, compare_categories, compare_multiple_series, target_vs_peer, "
+                "composition_snapshot, composition_across_groups, distribution, distribution_comparison, "
+                "relationship, matrix_intensity, geospatial, funnel_conversion, contribution_bridge, "
+                "hierarchical_composition, actual_vs_target. "
                 "Use preferred_chart_type only from allowed_chart_types. Include data_grain, presentation, "
                 "encoding, candidates, and concise reason_codes when helpful. Do not create chart specs or Plotly code."
             ),

@@ -27,6 +27,7 @@ class ArtifactStatus(StrEnum):
 class ArtifactType(StrEnum):
     DATA_PACKAGE = "data_package"
     METRIC = "metric"
+    EVIDENCE = "evidence"
     DQ = "dq"
     DATASET = "dataset"
     MARKET_CONTEXT = "market_context"

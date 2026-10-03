@@ -149,7 +149,7 @@ def build_plan(request: AnalysisRequest, run_id: str) -> Plan:
         chart_step = f"B{n}"
         steps.append(PlanStep(chart_step, "chart", STEP_OPERATIONS["chart"], {},
                               (steps[0].step_id, *(s for s, _ in analyses)), "any",
-                              (InputBinding(steps[0].step_id, ("dataset",)),
+                              (InputBinding(steps[0].step_id, DATA_TYPES),
                                *(InputBinding(s, types) for s, types in analyses))))
         n += 1
     if "report" in wants:

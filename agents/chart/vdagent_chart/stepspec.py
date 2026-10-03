@@ -165,6 +165,61 @@ class _Dataset:
         return entity.get("entityId") or self._key_by_code.get(entity.get("entityCode"))
 
 
+class _MetricIndex:
+    """First-class Data MetricArtifact semantics, indexed by canonical dataset field when available."""
+
+    def __init__(self, envs: list[dict[str, Any]]) -> None:
+        self._by_id: dict[str, dict[str, Any]] = {}
+        for env in envs:
+            ref = _ref_label(env)
+            for row in (env.get("payload") or {}).get("metrics") or []:
+                metric_id = str(row.get("metric_id") or "")
+                source_metric = self._source_metric(row.get("source_ref"))
+                normalized = {
+                    "metric_id": metric_id,
+                    "artifact_ref": ref,
+                    "unit": row.get("unit"),
+                    "grain": (env.get("payload") or {}).get("grain"),
+                    "subject": row.get("subject"),
+                    "statistic": row.get("statistic"),
+                    "calculation_ref": row.get("calculation_ref"),
+                    "source_ref": row.get("source_ref"),
+                    "quality_status": row.get("status") or env.get("status"),
+                    "limitations": list(env.get("limitations") or []),
+                }
+                for alias in (metric_id, source_metric):
+                    if alias:
+                        self._by_id.setdefault(alias, normalized)
+
+    @staticmethod
+    def _source_metric(source_ref: Any) -> str | None:
+        if not isinstance(source_ref, str) or not source_ref.startswith("re:"):
+            return None
+        source = source_ref[3:]
+        return source if "." in source else None
+
+    def lookup(self, metric_id: str | None) -> dict[str, Any] | None:
+        return self._by_id.get(metric_id or "")
+
+
+def _bind_metric_artifacts(view: _View, metrics: _MetricIndex) -> None:
+    refs: set[str] = set()
+    definitions: dict[str, dict[str, Any]] = {}
+    for binding in view.bindings:
+        definition = metrics.lookup(binding.get("metric_id"))
+        if definition is None:
+            continue
+        ref = str(definition["artifact_ref"])
+        binding["metric_artifact_ref"] = ref
+        if definition.get("calculation_ref") is not None:
+            binding["calculation_ref"] = definition["calculation_ref"]
+        refs.add(ref)
+        definitions[str(binding.get("metric_id"))] = definition
+    view.lineage["metric_artifact_refs"] = sorted(refs)
+    if definitions:
+        view.lineage["metric_definitions"] = definitions
+
+
 def _comparison_views(comparison: dict[str, Any], peer_def: dict[str, Any] | None, chart_type: str | None,
                       limitations: list[str], dataset: _Dataset, peer_findings: dict[str, list[str]],
                       insight_label: str | None) -> list[_View]:
@@ -503,6 +558,7 @@ async def _run(step: StepSpec, tools: Tools) -> AgentReport:
 
     inputs: AnalysisInputs = await resolve_analysis_inputs(step, tools)
     dataset = await _dataset(tools, inputs.dataset_ref)
+    metric_index = _MetricIndex(inputs.metrics)
     limitations: list[str] = [*inputs.limitations, *(f"UPSTREAM_MISSING:{m}" for m in inputs.missing)]
     skipped: list[str] = []
     evidence = _insight_evidence(inputs.insight, step, inputs, limitations) if inputs.insight is not None else None
@@ -514,6 +570,8 @@ async def _run(step: StepSpec, tools: Tools) -> AgentReport:
     compared = {m for v in views if v.target.visual_question == "target_vs_peer" for m in v.lineage["metric_ids"]}
     if inputs.insight is not None and evidence is not None:
         views += _insight_views(inputs.insight, evidence, spec.chart_type, dataset, compared, limitations, skipped)
+    for view in views:
+        _bind_metric_artifacts(view, metric_index)
     for reason in skipped:
         _event("CHART_FINDING_SKIPPED", run_id=step.run_id, step_id=step.step_id, reason=reason)
     if not views:
@@ -577,13 +635,16 @@ async def _run(step: StepSpec, tools: Tools) -> AgentReport:
         }  # fmt: skip
         upstream = [inputs.refs[k] for k in view.upstream if k in inputs.refs]
         chart_limits = sorted(set(limitations))
+        input_refs = [inputs.dataset_ref, *inputs.metric_refs, *([inputs.dq_ref] if inputs.dq_ref is not None else []),
+                      *inputs.evidence_refs, *upstream]
+        unique_input_refs = list({(r.artifact_id, r.version, r.artifact_type): r for r in input_refs}.values())
         draft = {
             "artifact_type": "chart_spec", "schema_version": "chart_spec@1",
             "status": "PARTIAL" if chart_limits else "VALID",
             "producer": {"agent": AGENT, "agent_version": AGENT_VERSION},
             "snapshot_refs": [step.snapshot_id], "semantic_config_version": step.semantic_config_version,
             "source_refs": sorted({b["source_ref"].split("#", 1)[0] for b in view.bindings}),
-            "input_artifact_refs": [r.model_dump(mode="json") for r in [inputs.dataset_ref, *upstream]],
+            "input_artifact_refs": [r.model_dump(mode="json") for r in unique_input_refs],
             "limitations": chart_limits, "payload": payload,
         }  # fmt: skip
         try:

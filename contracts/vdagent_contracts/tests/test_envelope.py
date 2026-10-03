@@ -40,7 +40,7 @@ def test_envelope_is_frozen() -> None:
 
 def test_artifact_type_enum_matches_sp_6_2() -> None:
     assert {t.value for t in ArtifactType} == {
-        "data_package", "metric", "dq", "dataset", "market_context", "peer_definition",
+        "data_package", "metric", "evidence", "dq", "dataset", "market_context", "peer_definition",
         "comparison", "insight", "chart_spec", "report", "run_summary", "run_state",
     }
 

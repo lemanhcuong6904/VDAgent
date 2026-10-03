@@ -142,6 +142,30 @@ async def test_analysis_inputs_accept_an_explicit_dataset_ref() -> None:
     assert {k.value for k in inputs.refs} >= {"dataset", "comparison"}
 
 
+async def test_analysis_inputs_accept_metric_and_dq_refs_for_chart() -> None:
+    dataset = _env("dataset")
+    metric = _env("metric", limitations=["METRIC_UNAVAILABLE:discount_pct"])
+    dq = _env("dq", limitations=["DQ_MISSING:net_price_per_m2:1"])
+    dataset_ref = {"artifact_id": "art_dataset", "version": 1, "artifact_type": "dataset", "content_hash": H["dataset"]}
+    comparison = {
+        "artifact_id": "art_comparison", "version": 1, "artifact_type": "comparison", "schema_version": "comparison@1",
+        "status": "VALID", "content_hash": H["comparison"], "snapshot_refs": ["SNAP-2026-09-28"],
+        "semantic_config_version": "sc-1", "input_artifact_refs": [dataset_ref], "limitations": [], "payload": {},
+    }
+    refs = [dataset_ref,
+            {"artifact_id": "art_metric", "version": 1, "artifact_type": "metric", "content_hash": H["metric"]},
+            {"artifact_id": "art_dq", "version": 1, "artifact_type": "dq", "content_hash": H["dq"]},
+            {"artifact_id": "art_comparison", "version": 1, "artifact_type": "comparison", "content_hash": H["comparison"]}]
+
+    inputs = await resolve_analysis_inputs(_analysis_step(refs), FakeTools({
+        "art_dataset": dataset, "art_metric": metric, "art_dq": dq, "art_comparison": comparison,
+    }))
+
+    assert [r.artifact_id for r in inputs.metric_refs] == ["art_metric"]
+    assert inputs.dq_ref is not None and inputs.dq_ref.artifact_id == "art_dq"
+    assert {"METRIC_UNAVAILABLE:discount_pct", "DQ_MISSING:net_price_per_m2:1"} <= set(inputs.limitations)
+
+
 async def test_analysis_inputs_reject_dataset_ref_that_disagrees_with_upstream_lineage() -> None:
     dataset = _env("dataset")
     other_hash = "e" * 64
