@@ -1,4 +1,5 @@
 """Treat artifact text as data and remove unsafe display content."""
+
 from __future__ import annotations
 import re
 
