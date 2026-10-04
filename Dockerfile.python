@@ -36,18 +36,21 @@ COPY agents/report/pyproject.toml agents/report/pyproject.toml
 COPY agents/chart/pyproject.toml agents/chart/pyproject.toml
 
 FROM base AS test
-# make: backend/tests/test_docker_setup.py dry-runs the Makefile (`make -n up`)
-RUN apt-get update && apt-get install -y --no-install-recommends make && rm -rf /var/lib/apt/lists/*
+# make: backend/tests/test_docker_setup.py dry-runs the Makefile (`make -n up`);
+# git: backend/tests/test_check_secrets.py runs the secret scan on throw-away repositories
+RUN apt-get update && apt-get install -y --no-install-recommends make git && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-workspace
 COPY sdk/ sdk/
 COPY contracts/ contracts/
 COPY backend/ backend/
 COPY agents/ agents/
-COPY data/ data/
-# repo tooling checked by backend/tests/test_docker_setup.py (no .env: .dockerignore excludes every one)
-COPY docker-compose.yml Makefile .env.example ./
+# data/: only the seeders (docker/seed-if-missing.sh); raw CSV packs never enter an image
+COPY data/seed_warehouse.py data/seed_re_warehouse.py data/seed_users.py data/
+# repo tooling and docs checked by backend/tests/test_docker_{setup,image}.py (no .env: .dockerignore excludes every one)
+COPY docker-compose.yml Makefile .env.example README.md dev.ps1 Dockerfile.python .dockerignore ./
 COPY docker/ docker/
+COPY scripts/ scripts/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen \
     && python -c "import vdagent_backend.app, vdagent_contracts, vdagent_orchestrator, vdagent_data, vdagent_compare, vdagent_insight, vdagent_chart, vdagent_report, pytest"
@@ -60,7 +63,8 @@ COPY sdk/ sdk/
 COPY contracts/ contracts/
 COPY backend/ backend/
 COPY agents/ agents/
-COPY data/ data/
+# data/: only the seeders (docker/seed-if-missing.sh); raw CSV packs never enter an image
+COPY data/seed_warehouse.py data/seed_re_warehouse.py data/seed_users.py data/
 COPY docker/ docker/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev \

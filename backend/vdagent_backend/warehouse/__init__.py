@@ -5,7 +5,7 @@ May import: `core`.
 """
 
 from vdagent_backend.warehouse.sql import MAX_ROWS, SQL_TIMEOUT_S, QueryResult, SqlError, check_select
-from vdagent_backend.warehouse.realestate import RealEstateWarehouse, startup_lines
+from vdagent_backend.warehouse.realestate import RealEstateWarehouse, ReWarehouseConfigError, startup_lines
 from vdagent_backend.warehouse.warehouse import Warehouse
 
 __all__ = [
@@ -13,6 +13,7 @@ __all__ = [
     "SQL_TIMEOUT_S",
     "QueryResult",
     "RealEstateWarehouse",
+    "ReWarehouseConfigError",
     "SqlError",
     "Warehouse",
     "check_select",

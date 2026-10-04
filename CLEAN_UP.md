@@ -24,3 +24,27 @@
 2. `pack_manifest.json` là giao diện xuất đề xuất cho N2; cần Dũng xác nhận `assemble_dataset(pack_dir)` khi N2 xuất hiện.
 3. PostgreSQL là nơi kiểm contract 16 bảng; bản chiếu SQLite chỉ chứng minh MCP SQL của backend đọc được dữ liệu. Backend mặc định và prompt Data Agent vẫn là demo bán lẻ; owner backend/Data cần quyết định cấu hình và kiểm hội thoại agent bất động sản.
 4. Đã rà diff với `DATA` và mở [draft PR #6](https://github.com/HOANGQUANGMINH371195/Team_6_cAi/pull/6) chỉ gồm 40 file N4, hợp đồng và báo cáo/cleanup; không có mã nền tảng cũ trong diff. Nhánh backup và file `.env`/DB local không được push. PR còn ở dạng draft để nhóm review các phụ thuộc trên.
+
+## Phase 2 — retire pipeline CSV warehouse (2026-10-04)
+
+Production đọc AWS RDS `cdw` (schema `gold`, view `re`); dump `warehouse/backup/cdw_gold_snapshot_20260630.dump` là artifact DR chuẩn. Đã xoá khỏi repo (lịch sử Git vẫn giữ): `warehouse/dataset/` (dẫn xuất, còn 296.033 dòng off-snapshot không có trên AWS), `warehouse/project_{100..500}/`, `warehouse/shared/`, `warehouse/{organize_pack,assemble_dataset,verify_warehouse}.py`, `warehouse/tests/`, `warehouse/backup/build_backup.py`, bản trùng `warehouse/backup/cdw_gold_snapshot_20260630.sql`, bản chiếu SQLite `data/build_vhsc_sqlite.py` + `data/tests/test_vhsc_sqlite.py` (`var/vhsc_warehouse.db` không còn được dựng) và `docs/ASSEMBLE_DATASET_GUIDE.md`. Giữ lại tới Phase 3 cùng pack Smart City: `data/setup_dev.ps1`, `data/load_vhsc_mock.sql` (do `generate_vhsc_mock.py` sinh), `data/verify_vhsc_mock.sql`, `migrations/`. Raw pack nhóm C (`data/VGP/`, `data/masteri_cp/`, `data/risk_project_mock/`, `data/mock/vhsc_20260630/`, `warehouse/vhop/`) chưa đụng.
+
+## Phase 3 — gỡ raw pack và local DW (2026-10-04)
+
+Repo ứng dụng không còn lưu CSV dataset của warehouse. Đã gỡ khỏi cây làm việc (nguyên văn còn trong commit `aed2917`, có trên `origin/main`): raw pack `data/VGP/` (kèm generator và dbt project), `data/masteri_cp/`, `data/risk_project_mock/`, `data/mock/vhsc_20260630/`, `warehouse/vhop/`; generator/QA Smart City (`data/generate_vhsc_mock.py`, `data/verify_vhsc_eval.py`, `data/tests/`, `data/{qa_results,scenario_coverage,source_map}.md`); PostgreSQL dev cục bộ (`data/setup_dev.ps1`, `data/{load,verify}_vhsc_mock.sql`, `migrations/`); code chết `backend/vdagent_backend/warehouse/selection.py` + test của nó. Danh sách từng file, sha256, git blob, phân loại (UNIQUE_ARCHIVAL / REGENERATABLE / OBSOLETE) và lệnh khôi phục: `docs/data-archive/phase3-manifest.json`. Pack Smart City tái tạo được byte-identical từ generator ở commit đó (đã kiểm); pack VGP chưa kiểm được tái tạo (thiếu pandas/numpy/duckdb) nên khôi phục bằng Git.
+
+## Phase 4 — gỡ nền tảng TypeScript cũ (2026-10-04)
+
+Đã gỡ khỏi cây làm việc (còn nguyên trong commit `aed2917`): `src/`, `test/`, `db/`, `schemas/`, `sdk/python/`, các file agent cũ ở gốc `agents/` và `agents/manifests/`, root `package.json`, `pnpm-lock.yaml`, `tsconfig*.json`, `vitest.config.ts`, `versions.json`, `biome.json`, `.node-version`, toàn bộ tooling `scripts/` cũ, root `Dockerfile`, `docker-compose.override.yml` và 4 file Docker chỉ dùng cho nền tảng TS. Thay thế: quét secret bằng `make secret-check` (`scripts/check_secrets.py`); frontend tự quản Node (Node 22 theo `Dockerfile.python`). Tài liệu nền tảng cũ được giữ với banner "Historical"; chỉ mục tài liệu hiện hành là `docs/README.md`. Chi tiết: `AGENTS.md` §25.
+
+## Phase 5 — gỡ backend-v1 và test cũ (2026-10-04)
+
+Đã gỡ các module backend-v1 chết (`backend/vdagent_backend/{api,db,engine}/`, `events.py`, `ids.py`, `tokens.py`, `plugins.py`, `mcp/{tools,charts,sql}.py`) và 3 file test v1 trùng lặp ở `backend/tests/` (bản v2 nằm ở `http/`, `runtime/`, `memory/`). Kết quả: test host và Docker 0 lỗi; acceptance lineage 7/7 sau khi cập nhật 2 con số theo thay đổi có chủ đích ở commit `957747f`; `uv.lock` được lock lại (không đổi dependency). Chi tiết: `AGENTS.md` §26.
+
+## Phase 6A/6B — dọn tài liệu (2026-10-04)
+
+6A gom tài liệu hiện hành về một bộ chuẩn (`docs/README.md` là mục lục; `architecture/`, `contracts/`, `agents/`,
+`testing/`, `security/`, `frontend/`, `product/`) và rút `AGENTS.md` còn quy tắc + trạng thái kiểm chứng. 6B chuyển
+toàn bộ tài liệu lịch sử vào `docs/archive/` bằng `git mv` (nền tảng TypeScript cũ, tích hợp 2026-09 kèm bằng chứng,
+kế hoạch refactor, contract agent cũ, đặc tả thiết kế có ngày, lịch sử `AGENTS.md`; xem `docs/archive/README.md`), không
+xoá file nào ở 6B. Không ảnh hưởng runtime: chỉ đổi tài liệu và 7 dòng comment/docstring trỏ tới đường dẫn tài liệu cũ.

@@ -1,9 +1,0 @@
-vgp_dbt:
-  target: dev
-  outputs:
-    dev:
-      type: duckdb
-      # Duong dan tuong doi, tinh tu thu muc lam viec khi chay `dbt build`
-      # (luon la dbt_vgp/ - xem README "Chay"). KHONG dung duong dan tuyet doi.
-      path: 'vgp.duckdb'
-      threads: 4

@@ -1,5 +1,0 @@
-infra_key,infra_id,infra_name,infra_type,lifecycle_stage,construction_progress_pct,original_completion_year,revised_completion_year
-4101,INF-MAS-U-01,Đường Vành đai 3 TP.HCM,RING_ROAD,UNDER_CONSTRUCTION,82.0,2025,2026
-4102,INF-MAS-U-02,Tuyến Metro số 1 Bến Thành - Suối Tiên,URBAN_METRO,COMMERCIAL_OPERATION,100.0,2021,2024
-4103,INF-MAS-U-03,Cao tốc TP.HCM - Long Thành - Dầu Giây,EXPRESSWAY,COMMERCIAL_OPERATION,100.0,2014,2015
-4104,INF-MAS-U-04,Sân bay quốc tế Long Thành,AIRPORT,UNDER_CONSTRUCTION,75.0,2025,2026

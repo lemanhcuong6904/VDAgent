@@ -4,7 +4,7 @@
 insight's `payload.evidence` (`insight_evidence@1`) and Compare's `comparison` — after checking every displayed value
 against the pinned Data dataset. It never reads Insight's narrative and uses no LLM on this path: visual question, chart
 type and titles come from the typed intent and the metric catalog, so identical inputs give identical chart specs.
-Contract: [docs/integration/CANONICAL_DATA_CONTRACT.md §10](../../docs/integration/CANONICAL_DATA_CONTRACT.md).
+Contract: [docs/contracts/data-contract.md §10](../../docs/contracts/data-contract.md).
 
 ## Demo mode (`chart demo` / `chart ask`, only with `CHART_DEMO=on`)
 

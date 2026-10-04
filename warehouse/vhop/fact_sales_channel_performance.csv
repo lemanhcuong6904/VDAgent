@@ -1,5 +1,0 @@
-snapshot_date_key,channel_key,project_key,assigned_units_count,sold_units_count,absorption_rate_pct,avg_days_to_sell,locked_inventory_over_90d
-20260630,1002,100,748,274,36.63,106,15
-20260630,1003,100,745,316,42.42,110,17
-20260630,1001,100,739,287,38.84,102,12
-20260630,1004,100,768,336,43.75,95,16

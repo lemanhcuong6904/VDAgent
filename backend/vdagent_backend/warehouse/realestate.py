@@ -16,16 +16,47 @@ from vdagent_backend.warehouse.sql import SQL_TIMEOUT_S, QueryResult
 from vdagent_contracts.scope import AuthorizedScope
 
 
+VAR = "VDAGENT_RE_WAREHOUSE_DB"
+_PG_SCHEMES = ("postgresql://", "postgres://")
+
+
+class ReWarehouseConfigError(ValueError):
+    """The real-estate DW setting is missing or malformed; the message names `VDAGENT_RE_WAREHOUSE_DB`, never a
+    credential. Raised at construction, so the Backend does not start on it."""
+
+
+def _check(path: str) -> str:
+    """`path` when it names a warehouse explicitly: a `postgresql://` DSN with host and database, or a file path (the
+    synthetic SQLite mock). Anything else is refused; nothing ever falls back to the mock."""
+    value = path.strip()
+    if not value:
+        raise ReWarehouseConfigError(
+            f"{VAR} is not set: give the real warehouse DSN (postgresql://<user>:<password>@<host>:<port>/<database>), "
+            f"or, for tests and offline work only, the explicit path of the SQLite mock (e.g. ./var/re_warehouse.db).")
+    if value.startswith(_PG_SCHEMES):
+        url = urlsplit(value)
+        if not url.hostname or not url.path.lstrip("/"):
+            raise ReWarehouseConfigError(f"{VAR} is a malformed PostgreSQL DSN: it needs a host and a database "
+                                         "(postgresql://<user>:<password>@<host>:<port>/<database>).")
+    elif "://" in value:
+        scheme = value.split("://", 1)[0]
+        raise ReWarehouseConfigError(f"{VAR} uses the unsupported scheme {scheme!r}: use postgresql:// for the real "
+                                     "warehouse, or a plain file path for the SQLite mock.")
+    return value
+
+
 class RealEstateWarehouse:
     """The real-estate DW at `path`, opened read-only and scoped per call; every statement gets `timeout_s`.
 
-    `path` is the mock SQLite file, or a `postgresql://` DSN for the DATA team's real warehouse (`re_pg`).
+    `path` is a `postgresql://` DSN for the DATA team's real warehouse (`re_pg`), or the path of the synthetic SQLite
+    mock, named explicitly. A missing or malformed value raises `ReWarehouseConfigError`.
     """
 
     def __init__(self, path: str, timeout_s: float = SQL_TIMEOUT_S) -> None:
+        path = _check(path)
         self._path = path
         self._timeout_s = timeout_s
-        self._reader = re_pg if path.startswith(("postgresql://", "postgres://")) else re_sql
+        self._reader = re_pg if path.startswith(_PG_SCHEMES) else re_sql
 
     @property
     def source(self) -> dict[str, Any]:

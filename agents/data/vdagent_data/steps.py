@@ -10,7 +10,7 @@
 5. Store `dataset` (re_dataset@1), `metric` (re_metric@1) and `dq` (re_dq@1) through `artifact_put`; metric and dq
    pin the dataset by `content_hash`, so the store checks their lineage (WS1).
 
-Missing values stay `null` with a limitation code (docs/integration/CANONICAL_DATA_CONTRACT.md §7); nothing is
+Missing values stay `null` with a limitation code (docs/contracts/data-contract.md §7); nothing is
 defaulted to 0. The peer area is `net_area_m2` only (D9, `vdagent_contracts.peer_rules`). Blocked semantics (D2b
 segment mapping, PENDING `min_group_size`) are passed through raw and flagged, never mapped.
 """

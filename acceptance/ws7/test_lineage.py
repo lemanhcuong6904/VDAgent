@@ -63,7 +63,9 @@ def test_one_snapshot_one_semantic_version_one_dataset(store: dict[str, Any]) ->
     assert len(of_type(store, "dataset")) == 1
     counts = Counter(e.artifact_type.value for e in store["latest"].values())
     save("artifact_types.json", counts)
-    assert counts["chart_spec"] == 5 and counts["report"] == 1 and counts["comparison"] == 1
+    # 4 since 957747f (2026-10-02): the price-gap peer figure is Compare's bar chart, no longer a second Insight KPI
+    # (agents/chart/.../test_insight_chart_boundary.py asserts the single KPI); was 5 (two KPI cards).
+    assert counts["chart_spec"] == 4 and counts["report"] == 1 and counts["comparison"] == 1
 
 
 def test_lineage_reaches_the_dataset_through_pinned_hashes(store: dict[str, Any]) -> None:
@@ -107,7 +109,9 @@ def test_report_statements_are_traceable(store: dict[str, Any]) -> None:
     [report] = of_type(store, "report")
     statements = report.payload["statements"]
     save("report_statements.json", statements)
-    assert len(statements) == 28
+    # 29 since 957747f: Insight's narrated peer spread is replaced by Compare's gap and peer count (two statements,
+    # compose.py `peer_bindings`); was 28. Every statement still resolves to its source value below.
+    assert len(statements) == 29
     assert all(_resolves(store["envs"], s["source_ref"], s["value_exact"]) for s in statements)
     delivered = report.payload["delivery"]["report_id"]
     assert any(r["id"] == delivered and r["user_id"] == report.user_id for r in store["reports"])

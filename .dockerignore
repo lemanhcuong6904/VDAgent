@@ -10,3 +10,9 @@ frontend/dist
 **/*.pyc
 .pytest_cache
 **/.pytest_cache
+# data: the build context carries only the seeders (raw CSV packs stay out); the warehouse pipeline is not built here
+warehouse
+data/*
+!data/seed_warehouse.py
+!data/seed_re_warehouse.py
+!data/seed_users.py
