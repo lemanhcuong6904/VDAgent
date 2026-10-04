@@ -44,6 +44,8 @@ def create_app(cfg: Config | None = None) -> FastAPI:
 
     Raises:
         ValueError: An enabled plugin entry grants an MCP tool that does not exist.
+        ReWarehouseConfigError: `re_warehouse_db` (`VDAGENT_RE_WAREHOUSE_DB`) is missing or malformed; the Backend
+            never falls back to the synthetic mock, which runs only when its path is given explicitly.
     """
     cfg = cfg or load_config()
     _check_grants(cfg.plugins)
@@ -51,15 +53,16 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     db = create_database(url)
     bus, tokens = EventBus(), TokenRegistry()
     artifacts = ArtifactService(db)
-    re_warehouse = RealEstateWarehouse(cfg.re_warehouse_db) if cfg.re_warehouse_db else None
+    re_warehouse = RealEstateWarehouse(cfg.re_warehouse_db)  # missing/malformed: ReWarehouseConfigError, no startup
     tools = McpTools(artifacts, Warehouse(cfg.warehouse_db), re_warehouse=re_warehouse, scopes=UserScopes(db))
     mcp = McpServer(tools, tokens)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await asyncio.to_thread(migrate, url)
-        for line in startup_lines(re_warehouse.source) if re_warehouse else ["Warehouse backend: none (re_warehouse_db unset)"]:
-            log.info(line)
+        mock = re_warehouse.source["backend"] == "sqlite"
+        for line in startup_lines(re_warehouse.source):
+            log.log(logging.WARNING if mock else logging.INFO, line)
         plugins = PluginManager()
         registry = await plugins.load(cfg.plugins)
         engine = Engine(cfg, db, bus, tokens, registry, on_interrupted=artifacts.interrupt_run)

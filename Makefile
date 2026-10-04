@@ -6,7 +6,7 @@ WAREHOUSE_DB ?= var/warehouse.db
 DOCS_MODULES := vdagent_sdk vdagent_backend.mcp.reference
 
 .DEFAULT_GOAL := help
-.PHONY: help up down restart logs status build warehouse-check mock-up mock-down backend reset-db sdk-docs sdk-docs-serve docker-test
+.PHONY: help up down restart logs status build warehouse-check mock-up mock-down backend reset-db sdk-docs sdk-docs-serve docker-test secret-check
 
 # Always this project's compose file: a bare `docker compose` would also merge any docker-compose.override.yml.
 COMPOSE := docker compose -f docker-compose.yml
@@ -24,6 +24,7 @@ help:
 	@echo ""
 	@echo "make mock-up / mock-down   synthetic mock warehouse, no keys, on :8001 (tests and offline development only)"
 	@echo "make docker-test           run the offline test suite in a container without network"
+	@echo "make secret-check          offline secret scan of every file Git would commit (values never printed)"
 	@echo "make backend        run the backend on the host ($(HOST):8000; plugins configured by agents/<name>/.env)"
 	@echo "make reset-db       delete and reseed $(BACKEND_DB) and $(WAREHOUSE_DB) for make backend (stop it first)"
 	@echo "make sdk-docs       build the agent developer reference (SDK + MCP tools) into docs/sdk/"
@@ -78,6 +79,9 @@ reset-db:
 
 docker-test:
 	$(COMPOSE) --profile test run --build --rm tests
+
+secret-check:
+	uv run --frozen python scripts/check_secrets.py
 
 sdk-docs:
 	uv run pdoc $(DOCS_MODULES) -o docs/sdk

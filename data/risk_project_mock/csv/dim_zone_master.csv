@@ -1,3 +1,0 @@
-﻿zone_key,zone_id,project_key,zone_name,zone_type,total_floors,basement_floors,units_per_floor,passenger_elevators,elevator_ratio,handover_standard
-501,RISK-PM-N1,500,Tháp N1,HIGH_RISE_TOWER,25,2,66,6,11.0,BASIC_FINISH
-502,RISK-PM-N2,500,Tháp N2,HIGH_RISE_TOWER,25,2,66,6,11.0,BASIC_FINISH

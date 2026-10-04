@@ -17,7 +17,7 @@ Nếu người dùng chỉ định một loại phân tích kèm biểu đồ/b�
 Mỗi câu hỏi phải có mã căn và đủ nghĩa; câu hỏi nhiều căn không được tự chọn một căn.
 
 Contract chạy thật là `StepSpec@1` / `AgentReport@1` trong `contracts/vdagent_contracts/` và SDK
-`InvocationContext` trong `sdk/vdagent_sdk/`. `docs/agent-a/orchestrator/contract-v1.0.md` đã được
+`InvocationContext` trong `sdk/vdagent_sdk/`. `docs/archive/agent-contracts-legacy/contract-v1.0.md` đã được
 đánh dấu là giao thức cũ. Các mô tả cũ về `llm1.py`, `dispatcher.py`, `replan.py`, decision card
 và ngân sách 9 LLM calls không phải implementation này.
 

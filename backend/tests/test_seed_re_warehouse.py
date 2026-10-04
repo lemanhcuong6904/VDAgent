@@ -80,3 +80,46 @@ def test_no_float_money_columns_text_decimal(tmp_path: Path) -> None:
                 reals = conn.execute(f"SELECT COUNT(*) FROM {table} WHERE typeof({column}) = 'real'").fetchone()[0]
                 assert reals == 0, f"{table}.{column} holds floats"
     conn.close()
+
+
+def _seeder():  # data/seed_re_warehouse.py, loaded as a module
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("seed_re_warehouse_script",
+                                                  Path(__file__).resolve().parents[2] / "data" / "seed_re_warehouse.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+def _configured(module, monkeypatch, value: str) -> None:  # noqa: ANN001
+    from dataclasses import replace
+
+    from vdagent_backend.config import Config
+
+    cfg = Config(backend_db="b.db", warehouse_db="w.db", mcp_public_url="http://m/mcp", frontend_dist="d",
+                 re_warehouse_db=value)
+    monkeypatch.setattr(module, "load_config", lambda: replace(cfg))
+
+
+def test_the_seeder_never_writes_to_a_configured_real_warehouse(tmp_path: Path, monkeypatch, capsys) -> None:
+    seeder = _seeder()
+    monkeypatch.chdir(tmp_path)
+    _configured(seeder, monkeypatch, "postgresql://reader:pg-s3cret@cdw.example.org:5432/cdw")
+    assert seeder.main(["seed_re_warehouse.py"]) != 0
+    out = capsys.readouterr()
+    assert "postgresql" in (out.out + out.err) and "pg-s3cret" not in (out.out + out.err)
+    assert list(tmp_path.iterdir()) == []  # no SQLite file named after the DSN, no var/
+
+
+def test_the_seeder_builds_the_mock_at_its_explicit_default_when_nothing_is_configured(tmp_path: Path, monkeypatch) -> None:
+    seeder = _seeder()
+    monkeypatch.chdir(tmp_path)
+    _configured(seeder, monkeypatch, "")
+    assert seeder.main(["seed_re_warehouse.py"]) == 0
+    assert (tmp_path / "var" / "re_warehouse.db").is_file()
+
+
+def test_the_seeder_builds_the_mock_at_a_given_path(tmp_path: Path) -> None:
+    assert _seeder().main(["seed_re_warehouse.py", str(tmp_path / "x.db")]) == 0
+    assert (tmp_path / "x.db").is_file()

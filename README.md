@@ -13,25 +13,19 @@ MAS-U03832 bán chậm? So sánh với các căn tương đồng, vẽ biểu đ
 - **Truy vết được.**
   - Mọi artifact đều có version và content hash.
   - Mọi con số trong biểu đồ hay báo cáo đều có `source_ref` trỏ về đúng field của artifact.
-  - Mỗi run pin một snapshot (`SNAP-2026-09-28`) và một semantic version (`sc-1`).
+  - Mỗi run pin một snapshot và một semantic version: production `SNAP-20260630-01` / `3.1.0`; kho giả
+    `SNAP-2026-09-28` / `sc-1`.
 
 ## Kiến trúc tóm tắt
 
-```mermaid
-flowchart LR
-    U[Người dùng / UI] --> O[Orchestrator<br/>LLM planner]
-    O --> V[Code: kiểm tra plan<br/>catalog · deps · pin]
-    V --> D[Data]
-    D --> I[Insight]
-    D --> C[Compare]
-    I --> CH[Chart]
-    C --> CH
-    CH --> R[Report]
-    S[(Artifact store<br/>có version · có hash)] -. mọi artifact .- D & I & C & CH & R
+```text
+UI / REST → Backend FastAPI (6 plugin cùng process) → Orchestrator: LLM đề xuất plan, code kiểm tra (catalog · deps · pin)
+  → Data → [Insight ∥ Compare] → Chart → Report        (mọi artifact: có version, hash, nằm trong artifact store)
+Kho: production AWS RDS cdw (view re → gold) · test/offline: SQLite chỉ khi chỉ định rõ (make mock-up)
 ```
 
-- Chi tiết: [docs/architecture/MULTI_AGENT_SYSTEM_ARCHITECTURE.md](docs/architecture/MULTI_AGENT_SYSTEM_ARCHITECTURE.md).
-- Trạng thái hiện tại và các blocker: [AGENTS.md](AGENTS.md).
+Chi tiết: [docs/architecture/system.md](docs/architecture/system.md). Quy tắc và trạng thái kiểm chứng:
+[AGENTS.md](AGENTS.md). Mục lục tài liệu: [docs/README.md](docs/README.md).
 
 ## Quick Start
 
@@ -319,10 +313,9 @@ Plan do LLM lập nằm trong log: `make logs | grep "llm plan accepted"`.
 | **Kho giả** (dữ liệu tổng hợp, căn `A12-08`; không cần key, planner deterministic) | `make mock-up` / `make mock-down` | http://localhost:8001 | test, phát triển offline; **không** phải sản phẩm |
 | Bộ acceptance trên kho giả (stack mới, tách biệt) | `acceptance/ws7/run.sh` (đặt `WS7_BROWSER_PYTHON` là Python có Playwright) | cổng 8021 | regression |
 | Bộ test trong Docker | `make docker-test` | — | không cần mạng, không cần key |
-| Chạy local không dùng Docker | `uv sync`, `make reset-db`, `make backend`, rồi `cd frontend && npm install && npm run dev` | :8000 / :5173 | phát triển; kho thật: xem [agents/data/README.md](agents/data/README.md) |
+| Chạy local không dùng Docker | `uv sync`, `make reset-db`, `make backend`, rồi `cd frontend && npm install && npm run dev` | :8000 / :5173 | phát triển; bắt buộc đặt `VDAGENT_RE_WAREHOUSE_DB` (DSN kho thật trong `.env`, hoặc `./var/re_warehouse.db` cho kho giả), thiếu thì Backend không khởi động; xem [agents/data/README.md](agents/data/README.md) |
 
-Kịch bản 4 happy case trên kho giả (căn `A12-08`):
-[docs/integration/DEMO_RUNBOOK_4_HAPPY_CASES.md](docs/integration/DEMO_RUNBOOK_4_HAPPY_CASES.md).
+Golden case trên kho giả (căn `A12-08`) và trên kho thật: [docs/testing/e2e-golden.md](docs/testing/e2e-golden.md).
 
 Test trên máy: `uv sync && uv run pytest -q -p no:cacheprovider`. Test frontend: `cd frontend && npm test`.
 
@@ -352,7 +345,7 @@ Test trên máy: `uv sync && uv run pytest -q -p no:cacheprovider`. Test fronten
   nghiệp vụ duyệt (**B-11**); nhóm nhỏ hơn mức tối thiểu thì Compare báo không đủ dữ liệu.
 - Metric thiếu được báo là không có dữ liệu, không bao giờ là 0. Các phát hiện là tương quan, không phải nguyên nhân.
 - **Chưa sẵn sàng production.** Danh tính người dùng chỉ là header demo `X-User-Id` (F-05, BLOCKED); xem
-  [docs/integration/AUTH_DESIGN.md](docs/integration/AUTH_DESIGN.md).
+  [docs/security/auth-design.md](docs/security/auth-design.md).
 
 ## Tham chiếu cho developer
 
@@ -377,5 +370,5 @@ Test trên máy: `uv sync && uv run pytest -q -p no:cacheprovider`. Test fronten
   envelope, catalog) nằm trong `contracts/vdagent_contracts/`.
 - Override của Backend (`backend/.env`, tuỳ chọn): `VDAGENT_<KEY>` cho mọi khoá vô hướng của config, vd
   `VDAGENT_BACKEND_DB`, `VDAGENT_RE_WAREHOUSE_DB`, `VDAGENT_MCP_PUBLIC_URL`, `VDAGENT_MAX_STEPS`, và `VDAGENT_CONFIG`.
-- Lịch sử thiết kế (spec có ngày): [docs/superpowers/specs/](docs/superpowers/specs/). Kế hoạch tích hợp và bằng chứng:
-  [docs/integration/](docs/integration/).
+- Hợp đồng plugin/SDK: docstring của `sdk/vdagent_sdk` (`make sdk-docs`). Đặc tả thiết kế có ngày, kế hoạch tích hợp
+  2026-09-30 và bằng chứng (lịch sử): [docs/archive/](docs/archive/README.md).

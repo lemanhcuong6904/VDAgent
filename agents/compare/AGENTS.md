@@ -6,7 +6,8 @@
 > Agent B); file này chỉ nêu phần cần biết để làm việc đúng trong repo. Luật chung của repo: `../../AGENTS.md`
 > (không dùng subagent, làm TDD; §0 là hiện trạng tích hợp) và `../../GIT_RULE.md` (nhánh
 > `<NHÓM>-<TênThànhViên>`, Conventional Commits, PR do team lead merge, **cấm force push nhánh cá nhân**).
-> Tích hợp hệ thống: `../../docs/integration/` (master plan, hợp đồng dữ liệu, ma trận agent, kế hoạch E2E).
+> Tích hợp hệ thống: `../../docs/contracts/` (hợp đồng dữ liệu, hợp đồng agent), `../../docs/testing/e2e-golden.md`;
+> lịch sử master plan: `../../docs/archive/integration-2026-09/`.
 
 ---
 
@@ -92,7 +93,7 @@ StepSpec@1 (operation compare_to_peers, spec {subject, comparisonMode, metricsRe
   model lỗi hoặc hết giờ. INSUFFICIENT, `clarification` và lỗi → không gọi model. Artifact giữ tất định
   (cùng input → cùng `content_hash`); hủy tác vụ từ Orchestrator vẫn được truyền ra ngoài.
 - **Quyết định 30/09:** tester yêu cầu Compare dùng model trên pipeline (trước đó đường này là code thuần nên
-  "không khác gì không có agent"). Runbook `docs/integration/DEMO_RUNBOOK_4_HAPPY_CASES.md` dòng ~288 vẫn ghi
+  "không khác gì không có agent"). Runbook `docs/archive/integration-2026-09/DEMO_RUNBOOK_4_HAPPY_CASES.md` dòng ~288 vẫn ghi
   "Compare là deterministic" — **đã lỗi thời**, báo người tích hợp sửa. Stack offline/test đặt `COMPARE_LLM=off`
   nên vẫn chạy không cần key.
 - **Luật peer ở đường này:** Data chỉ lọc thô ứng viên (cùng dự án, loại căn, còn hàng, diện tích ±10%); **Compare áp
@@ -395,5 +396,5 @@ Viết test đỏ trước, rồi mới sửa code. Chỗ nào thêm:
 - Team khác (Drive chung): *[Đặc tả] Data Agent* (§3.4 luật peer thuộc Data, §6.3 gói `peer_set`),
   *Orchestrator – Function Agent Contract v1.0.0* (tab "Compare Agent"), *VDAgent Report I/O Contract v1*
   (luật peer đã chốt), *Data Warehouse Schema v3.1.0*, *semantic_config v1*.
-- Trong repo: `README.md` cùng thư mục (chạy nhanh), `../../docs/superpowers/specs/*` (thiết kế nền tảng
-  plugin), `../../sdk/vdagent_sdk/__init__.py` (luật R1–R11 cho plugin).
+- Trong repo: `README.md` cùng thư mục (chạy nhanh), `../../sdk/vdagent_sdk/__init__.py` (hợp đồng plugin,
+  `make sdk-docs`); đặc tả thiết kế cũ: `../../docs/archive/specs/superpowers/`.

@@ -2,7 +2,7 @@
 
 `DwArtifactReader` is an `ExportArtifactReader` whose pack is built from one Data `dataset` artifact instead of the
 export CSV folder, so the pipeline (steps 0–10) and its input artifacts (metric / dq / dataset built by
-export_reader.py) stay exactly the same. Mapping DW row → Insight row (docs/integration/CANONICAL_DATA_CONTRACT.md §5):
+export_reader.py) stay exactly the same. Mapping DW row → Insight row (docs/contracts/data-contract.md §5):
 
 - keys stay the DW TEXT keys; `unit_id` / `project_id` / `zone_id` = the key (the DW has no separate id);
 - `net_area_m2` through `peer_rules.peer_area` (D9); `asking_price_per_m2` has no DW column → null;

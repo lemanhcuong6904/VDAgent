@@ -16,6 +16,9 @@ Tài liệu này hướng dẫn **dựng và chạy Data agent trên DW thật**
 | Câu tự do do **người dùng** gõ trực tiếp cho Data | chat giải thích (`chat/`), cần LLM | câu trả lời về gói dữ liệu mới nhất của người dùng |
 | Câu tự do từ **agent khác** | vòng LLM cũ trên kho retail (chế độ debug của Orchestrator) | không thuộc luồng chính |
 
+- **Đường production chuẩn:** `StepSpec@1` → `steps.py` → MCP `re_run_query` → `RealEstateWarehouse` (`re_pg`) → AWS RDS
+  `cdw`, schema `re` (view trên `gold`), `SNAP-20260630-01` / `3.1.0`. Kho giả SQLite chỉ khi `VDAGENT_RE_WAREHOUSE_DB`
+  trỏ rõ tới một file (`make mock-up`); vòng LLM trên kho retail chỉ là chế độ legacy (xem cuối trang).
 - **Pipeline** là tất định, không dùng LLM: khóa kỳ chốt (snapshot), nhận diện đối tượng, đọc DW trong phạm vi quyền của người dùng, kiểm tra chất lượng,
   ghi artifact. Phạm vi quyền luôn lấy từ Backend, không lấy từ tin nhắn.
 - **Lời kể** (narration): Data kể từng bước làm bằng ngôn ngữ tự nhiên trong khung chat. Dùng LLM nếu có, không thì dùng câu khuôn.
@@ -151,7 +154,7 @@ Muốn chạy nền thay vì giữ cửa sổ: thêm `nohup ... > "$W/backend.lo
 
 | Biến | Vì sao |
 |---|---|
-| `VDAGENT_RE_WAREHOUSE_DB` | bắt đầu bằng `postgresql://` thì Backend đọc Postgres thật; để trống là kho giả |
+| `VDAGENT_RE_WAREHOUSE_DB` | bắt buộc. Bắt đầu bằng `postgresql://` thì Backend đọc Postgres thật; đường dẫn file (vd. `./var/re_warehouse.db`) là kho giả, chỉ khi ghi rõ. Để trống hoặc sai định dạng thì Backend dừng ngay khi khởi động, không bao giờ tự rơi về kho giả |
 | `ORCH_SNAPSHOT_ID`, `ORCH_SEMANTIC_VERSION` | Orchestrator bắt buộc ghim kỳ chốt; thiếu thì câu hỏi tự do bị từ chối `SNAPSHOT_REQUIRED`. Với DW thật là `SNAP-20260630-01` và `3.1.0` |
 | `ORCH_LLM=off`, `INSIGHT_LLM=off`, `COMPARE_LLM=off`, `REPORT_LLM=off` | các agent này lập kế hoạch và viết bằng luật và mẫu, không cần khóa |
 | không đặt `DATA_LLM` | để Data dùng LLM cho lời kể và chat |
@@ -192,11 +195,12 @@ export PYTHONUTF8=1
 uv run python data/seed_warehouse.py var/warehouse.db
 uv run python data/seed_users.py var/backend.db
 uv run python data/seed_re_warehouse.py var/re_warehouse.db
+export VDAGENT_RE_WAREHOUSE_DB=./var/re_warehouse.db                     # chọn kho giả một cách tường minh
 uv run uvicorn vdagent_backend.app:app --host 127.0.0.1 --port 8000     # http://127.0.0.1:8000
 ```
 
 Ba lệnh seed và lệnh cuối chính là `make reset-db` và `make backend` (máy không có `make`, như Windows, thì dùng lệnh trên).
-Backend mặc định đọc `var/backend.db`, `var/warehouse.db`, `var/re_warehouse.db` nên không cần đặt biến môi trường.
+Backend mặc định đọc `var/backend.db` và `var/warehouse.db`. Kho bất động sản không có mặc định: phải đặt `VDAGENT_RE_WAREHOUSE_DB` (ở đây là đường dẫn kho giả; nếu `.env` gốc đã có DSN kho thật thì `make backend` đọc kho thật). Thiếu biến này Backend báo `VDAGENT_RE_WAREHOUSE_DB is not set` và không khởi động.
 Nhãn "dữ liệu mô phỏng" tự bật vì Backend đọc SQLite. Biến môi trường đầy đủ của Backend: `backend/.env.example`.
 Mã căn của kho giả: `A12-08` (thuộc `PRJ-X`, Alice thấy được).
 
@@ -241,6 +245,26 @@ khi đổi tên hoặc chuyển các file này phải giữ đường import cũ
 | `trace.py`, `narrate.py` | sự kiện theo giai đoạn và lời kể |
 | `chat/` | chat giải thích: `packages.py` (nạp gói), `tools.py` (8 tool chỉ đọc), `glossary.py`, `loop.py` (vòng LLM có kiểm chứng số) |
 | `prompts/` | `chat.md`, `narrator.md` (đang dùng); `system.md`, `compact.md` (vòng LLM cũ) |
+
+## Vòng LLM cũ (legacy/free-form, không thuộc luồng chính)
+
+Câu tự do từ **agent khác** (không phải `[from: user]`) đi vào `LiteLLMAgent` trong `agent.py`: một vòng tool-calling
+LiteLLM + MCP trên kho **retail** demo (`fact_sales`, `dim_*`, xem `prompts/system.md`). Chỉ dùng khi debug
+(`ORCH_LEGACY_LOOP=on` ở Orchestrator); không tạo artifact bất động sản. Gộp từ `docs/agent-a/data/design.md`
+(2026-09-30), đã đối chiếu code 2026-10-04.
+
+- Mỗi lượt mở một MCP session, đưa các tool MCP được cấp (`mcp_tools` của plugin data trong `backend/config.yaml`) cùng
+  `send_to_agent` nếu có peer, gọi LLM tối đa `ctx.max_steps` bước; bước cuối dùng `tool_choice="none"`. Model vẫn
+  gọi tool ở bước cuối → trả `STEP_LIMIT_TEXT`. Các tool call trong một bước chạy song song (`asyncio.TaskGroup`).
+- Giới hạn: mỗi lần gọi LLM `LLM_TIMEOUT_S` (mặc định 120 s, quá hạn → `AgentTimeoutError`); mỗi tool MCP 30 s
+  (`MCP_TOOL_TIMEOUT_S`), kết quả cắt ở 16 000 ký tự (`MAX_TOOL_RESULT_CHARS`). Lỗi tool, JSON hỏng, tool lạ → text
+  `error: …` cho model, lượt không crash.
+- `compact()` dùng `prompts/compact.md` (tối đa 400 từ, giữ id `ds_/ch_/rp_`), tool result cắt ở 2 000 ký tự
+  (`COMPACT_TOOL_TEXT_CHARS`); lượt sau nối tóm tắt vào system prompt.
+- Ràng buộc SQL (SELECT-only, timeout, giới hạn dòng, phạm vi) nằm ở Backend (`warehouse/`, `mcp/handlers.py`), không ở agent.
+- Prompt cũ không mô tả `re_*`, `artifact_*`, `get_user_context`; luồng bất động sản dùng pipeline ở trên, không dùng vòng này.
+
+Sơ đồ của bản thiết kế pipeline cũ (S0–S7) nằm ở `docs/archive/agent-a-assets/data/` (lịch sử).
 
 ## Giới hạn đã biết
 

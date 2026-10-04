@@ -33,7 +33,8 @@ thì engine tự lọc theo luật peer của team (chế độ dùng cho golden
 ## Dữ liệu
 
 - Căn mẫu **A12-08** (hero case) đi kèm plugin: `vdagent_compare/fixtures/hero_a12_08.json`.
-- Gói CSV VHOP (3.000 căn) **thuộc team DATA, không commit ở đây**. Compare tìm lần lượt:
+- Đường production (`StepSpec@1` `compare_to_peers`) chỉ đọc artifact của Data Agent (kho AWS), không cần gói nào.
+- Gói CSV VHOP (3.000 căn, chỉ cho đường hỏi tự do cũ) **thuộc team DATA, không commit ở đây**. Compare tìm lần lượt:
   `VDAGENT_VHOP_DATA_DIR` → `warehouse/vhop` → `var/vhop` → `data/vhop`. Lấy bản đã phát hành trên
   nhánh `DATA` (commit `adf2d05`) vào `var/vhop` (đã gitignore):
 

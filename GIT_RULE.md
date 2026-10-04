@@ -287,6 +287,25 @@ Nếu lỡ commit secret:
 3. Xóa secret khỏi lịch sử bằng công cụ được phê duyệt sau khi đã bảo toàn bằng chứng cần thiết.
 4. Không coi việc xóa file ở commit mới là đã xử lý xong.
 
+Chạy `make secret-check` (quét offline, không in giá trị) trước khi mở PR.
+
+### 9.1. Dữ liệu kho (`data/`, `warehouse/`)
+
+Gộp từ `docs/GIT_WAREHOUSE_INTEGRATION_RULES.md` (2026-10-04). Branch thành viên DATA theo mẫu `DATA-<TenThanhVien>`;
+PR vào `develop` cần team lead DATA review.
+
+- Kho chuẩn là AWS RDS `cdw` (schema `gold`, lớp view `re`). Pipeline CSV trong repo (`warehouse/project_<key>/`,
+  `warehouse/shared/`, `warehouse/dataset/`, `organize_pack.py`, `assemble_dataset.py`, `verify_warehouse.py`,
+  `build_backup.py`) đã retire ở Phase 2; không thêm canonical pack, CSV warehouse hay CSV lớn vào repo ứng dụng.
+- Chỉ nhận dữ liệu mock/synthetic đã được task phê duyệt; không đưa dữ liệu khách hàng hay production vào Git.
+- Mã định danh (`project_key`, `project_id`, dải `zone_key`, `channel_key`, `infra_key`) theo
+  `warehouse/id_registry.json`.
+- Thay đổi dữ liệu kho đi qua team DATA trên kho chuẩn, sau đó làm mới dump DR
+  `warehouse/backup/cdw_gold_snapshot_20260630.dump` (xem `warehouse/backup/README.md`).
+- Raw pack đã gỡ ở Phase 3; danh sách và cách khôi phục: `docs/data-archive/phase3-manifest.json` (nguyên văn ở
+  commit `aed2917`).
+- PR dữ liệu nêu nguồn dữ liệu, re-key/migration, kiểm thử và rollback.
+
 ## 10. Quy tắc tối thiểu cho CI
 
 Mọi PR nên chạy tự động:

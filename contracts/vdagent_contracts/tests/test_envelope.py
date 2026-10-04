@@ -77,7 +77,7 @@ def test_artifact_ref_roundtrip() -> None:
     assert Producer(agent="data", agent_version="0.1.0").label == "data@0.1.0"
 
 
-# ---- WS1: pinned references and one snapshot per draft (docs/integration/CANONICAL_DATA_CONTRACT.md §3) ----
+# ---- WS1: pinned references and one snapshot per draft (docs/contracts/data-contract.md §3) ----
 
 HASH = "a" * 64
 
